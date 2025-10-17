@@ -2,18 +2,28 @@ import dotenv from 'dotenv'
 import { startScheduler } from './cron/scheduler.js'
 import { log } from './utils/logger.js'
 import { YouTubeClient } from './youtube/client.js'
+import { startHttpServer } from './server/http.js'
 import { pingSupabase } from './supabase/client.js'
 
 dotenv.config()
 
 async function main() {
-  // Mode switching može biti unapređen čitanjem iz konfiguracione tabele kasnije
+  // Start HTTP server first so Render detects open port
+  startHttpServer()
+
+  // Core init messages
   console.log('Render backend structure initialized successfully.')
+
+  // Supabase ping is performed inside supabase client upon creation/import
+  // Init YouTube client to log key rotation state
   await pingSupabase()
-  // inicijalizuj YT klijent da prikažemo status rotacije ključeva
   new YouTubeClient()
+
+  // Start cron scheduler
   startScheduler()
+
   if (process.env.EXIT_ON_START === '1') {
+    log('info', 'EXIT_ON_START=1 -> terminating after init checks')
     return
   }
 }
