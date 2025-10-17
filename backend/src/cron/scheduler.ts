@@ -52,3 +52,7 @@ export function startScheduler() {
     await refreshExistingPlaylists(ids)
   })
 }
+
+// pokrećemo scheduler i držimo proces aktivnim
+startScheduler()
+setInterval(() => {}, 1000 * 60 * 60)
