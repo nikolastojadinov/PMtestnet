@@ -2,6 +2,7 @@ import cron from 'node-cron'
 import fs from 'node:fs'
 import path from 'node:path'
 import dotenv from 'dotenv'
+import http from 'http'
 import { log } from '../utils/logger.js'
 import { fetchNewPlaylists } from '../youtube/fetchPlaylists.js'
 import { refreshExistingPlaylists } from '../youtube/refreshPlaylists.js'
@@ -53,6 +54,11 @@ export function startScheduler() {
   })
 }
 
-// pokrećemo scheduler i držimo proces aktivnim
+// odmah pokreni scheduler
 startScheduler()
-setInterval(() => {}, 1000 * 60 * 60)
+
+// dummy HTTP server za Render (sprečava “No open ports detected”)
+const PORT = process.env.PORT || 8080
+http.createServer((_, res) => res.end('OK')).listen(PORT, () => {
+  log('info', `Render heartbeat listening on :${PORT}`)
+})
