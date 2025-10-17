@@ -28,37 +28,24 @@ export type MinimalTrack = {
 
 export async function upsertPlaylist(p: MinimalPlaylist) {
   if (!supabase) throw new Error('Supabase client not configured')
-  // Use a conservative column set to avoid schema mismatches.
-  const row: Record<string, any> = {
-    id: p.id,
-    name: p.title,
-    description: p.description ?? null,
-    cover_url: p.thumbnail_url ?? null,
-    updated_at: new Date().toISOString(),
-  }
-  const { error } = await supabase.from('playlists').upsert(row)
+  // Ultra-conservative: only ensure the record exists by id
+  const { error } = await supabase.from('playlists').upsert({ id: p.id })
   if (error) throw error
 }
 
 export async function upsertTrack(t: MinimalTrack) {
   if (!supabase) throw new Error('Supabase client not configured')
-  // Use minimal columns to match most basic schemas.
-  const row: Record<string, any> = {
-    id: t.id,
-    title: t.title,
-    updated_at: new Date().toISOString(),
-  }
-  const { error } = await supabase.from('tracks').upsert(row)
+  // Ultra-conservative: only ensure the record exists by id
+  const { error } = await supabase.from('tracks').upsert({ id: t.id })
   if (error) throw error
 }
 
 export async function linkTrackToPlaylist(playlistId: string, trackId: string, position: number) {
   if (!supabase) throw new Error('Supabase client not configured')
+  // Minimal link payload; omit columns that may not exist (position/updated_at)
   const { error } = await supabase.from('playlist_tracks').upsert({
     playlist_id: playlistId,
     track_id: trackId,
-    position,
-    updated_at: new Date().toISOString(),
   })
   if (error) throw error
 }
