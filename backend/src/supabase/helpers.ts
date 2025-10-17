@@ -11,6 +11,10 @@ export type MinimalPlaylist = {
   itemCount?: number | null
   channelTitle?: string | null
   fetched_on?: string | null
+  viewCount?: number | null
+  channelSubscriberCount?: number | null
+  created_at?: string | null
+  last_etag?: string | null
 }
 
 export type MinimalTrack = {
@@ -35,6 +39,10 @@ export async function upsertPlaylist(p: MinimalPlaylist) {
     item_count: p.itemCount ?? null,
     channel_title: p.channelTitle ?? null,
     fetched_on: p.fetched_on ?? null,
+    view_count: p.viewCount ?? null,
+    channel_subscriber_count: p.channelSubscriberCount ?? null,
+    created_at: p.created_at ?? new Date().toISOString(),
+    last_etag: p.last_etag ?? null,
     updated_at: new Date().toISOString(),
   })
   if (error) throw error

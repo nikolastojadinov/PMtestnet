@@ -2,12 +2,15 @@ import cron from 'node-cron'
 import fs from 'node:fs'
 import path from 'node:path'
 import dotenv from 'dotenv'
-import http from 'http'
+import http from 'node:http'
 import { log } from '../utils/logger.js'
+import { startHttpServer } from '../server/http.js'
 import { fetchNewPlaylists } from '../youtube/fetchPlaylists.js'
 import { refreshExistingPlaylists } from '../youtube/refreshPlaylists.js'
 
 dotenv.config()
+// Ensure Render sees an open port (keep-alive)
+startHttpServer()
 
 type Mode = 'FETCH' | 'REFRESH'
 
@@ -76,16 +79,14 @@ export function startScheduler() {
   })
 }
 
-// 🔹 Pokreni scheduler odmah
-startScheduler()
-
-// 🔹 Dummy HTTP server za Render (sprečava “No open ports detected”)
-const PORT = process.env.PORT || 8080
-http.createServer((_, res) => res.end('OK')).listen(PORT, () => {
-  log('info', `Render heartbeat listening on :${PORT}`)
-})
-
-// 🔹 Samopinging svakih 4 minuta da Render ne uspava proces
-setInterval(() => {
-  http.get(`http://localhost:${PORT}`, res => res.resume())
-}, 4 * 60 * 1000)
+// When this file is executed directly (Render start command), start immediately
+try {
+  startScheduler()
+  // 🔹 Samopinging svakih 4 minuta da Render ne uspava proces
+  const PORT = process.env.PORT || 8080
+  setInterval(() => {
+    try {
+      http.get(`http://localhost:${PORT}/health`, res => res.resume())
+    } catch {}
+  }, 4 * 60 * 1000)
+} catch {}
