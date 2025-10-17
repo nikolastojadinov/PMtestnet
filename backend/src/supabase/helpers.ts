@@ -53,7 +53,7 @@ export async function upsertPlaylist(p: MinimalPlaylist) {
     return
   }
   // Minimal fallback: ensure record exists by id only
-  const { error } = await supabase.from('playlists').upsert({ id })
+  const { error } = await supabase.from('playlists').upsert({ id, name: p.title || 'Untitled' })
   if (error) throw error
 }
 
