@@ -77,7 +77,7 @@ export async function upsertTrack(t: MinimalTrack) {
     return
   }
   // Minimal fallback: id only
-  const { error } = await supabase.from('tracks').upsert({ id })
+  const { error } = await supabase.from('tracks').upsert({ id, title: t.title || 'Untitled' })
   if (error) throw error
 }
 
