@@ -22,10 +22,7 @@ async function main() {
   // Start cron scheduler
   startScheduler()
 
-  if (process.env.EXIT_ON_START === '1') {
-    log('info', 'EXIT_ON_START=1 -> terminating after init checks')
-    return
-  }
+  // Persistent mode enforced: do not exit after init
 }
 
 main().catch((e) => {
