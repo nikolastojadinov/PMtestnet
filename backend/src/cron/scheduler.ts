@@ -32,11 +32,33 @@ function loadPlaylistIds(): string[] {
   }
 }
 
+async function runOnce() {
+  const mode = getMode()
+  const ids = loadPlaylistIds()
+  log('info', `Initial run (${mode}) -> processing ${ids.length} playlists`)
+
+  if (ids.length === 0) {
+    log('warn', 'No playlists found in regions.json — skipping initial fetch')
+    return
+  }
+
+  try {
+    if (mode === 'FETCH') await fetchNewPlaylists(ids)
+    else await refreshExistingPlaylists(ids)
+    log('info', 'Initial fetch/refresh cycle completed successfully ✅')
+  } catch (err) {
+    log('error', 'Initial run failed', { error: (err as Error).message })
+  }
+}
+
 export function startScheduler() {
   const mode = getMode()
   log('info', `Cron scheduler starting in mode=${mode}`)
 
-  // svakih 3h prema zahtevima
+  // 🔹 Pokreni odmah po startu (deploy)
+  runOnce()
+
+  // 🔹 Zakaži ciklus svakih 3 sata
   cron.schedule('0 */3 * * *', async () => {
     const ids = loadPlaylistIds()
     log('info', `Cron tick -> processing ${ids.length} playlists in mode=${mode}`)
@@ -45,7 +67,7 @@ export function startScheduler() {
     else await refreshExistingPlaylists(ids)
   })
 
-  // mesečni full refresh (~30 dana)
+  // 🔹 Mesečni full refresh (~30 dana)
   cron.schedule('0 0 */30 * *', async () => {
     const ids = loadPlaylistIds()
     log('info', `Monthly full refresh for ${ids.length} playlists`)
@@ -54,11 +76,16 @@ export function startScheduler() {
   })
 }
 
-// odmah pokreni scheduler
+// 🔹 Pokreni scheduler odmah
 startScheduler()
 
-// dummy HTTP server za Render (sprečava “No open ports detected”)
+// 🔹 Dummy HTTP server za Render (sprečava “No open ports detected”)
 const PORT = process.env.PORT || 8080
 http.createServer((_, res) => res.end('OK')).listen(PORT, () => {
   log('info', `Render heartbeat listening on :${PORT}`)
 })
+
+// 🔹 Samopinging svakih 4 minuta da Render ne uspava proces
+setInterval(() => {
+  http.get(`http://localhost:${PORT}`, res => res.resume())
+}, 4 * 60 * 1000)
