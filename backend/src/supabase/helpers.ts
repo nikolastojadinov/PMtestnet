@@ -28,37 +28,27 @@ export type MinimalTrack = {
 
 export async function upsertPlaylist(p: MinimalPlaylist) {
   if (!supabase) throw new Error('Supabase client not configured')
-  const { error } = await supabase.from('playlists').upsert({
+  // Use a conservative column set to avoid schema mismatches.
+  const row: Record<string, any> = {
     id: p.id,
     name: p.title,
     description: p.description ?? null,
     cover_url: p.thumbnail_url ?? null,
-    region: p.region ?? null,
-    category: p.category ?? null,
-    is_public: p.is_public ?? true,
-    item_count: p.itemCount ?? null,
-    channel_title: p.channelTitle ?? null,
-    fetched_on: p.fetched_on ?? null,
-    view_count: p.viewCount ?? null,
-    channel_subscriber_count: p.channelSubscriberCount ?? null,
-    created_at: p.created_at ?? new Date().toISOString(),
-    last_etag: p.last_etag ?? null,
     updated_at: new Date().toISOString(),
-  })
+  }
+  const { error } = await supabase.from('playlists').upsert(row)
   if (error) throw error
 }
 
 export async function upsertTrack(t: MinimalTrack) {
   if (!supabase) throw new Error('Supabase client not configured')
-  const { error } = await supabase.from('tracks').upsert({
+  // Use minimal columns to match most basic schemas.
+  const row: Record<string, any> = {
     id: t.id,
     title: t.title,
-    artist: t.channelTitle ?? null,
-    published_at: t.publishedAt ?? null,
-    thumbnail_url: t.thumbnail_url ?? null,
-    created_at: t.created_at ?? new Date().toISOString(),
     updated_at: new Date().toISOString(),
-  })
+  }
+  const { error } = await supabase.from('tracks').upsert(row)
   if (error) throw error
 }
 
