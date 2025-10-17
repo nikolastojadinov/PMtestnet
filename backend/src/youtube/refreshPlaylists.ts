@@ -1,0 +1,39 @@
+import { YouTubeClient } from './client.js'
+import { linkTrackToPlaylist, upsertPlaylist, upsertTrack } from '../supabase/helpers.js'
+import { log, logJob } from '../utils/logger.js'
+
+export async function refreshExistingPlaylists(playlistIds: string[]) {
+  const yt = new YouTubeClient()
+  for (const pid of playlistIds) {
+    await logJob({ target: `refresh:${pid}`, status: 'started' })
+    try {
+      const { item, keyUsed } = await yt.getPlaylist(pid)
+      if (item) {
+        await upsertPlaylist({
+          id: item.id!,
+          title: item.snippet?.title || 'Untitled',
+          description: item.snippet?.description || null,
+          thumbnail_url: item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.default?.url || null,
+        })
+      }
+
+      const { items, keyUsed: key2 } = await yt.getPlaylistItems(pid)
+      const keyFinal = key2 ?? keyUsed ?? undefined
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i]
+        const vid = it.contentDetails?.videoId
+        if (!vid) continue
+        const title = it.snippet?.title || 'Untitled'
+        const channelTitle = it.snippet?.videoOwnerChannelTitle || it.snippet?.channelTitle || null
+        const thumb = it.snippet?.thumbnails?.medium?.url || it.snippet?.thumbnails?.default?.url || null
+        await upsertTrack({ id: vid, title, channelTitle, publishedAt: it.contentDetails?.videoPublishedAt || null, thumbnail_url: thumb })
+        await linkTrackToPlaylist(pid, vid, i)
+      }
+
+      await logJob({ target: `refresh:${pid}`, status: 'success', key_used: keyFinal ?? null })
+    } catch (e: any) {
+      log('error', 'refreshExistingPlaylists failed', { pid, error: e?.message })
+      await logJob({ target: `refresh:${pid}`, status: 'error', error: e?.message || String(e) })
+    }
+  }
+}

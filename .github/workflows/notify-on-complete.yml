@@ -1,0 +1,65 @@
+name: Notify user on task completion
+
+on:
+  push:
+    branches:
+      - main
+    # Izbegni self-trigger kada menjamo workflow fajlove
+    paths-ignore:
+      - ".github/**"
+
+jobs:
+  send_email:
+    name: Send notification email if commit message matches
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check commit messages for keywords
+        id: check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const keywords = ['task complete', 'build finished']
+            const payload = context.payload
+            const commits = payload.commits || []
+            let match = false
+            for (const c of commits) {
+              const msg = (c.message || '').toLowerCase()
+              if (keywords.some(k => msg.includes(k))) {
+                match = true
+                break
+              }
+            }
+            if (!match && payload.head_commit) {
+              const msg = (payload.head_commit.message || '').toLowerCase()
+              if (keywords.some(k => msg.includes(k))) {
+                match = true
+              }
+            }
+            core.setOutput('should_notify', match ? 'true' : 'false')
+
+      - name: Send notification email
+        if: steps.check.outputs.should_notify == 'true'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.mail.yahoo.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.YAHOO_SMTP_USER }}
+          password: ${{ secrets.YAHOO_SMTP_PASS }}
+          subject: "✅ Purple Music — zadatak uspešno završen"
+          to: "nikolastojadinov@yahoo.co.uk"
+          from: "Purple Music Notifier <${{ secrets.YAHOO_SMTP_USER }}>"
+          body: |
+            Zdravo Nikola 👋
+
+            Copilot je upravo završio izvršavanje zadatka u Codespace-u.
+            Sve promene su uspešno izvršene i commit-ovane u repozitorijum (branch: main).
+
+            Ako želiš, možeš sada odobriti 'git push' ručno iz Codespace-a, ukoliko to nije već urađeno.
+
+            — Purple Music Automation
