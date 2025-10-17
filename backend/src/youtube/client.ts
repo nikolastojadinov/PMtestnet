@@ -24,6 +24,7 @@ function readApiKeys(): string[] {
 export class YouTubeClient {
   private keys: string[]
   private keyIndex = 0
+  private requestCount = 0
   private yt: youtube_v3.Youtube
 
   constructor() {
@@ -39,8 +40,12 @@ export class YouTubeClient {
 
   private nextKey(): string | undefined {
     if (!this.keys.length) return undefined
+    // Rotate the API key only once per 100 requests to respect quota distribution
     const key = this.keys[this.keyIndex % this.keys.length]
-    this.keyIndex++
+    this.requestCount++
+    if (this.requestCount % 100 === 0) {
+      this.keyIndex++
+    }
     return key
   }
 
@@ -87,5 +92,17 @@ export class YouTubeClient {
       auth: key,
     })
     return { items: res.data.items ?? [], keyUsed: key }
+  }
+
+  async getChannelDetails(channelId: string) {
+    const key = this.nextKey()
+    const res = await this.yt.channels.list({
+      id: [channelId],
+      part: ['snippet', 'statistics'],
+      maxResults: 1,
+      auth: key,
+    })
+    const ch = res.data.items?.[0]
+    return { item: ch, keyUsed: key }
   }
 }
