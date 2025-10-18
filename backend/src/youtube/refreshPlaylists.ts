@@ -1,11 +1,14 @@
 import { YouTubeClient } from './client.js'
 import { linkTrackToPlaylist, upsertPlaylist, upsertTrack } from '../supabase/helpers.js'
 import { log, logJob } from '../utils/logger.js'
+import { ingestInit, ingestMarkStart, ingestMarkResult, ingestFinish } from '../state/ingestState.js'
 
 export async function refreshExistingPlaylists(playlistIds: string[]) {
   const yt = new YouTubeClient()
+  ingestInit('REFRESH', 'unknown', playlistIds)
   for (const pid of playlistIds) {
     await logJob({ target: `refresh:${pid}`, status: 'started' })
+    ingestMarkStart(pid)
     try {
       const { item, keyUsed } = await yt.getPlaylist(pid)
       if (item) {
@@ -31,9 +34,12 @@ export async function refreshExistingPlaylists(playlistIds: string[]) {
       }
 
       await logJob({ target: `refresh:${pid}`, status: 'success', key_used: keyFinal ?? null })
+      ingestMarkResult(pid, { itemsFetched: items.length, tracksLinked: items.length, error: null })
     } catch (e: any) {
       log('error', 'refreshExistingPlaylists failed', { pid, error: e?.message })
       await logJob({ target: `refresh:${pid}`, status: 'error', error: e?.message || String(e) })
+      ingestMarkResult(pid, { itemsFetched: 0, tracksLinked: 0, error: e?.message || String(e) })
     }
   }
+  ingestFinish()
 }

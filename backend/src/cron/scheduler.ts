@@ -6,6 +6,7 @@ import { startHttpServer } from '../server/http.js'
 import { fetchNewPlaylists } from '../youtube/fetchPlaylists.js'
 import { refreshExistingPlaylists } from '../youtube/refreshPlaylists.js'
 import { loadPlaylistIds as loadIds } from '../config/playlistSource.js'
+import { ingestInit } from '../state/ingestState.js'
 
 dotenv.config()
 // Ensure Render sees an open port (keep-alive)
@@ -34,8 +35,10 @@ async function runOnce() {
   }
 
   try {
-    if (mode === 'FETCH') await fetchNewPlaylists(ids)
-    else await refreshExistingPlaylists(ids)
+  // inicijalizuj state sa realnim izvorom
+  ingestInit(mode, source, ids)
+  if (mode === 'FETCH') await fetchNewPlaylists(ids)
+  else await refreshExistingPlaylists(ids)
     log('info', 'Initial fetch/refresh cycle completed successfully ✅')
   } catch (err) {
     log('error', 'Initial run failed', { error: (err as Error).message })

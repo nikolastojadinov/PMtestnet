@@ -1,5 +1,6 @@
 import http from 'node:http'
 import { log } from '../utils/logger.js'
+import { getIngestState } from '../state/ingestState.js'
 
 let serverInstance: http.Server | null = null
 let started = false
@@ -11,6 +12,16 @@ export function startHttpServer() {
     const url = req.url || '/'
     if (url === '/health') {
       const body = JSON.stringify({ status: 'ok', mode: process.env.CRON_MODE || 'FETCH', time: new Date().toISOString() })
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(body)
+      return
+    }
+    if (url === '/debug') {
+      const state = getIngestState()
+      const body = JSON.stringify({
+        mode: process.env.CRON_MODE || 'FETCH',
+        state,
+      })
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end(body)
       return
