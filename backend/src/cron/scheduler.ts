@@ -5,6 +5,7 @@ import path from 'node:path'
 import { log } from '../utils/logger.js'
 import { startHttpServer } from '../server/http.js'
 import { fetchNewPlaylists } from '../youtube/fetchNewPlaylists.js'
+import { QuotaDepletedError } from '../youtube/client.js'
 import { refreshExistingPlaylists } from '../youtube/refreshExistingPlaylists.js'
 import { supabase } from '../supabase/client.js'
 
@@ -111,6 +112,29 @@ export async function startScheduler() {
   console.log(`[STATE] Scheduler initialized: day=${initState.day_in_cycle}, mode=${initState.mode}`)
   log('info', `Cron scheduler starting in mode=${initState.mode}`)
 
+  // Create discovery tables if missing (idempotent)
+  try {
+    if (supabase) {
+      await (supabase.rpc as any)?.('noop')
+      await (supabase as any).rpc?.('sql', { q: `
+        CREATE TABLE IF NOT EXISTS discovered_playlists (
+          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          playlist_id text UNIQUE NOT NULL,
+          region text NOT NULL,
+          discovered_at timestamptz NOT NULL DEFAULT now()
+        );
+        CREATE TABLE IF NOT EXISTS discovery_state (
+          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          last_region text NOT NULL DEFAULT 'IN',
+          day_in_cycle int NOT NULL DEFAULT 1,
+          tick_date date NOT NULL DEFAULT CURRENT_DATE,
+          units_used_today int NOT NULL DEFAULT 0,
+          updated_at timestamptz NOT NULL DEFAULT now()
+        );
+      ` })
+    }
+  } catch {}
+
   // kick off immediately once on start
   ;(async () => {
     try {
@@ -123,9 +147,14 @@ export async function startScheduler() {
           log('info', '[DISCOVERY] Starting global region discovery mode')
           let count = 0
           try {
-            count = await runWithGlobalTimeout(fetchNewPlaylists(), 300000)
+            const result = await runWithGlobalTimeout(fetchNewPlaylists(), 300000)
+            count = (result as any)?.totalPlaylists ?? (typeof result === 'number' ? (result as any) : 0)
           } catch (e: any) {
-            log('warn', '[WARN] fetchNewPlaylists failed; continuing cycle', { error: e?.message })
+            if (e instanceof QuotaDepletedError) {
+              log('warn', '[WARN] fetchNewPlaylists failed; continuing cycle', { error: 'QuotaDepletedError' })
+            } else {
+              log('warn', '[WARN] fetchNewPlaylists failed; continuing cycle', { error: e?.message })
+            }
           }
           log('info', `[DISCOVERY] Completed with ${count} playlists`)
         } else {
@@ -157,9 +186,14 @@ export async function startScheduler() {
           log('info', '[DISCOVERY] Starting global region discovery mode')
           let count = 0
           try {
-            count = await runWithGlobalTimeout(fetchNewPlaylists(), 300000)
+            const result = await runWithGlobalTimeout(fetchNewPlaylists(), 300000)
+            count = (result as any)?.totalPlaylists ?? (typeof result === 'number' ? (result as any) : 0)
           } catch (e: any) {
-            log('warn', '[WARN] fetchNewPlaylists failed; continuing cycle', { error: e?.message })
+            if (e instanceof QuotaDepletedError) {
+              log('warn', '[WARN] fetchNewPlaylists failed; continuing cycle', { error: 'QuotaDepletedError' })
+            } else {
+              log('warn', '[WARN] fetchNewPlaylists failed; continuing cycle', { error: e?.message })
+            }
           }
           log('info', `[DISCOVERY] Completed with ${count} playlists`)
         } else {

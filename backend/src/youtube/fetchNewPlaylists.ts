@@ -1,5 +1,5 @@
 import { log } from '../utils/logger.js'
-import { youtubeClient } from './client.js'
+import { youtubeClient, withKey, QuotaDepletedError } from './client.js'
 import { supabase } from '../supabase/client.js'
 import { playlistUuid, trackUuid } from '../utils/id.js'
 
@@ -82,14 +82,23 @@ async function runWithTimeout<T>(fn: () => Promise<T>, ms: number, region: strin
   }
 }
 
-// Returns the number of playlists processed (backward compatible with scheduler logs).
-// Also prints TOTAL logs including both playlists and tracks across all regions.
-export async function fetchNewPlaylists(playlistIds?: string[]): Promise<number> {
+// Overloads: legacy array param or options with playlistIds/startRegion
+type FetchOpts = { playlistIds?: string[], startRegion?: string }
+
+export async function fetchNewPlaylists(arg?: string[] | FetchOpts): Promise<{ totalPlaylists: number, totalTracks: number, totalRegionsProcessed: number, lastRegion: string, unitsUsed: number }> {
   const yt = youtubeClient()
+  const budget = Number(process.env.YT_BUDGET_PER_TICK || 3000)
+  let unitsUsed = 0
+  let regionsDone = 0
+  let lastRegion: string = REGIONS[0]
+
+  let opts: FetchOpts = {}
+  if (Array.isArray(arg)) opts = { playlistIds: arg }
+  else if (arg) opts = arg
 
   // Manual mode: process explicit playlist IDs
-  if (playlistIds && playlistIds.length > 0) {
-    const ids = playlistIds
+  if (opts.playlistIds && opts.playlistIds.length > 0) {
+    const ids = opts.playlistIds
     log('info', `Manual fetch: ${ids.length} playlists`)
     let totalTracks = 0
     let totalPlaylists = 0
@@ -165,19 +174,23 @@ export async function fetchNewPlaylists(playlistIds?: string[]): Promise<number>
       }
     }
     log('info', `[TOTAL] Manual fetch completed: ${totalPlaylists} playlists, ${totalTracks} tracks`)
-    return totalPlaylists
+    return { totalPlaylists, totalTracks, totalRegionsProcessed: 0, lastRegion, unitsUsed }
   }
 
   // Discovery mode across all regions
-  log('info', `[DISCOVERY] Starting global region discovery mode`)
+  const startRegion = opts.startRegion && REGIONS.includes(opts.startRegion as any) ? (opts.startRegion as typeof REGIONS[number]) : REGIONS[0]
+  const startIdx = REGIONS.indexOf(startRegion)
+  const order: typeof REGIONS = [...REGIONS.slice(startIdx), ...REGIONS.slice(0, startIdx)] as any
+  log('info', `[DISCOVERY] Starting global region discovery mode (start=${startRegion})`)
   let totalPlaylists = 0
   let totalTracks = 0
   const rich = process.env.SUPABASE_RICH_SCHEMA === '1'
 
-  for (const region of REGIONS) {
+  for (const region of order) {
     log('info', `[FETCH] Starting region=${region}`)
     let regionPlaylists = 0
     let regionTracks = 0
+    const regionUnitsBefore = unitsUsed
     try {
       // Supabase heartbeat before region to avoid silent client hangs
       try {
@@ -187,18 +200,39 @@ export async function fetchNewPlaylists(playlistIds?: string[]): Promise<number>
         log('warn', 'Supabase heartbeat failed', { error: hbErr?.message })
       }
       await runWithTimeout(async () => {
-        // Discover playlists for region
-        const res = await withRetry(() => yt.search.list({
-          part: ['snippet'],
-          type: ['playlist'],
-          q: 'music',
-          order: 'viewCount',
-          regionCode: region,
-          relevanceLanguage: 'en',
-          maxResults: 50,
-        }), 'search.list')
-        const items = res.data.items || []
-        const discovered = items.map(i => i.id?.playlistId).filter(Boolean) as string[]
+        // Try cache first
+        const cacheRes = await (supabase as any)
+          .from('discovered_playlists')
+          .select('playlist_id')
+          .eq('region', region)
+          .limit(50)
+        const cached = (cacheRes?.data || []).map((r: any) => r.playlist_id)
+
+        // If cache insufficient and budget allows, call discovery
+        let discovered: string[] = [...cached]
+        if (discovered.length < 50) {
+          const est = 100
+          if (unitsUsed + est > budget) {
+            log('info', `[BUDGET] Tick budget reached (used=${unitsUsed}/${budget})`)
+          } else {
+            const res = await withKey((kYt) => kYt.search.list({
+              part: ['snippet'],
+              type: ['playlist'],
+              q: 'music',
+              order: 'viewCount',
+              regionCode: region,
+              relevanceLanguage: 'en',
+              maxResults: 50,
+            }))
+            unitsUsed += est
+            const items = res.data.items || []
+            const fresh = items.map(i => i.id?.playlistId).filter(Boolean) as string[]
+            discovered = Array.from(new Set([...discovered, ...fresh]))
+            // Cache the newly found playlist IDs
+            const cacheRows = fresh.map(pid => ({ playlist_id: pid, region }))
+            try { await safeUpsertQueue('discovered_playlists', cacheRows, { onConflict: ['playlist_id'] }) } catch {}
+          }
+        }
         regionPlaylists = discovered.length
 
         // Fetch details for all discovered playlists (sequential with retry)
@@ -206,7 +240,10 @@ export async function fetchNewPlaylists(playlistIds?: string[]): Promise<number>
         const details: PDetail[] = []
         for (const pid of discovered) {
           try {
-            const p = await withRetry(() => yt.playlists.list({ id: [pid], part: ['snippet', 'contentDetails'], maxResults: 1 }), 'playlists.list')
+            // playlists.list cost ~1 unit
+            if (unitsUsed + 1 > budget) { log('info', `[BUDGET] Tick budget reached (used=${unitsUsed}/${budget})`); break }
+            const p = await withKey((kYt) => kYt.playlists.list({ id: [pid], part: ['snippet', 'contentDetails'], maxResults: 1 }))
+            unitsUsed += 1
             const item = p.data.items?.[0]
             if (item) details.push({ pid, item })
           } catch (e: any) {
@@ -246,12 +283,15 @@ export async function fetchNewPlaylists(playlistIds?: string[]): Promise<number>
           let positionBase = 0
           do {
             try {
-              const r = await withRetry(() => yt.playlistItems.list({
+              // playlistItems.list cost ~1 unit
+              if (unitsUsed + 1 > budget) { log('info', `[BUDGET] Tick budget reached (used=${unitsUsed}/${budget})`); break }
+              const r = await withKey((kYt) => kYt.playlistItems.list({
                 playlistId: pid,
                 part: ['snippet', 'contentDetails'],
                 maxResults: 50,
                 pageToken,
-              }), 'playlistItems.list')
+              }))
+              unitsUsed += 1
               const its = r.data.items || []
               const trackRows: any[] = []
               const linkRows: any[] = []
@@ -290,18 +330,29 @@ export async function fetchNewPlaylists(playlistIds?: string[]): Promise<number>
     } catch (err: any) {
       if (err?.name === 'TimeoutError') {
         log('warn', `[WARN] Region=${region} stalled >120s, skipping to next`)
+      } else if (err instanceof QuotaDepletedError) {
+        log('warn', `[QUOTA] All API keys exhausted; finishing tick with cached items only`)
       } else {
         log('error', `[ERROR] Region=${region} failed: ${err?.message ?? 'unknown'}`)
       }
     }
 
     totalTracks += regionTracks
-    log('info', `[FETCH] Completed region=${region} (${regionPlaylists} playlists, ${regionTracks} tracks)`)
+    const regionUnits = unitsUsed - regionUnitsBefore
+    log('info', `[FETCH] Completed region=${region} (${regionPlaylists} playlists, ${regionTracks} tracks, units=${regionUnits})`)
+    regionsDone++
+    lastRegion = order[(order.indexOf(region) + 1) % order.length]
 
     // Pacing between regions
     await sleep(1200)
+
+    // Stop if budget reached
+    if (unitsUsed >= budget) {
+      log('info', `[BUDGET] Tick budget reached (used=${unitsUsed}/${budget})`)
+      break
+    }
   }
 
-  log('info', `[TOTAL] Discovery completed: ${totalPlaylists} playlists, ${totalTracks} tracks across ${REGIONS.length} regions`)
-  return totalPlaylists
+  log('info', `[TOTAL] Discovery summary: regions_done=${regionsDone}, playlists=${totalPlaylists}, tracks=${totalTracks}, units=${unitsUsed}`)
+  return { totalPlaylists, totalTracks, totalRegionsProcessed: regionsDone, lastRegion, unitsUsed }
 }

@@ -35,3 +35,61 @@ export function youtubeClient(): youtube_v3.Youtube {
   log('info', `[YouTube] Using key index ${activeIndex + 1}/${keys.length}`)
   return google.youtube({ version: 'v3', auth: key })
 }
+
+export class QuotaDepletedError extends Error {
+  constructor() {
+    super('All YouTube API keys exhausted')
+    this.name = 'QuotaDepletedError'
+  }
+}
+
+function isQuotaExceeded(err: any): boolean {
+  const reason = err?.errors?.[0]?.reason || err?.response?.data?.error?.errors?.[0]?.reason || ''
+  const message = String(err?.message || '').toLowerCase()
+  return /quota|rateLimit/i.test(reason) || /quota/.test(message)
+}
+
+export function getRotatingKey(ban?: Set<string>): { key: string, index: number, total: number } | null {
+  const keys = getApiKeys()
+  if (keys.length === 0) return null
+  const total = keys.length
+  for (let i = 0; i < total; i++) {
+    const idx = (currentKeyIndex + i) % total
+    const k = keys[idx]
+    if (ban && ban.has(k)) continue
+    // advance pointer to next position for future calls
+    currentKeyIndex = (idx + 1) % total
+    return { key: k, index: idx, total }
+  }
+  return null
+}
+
+export async function withKey<T>(fn: (yt: youtube_v3.Youtube) => Promise<T>, ban?: Set<string>): Promise<T> {
+  const localBan = ban ?? new Set<string>()
+  const first = getRotatingKey(localBan)
+  if (!first) throw new QuotaDepletedError()
+  let attempt = 0
+  const max = (function() { const keys = getApiKeys(); return keys.length })()
+  let cur = first
+  while (cur && attempt < max) {
+    const { key, index, total } = cur
+    const yt = google.youtube({ version: 'v3', auth: key })
+    try {
+      return await fn(yt)
+    } catch (err: any) {
+      if (isQuotaExceeded(err)) {
+        localBan.add(key)
+        log('warn', `[QUOTA] Key exhausted, switching… (idx=${index + 1}/${total})`)
+        const next = getRotatingKey(localBan)
+        attempt++
+        if (!next) {
+          throw new QuotaDepletedError()
+        }
+        cur = next
+        continue
+      }
+      throw err
+    }
+  }
+  throw new QuotaDepletedError()
+}
