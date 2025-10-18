@@ -161,6 +161,13 @@ export async function fetchNewPlaylists(playlistIds?: string[]): Promise<number>
     let regionPlaylists = 0
     let regionTracks = 0
     try {
+      // Supabase heartbeat before region to avoid silent client hangs
+      try {
+        await (supabase as any).from('playlists').select('id').limit(1)
+        console.log(`[STATE] Supabase connection OK before region=${region}`)
+      } catch (hbErr: any) {
+        log('warn', 'Supabase heartbeat failed', { error: hbErr?.message })
+      }
       await runWithTimeout(async () => {
         // Discover playlists for region
         const res = await withRetry(() => yt.search.list({

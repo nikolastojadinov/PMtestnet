@@ -11,6 +11,14 @@ import { supabase } from '../supabase/client.js'
 dotenv.config()
 // ensure Render detects open port
 try { startHttpServer() } catch {}
+async function runWithGlobalTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`[WATCHDOG] fetchNewPlaylists exceeded ${ms/1000}s, aborting`)), ms)
+    ),
+  ])
+}
 
 type Mode = 'FETCH' | 'REFRESH'
 
@@ -115,14 +123,14 @@ export async function startScheduler() {
           log('info', '[DISCOVERY] Starting global region discovery mode')
           let count = 0
           try {
-            count = await fetchNewPlaylists()
+            count = await runWithGlobalTimeout(fetchNewPlaylists(), 300000)
           } catch (e: any) {
             log('warn', '[WARN] fetchNewPlaylists failed; continuing cycle', { error: e?.message })
           }
           log('info', `[DISCOVERY] Completed with ${count} playlists`)
         } else {
           try {
-            await fetchNewPlaylists(ids)
+            await runWithGlobalTimeout(fetchNewPlaylists(ids), 300000)
           } catch (e: any) {
             log('warn', '[WARN] fetchNewPlaylists failed; continuing cycle', { error: e?.message })
           }
@@ -149,14 +157,14 @@ export async function startScheduler() {
           log('info', '[DISCOVERY] Starting global region discovery mode')
           let count = 0
           try {
-            count = await fetchNewPlaylists()
+            count = await runWithGlobalTimeout(fetchNewPlaylists(), 300000)
           } catch (e: any) {
             log('warn', '[WARN] fetchNewPlaylists failed; continuing cycle', { error: e?.message })
           }
           log('info', `[DISCOVERY] Completed with ${count} playlists`)
         } else {
           try {
-            await fetchNewPlaylists(ids)
+            await runWithGlobalTimeout(fetchNewPlaylists(ids), 300000)
           } catch (e: any) {
             log('warn', '[WARN] fetchNewPlaylists failed; continuing cycle', { error: e?.message })
           }
