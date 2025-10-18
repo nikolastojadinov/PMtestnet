@@ -6,7 +6,8 @@ dotenv.config()
 
 let currentKeyIndex = 0
 let lastLoggedIndex = -1
-const exhaustedKeys = new Set<string>()
+const cooldownUntil = new Map<string, number>() // key -> epoch ms
+const metrics = new Map<string, { used_units: number; quota_exceeded: number; last_used: number; cooldown_until?: number }>()
 
 function loadApiKeys(): string[] {
   // Preferred: comma-separated list in YOUTUBE_API_KEYS
@@ -36,11 +37,16 @@ function pickCurrentKey(ban?: Set<string>): { key: string; index: number; total:
   const keys = loadApiKeys()
   if (keys.length === 0) return null
   const total = keys.length
-  const combinedBan = new Set<string>([...exhaustedKeys, ...(ban ? Array.from(ban) : [])])
+  const combinedBan = new Set<string>([...(ban ? Array.from(ban) : [])])
   for (let step = 0; step < total; step++) {
     const idx = (currentKeyIndex + step) % total
     const k = keys[idx]
     if (combinedBan.has(k)) continue
+    const until = cooldownUntil.get(k)
+    if (typeof until === 'number' && until > Date.now()) {
+      // still cooling down; skip
+      continue
+    }
     return { key: k, index: idx, total }
   }
   return null
@@ -57,28 +63,43 @@ function logKeyIndex(index: number, total: number) {
   }
 }
 
-export async function withKey<T>(fn: (yt: youtube_v3.Youtube) => Promise<T>, ban?: Set<string>): Promise<T> {
+type WithKeyOptions = { label?: string; unitCost?: number }
+export async function withKey<T>(fn: (yt: youtube_v3.Youtube) => Promise<T>, options?: WithKeyOptions): Promise<T> {
   const keys = loadApiKeys()
   if (keys.length === 0) throw new Error('No YouTube API keys configured (set YOUTUBE_API_KEYS or YOUTUBE_API_KEY_1..3)')
 
-  const localBan = ban ?? new Set<string>()
+  const label = options?.label
+  const unitCost = options?.unitCost ?? 0
+
   let attempts = 0
 
   for (;;) {
-    const pick = pickCurrentKey(localBan)
+    const pick = pickCurrentKey()
     if (!pick) throw new QuotaDepletedError()
     const { key, index, total } = pick
     logKeyIndex(index, total)
+    const now = Date.now()
+    const m = metrics.get(key) || { used_units: 0, quota_exceeded: 0, last_used: 0 }
+    m.last_used = now
+    metrics.set(key, m)
     const yt = google.youtube({ version: 'v3', auth: key })
     try {
       const result = await fn(yt)
-      // Do NOT advance index on success; keep using current key
+      if (unitCost > 0) {
+        m.used_units += unitCost
+        metrics.set(key, m)
+      }
+      // Stay on this key until quotaExceeded
       return result
     } catch (err: any) {
       if (isQuotaExceeded(err)) {
-        exhaustedKeys.add(key)
-        localBan.add(key)
-        log('warn', `[QUOTA] Key exhausted, switching… (idx=${index + 1}/${total})`)
+        m.quota_exceeded += 1
+        const coolMs = 60 * 60 * 1000 // 60 minutes
+        const until = Date.now() + coolMs
+        cooldownUntil.set(key, until)
+        m.cooldown_until = until
+        metrics.set(key, m)
+        log('warn', `[QUOTA] Key exhausted, switching… (idx=${index + 1}/${total})`, { label: label ?? null, cooldown_until: new Date(until).toISOString() })
         advanceIndex(total)
         attempts++
         if (attempts >= keys.length) throw new QuotaDepletedError()
