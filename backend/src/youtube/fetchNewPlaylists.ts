@@ -71,7 +71,7 @@ export async function fetchNewPlaylists(playlistIds?: string[]): Promise<number>
   let totalPlaylists = 0
   let totalTracks = 0
   for (const region of REGIONS) {
-    log('info', `[FETCH] Starting region=${region}`)
+  log('info', `[FETCH] Starting region=${region}`)
     let regionPlaylists = 0
     let regionTracks = 0
     try {
@@ -145,17 +145,17 @@ export async function fetchNewPlaylists(playlistIds?: string[]): Promise<number>
         }
       }
     } catch (err: any) {
-      log('error', `[ERROR] Region=${region} failed with message: ${err?.message ?? 'unknown'}`)
+      log('error', `[ERROR] Region=${region} failed: ${err?.message ?? 'unknown'}`)
     }
 
     totalPlaylists += regionPlaylists
     totalTracks += regionTracks
     log('info', `[FETCH] Completed region=${region} (${regionPlaylists} playlists, ${regionTracks} tracks)`)
 
-    // Rate limit between regions: 1000–1500 ms
-    await sleep(1000 + Math.floor(Math.random() * 501))
+    // Rate limit between regions: ~1200 ms
+    await sleep(1200)
   }
 
-  log('info', `[TOTAL] Discovery completed: ${totalPlaylists} playlists, ${totalTracks} tracks across all regions`)
+  log('info', `[TOTAL] Discovery completed: ${totalPlaylists} playlists, ${totalTracks} tracks across ${REGIONS.length} regions`)
   return totalPlaylists
 }
