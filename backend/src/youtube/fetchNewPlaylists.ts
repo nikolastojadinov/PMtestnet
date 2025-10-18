@@ -38,10 +38,32 @@ async function withRetry<T>(fn: () => Promise<T>, label: string, retries = 2): P
   }
 }
 
-function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = []
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
-  return out
+async function safeUpsertQueue(
+  table: string,
+  dataArray: any[],
+  options: Record<string, any> = {},
+  batchSize = 20,
+  timeoutMs = 5000
+) {
+  if (!dataArray || dataArray.length === 0) return
+  const batches: any[][] = []
+  for (let i = 0; i < dataArray.length; i += batchSize) {
+    batches.push(dataArray.slice(i, i + batchSize))
+  }
+  for (let idx = 0; idx < batches.length; idx++) {
+    const batch = batches[idx]
+    const batchNum = idx + 1
+    const total = batches.length
+    try {
+      await Promise.race([
+        (supabase as any).from(table).upsert(batch, options),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), timeoutMs)),
+      ])
+    } catch (err: any) {
+      const msg = err?.message === 'timeout' ? `timed out after ${timeoutMs}ms` : (err?.message || 'unknown')
+      console.warn(`[WARN] ${table} batch ${batchNum}/${total} ${msg}`)
+    }
+  }
 }
 
 class TimeoutError extends Error { constructor(message: string) { super(message); this.name = 'TimeoutError' } }
@@ -93,7 +115,7 @@ export async function fetchNewPlaylists(playlistIds?: string[]): Promise<number>
           playlistRows.push({ id, name: item.snippet?.title || 'Untitled' })
         }
         // Upsert playlist row (single)
-        try { await (supabase as any).from('playlists').upsert(playlistRows) } catch (e: any) { log('warn', 'Supabase playlist upsert failed', { error: e?.message }) }
+  try { await safeUpsertQueue('playlists', playlistRows) } catch (e: any) { log('warn', 'Supabase playlist upsert failed', { error: e?.message }) }
         totalPlaylists++
 
         // Fetch playlist items and upsert tracks + links in batches per page
@@ -131,13 +153,9 @@ export async function fetchNewPlaylists(playlistIds?: string[]): Promise<number>
             }
           }
 
-          // Batch upserts (<=50 per page) with safe chunking anyway
-          for (const batch of chunk(trackRows, 50)) {
-            try { await (supabase as any).from('tracks').upsert(batch) } catch (e: any) { log('warn', 'Supabase tracks upsert failed', { error: e?.message }) }
-          }
-          for (const batch of chunk(linkRows, 50)) {
-            try { await (supabase as any).from('playlist_tracks').upsert(batch) } catch (e: any) { log('warn', 'Supabase playlist_tracks upsert failed', { error: e?.message }) }
-          }
+          // Safe queued upserts with per-batch timeout
+          try { await safeUpsertQueue('tracks', trackRows) } catch (e: any) { log('warn', 'Supabase tracks upsert failed', { error: e?.message }) }
+          try { await safeUpsertQueue('playlist_tracks', linkRows) } catch (e: any) { log('warn', 'Supabase playlist_tracks upsert failed', { error: e?.message }) }
 
           positionBase += its.length
           pageToken = r.data.nextPageToken || undefined
@@ -216,9 +234,7 @@ export async function fetchNewPlaylists(playlistIds?: string[]): Promise<number>
           return { id, name: item.snippet?.title || 'Untitled' }
         })
         if (playlistRows.length > 0) {
-          for (const batch of chunk(playlistRows, 50)) {
-            try { await (supabase as any).from('playlists').upsert(batch) } catch (e: any) { log('warn', 'Supabase playlists upsert failed', { error: e?.message }) }
-          }
+          try { await safeUpsertQueue('playlists', playlistRows) } catch (e: any) { log('warn', 'Supabase playlists upsert failed', { error: e?.message }) }
         }
 
         totalPlaylists += regionPlaylists
@@ -259,12 +275,8 @@ export async function fetchNewPlaylists(playlistIds?: string[]): Promise<number>
                   log('warn', `Track build failed for playlist=${pid}`, { error: e?.message })
                 }
               }
-              for (const batch of chunk(trackRows, 50)) {
-                try { await (supabase as any).from('tracks').upsert(batch) } catch (e: any) { log('warn', 'Supabase tracks upsert failed', { error: e?.message }) }
-              }
-              for (const batch of chunk(linkRows, 50)) {
-                try { await (supabase as any).from('playlist_tracks').upsert(batch) } catch (e: any) { log('warn', 'Supabase playlist_tracks upsert failed', { error: e?.message }) }
-              }
+              try { await safeUpsertQueue('tracks', trackRows) } catch (e: any) { log('warn', 'Supabase tracks upsert failed', { error: e?.message }) }
+              try { await safeUpsertQueue('playlist_tracks', linkRows) } catch (e: any) { log('warn', 'Supabase playlist_tracks upsert failed', { error: e?.message }) }
 
               positionBase += its.length
               pageToken = r.data.nextPageToken || undefined
