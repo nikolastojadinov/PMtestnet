@@ -1,83 +1,61 @@
 import cron from 'node-cron'
 import dotenv from 'dotenv'
-import http from 'node:http'
+import fs from 'node:fs'
+import path from 'node:path'
 import { log } from '../utils/logger.js'
-import { startHttpServer } from '../server/http.js'
-import { fetchNewPlaylists } from '../youtube/fetchPlaylists.js'
-import { refreshExistingPlaylists } from '../youtube/refreshPlaylists.js'
-import { loadPlaylistIds as loadIds } from '../config/playlistSource.js'
-import { ingestInit } from '../state/ingestState.js'
+import { fetchNewPlaylists } from '../youtube/fetchNewPlaylists.js'
+import { refreshExistingPlaylists } from '../youtube/refreshExistingPlaylists.js'
 
 dotenv.config()
-// Ensure Render sees an open port (keep-alive)
-startHttpServer()
 
-type Mode = 'FETCH' | 'REFRESH'
-
-function getMode(): Mode {
-  const envMode = (process.env.CRON_MODE || 'FETCH').toUpperCase()
-  return envMode === 'REFRESH' ? 'REFRESH' : 'FETCH'
+function getCycleMode(): 'FETCH' | 'REFRESH' {
+  const start = process.env.CYCLE_START_DATE ? new Date(process.env.CYCLE_START_DATE) : new Date('2025-10-17T00:00:00Z')
+  const now = new Date()
+  const daysPassed = Math.floor((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
+  const mode = (daysPassed % 31 === 30) ? 'REFRESH' : 'FETCH'
+  return mode
 }
 
-async function loadPlaylistIds(): Promise<{ ids: string[]; source: string }> {
-  const { ids, source } = await loadIds()
-  return { ids, source }
-}
-
-async function runOnce() {
-  const mode = getMode()
-  const { ids, source } = await loadPlaylistIds()
-  log('info', `Initial run (${mode}) -> processing ${ids.length} playlists (source=${source})`)
-
-  if (ids.length === 0) {
-    log('warn', 'No playlists found in regions.json — skipping initial fetch')
-    return
-  }
-
+function loadPlaylistIds(): string[] {
+  const file = process.env.REGIONS_FILE || process.env.REGION_MATRIX_PATH || './regions.json'
+  const p = path.isAbsolute(file) ? file : path.join(process.cwd(), file)
   try {
-  // inicijalizuj state sa realnim izvorom
-  ingestInit(mode, source, ids)
-  if (mode === 'FETCH') await fetchNewPlaylists(ids)
-  else await refreshExistingPlaylists(ids)
-    log('info', 'Initial fetch/refresh cycle completed successfully ✅')
-  } catch (err) {
-    log('error', 'Initial run failed', { error: (err as Error).message })
+    const raw = fs.readFileSync(p, 'utf-8')
+    const data = JSON.parse(raw)
+    if (Array.isArray(data)) return data
+    if (Array.isArray(data.playlists)) return data.playlists
+    return []
+  } catch (e) {
+    log('warn', 'Failed to read regions file, continuing with empty list', { file, error: (e as Error).message })
+    return []
   }
 }
 
-export function startScheduler() {
-  const mode = getMode()
+export async function startScheduler() {
+  let mode = getCycleMode()
   log('info', `Cron scheduler starting in mode=${mode}`)
 
-  // 🔹 Pokreni odmah po startu (deploy)
-  runOnce()
-
-  // 🔹 Zakaži ciklus svakih 3 sata
+  // primary cron job – runs every 3h
   cron.schedule('0 */3 * * *', async () => {
-    const { ids, source } = await loadPlaylistIds()
-    log('info', `Cron tick -> processing ${ids.length} playlists (source=${source}) in mode=${mode}`)
+    const ids = loadPlaylistIds()
+    log('info', `[CRON] tick -> ${ids.length} playlists in mode=${mode}`)
     if (ids.length === 0) return
     if (mode === 'FETCH') await fetchNewPlaylists(ids)
     else await refreshExistingPlaylists(ids)
   })
 
-  // 🔹 Mesečni full refresh (~30 dana)
-  cron.schedule('0 0 */30 * *', async () => {
-    const { ids, source } = await loadPlaylistIds()
-    log('info', `Monthly full refresh for ${ids.length} playlists (source=${source})`)
-    if (ids.length === 0) return
-    await refreshExistingPlaylists(ids)
+  // cycle auto-switch – runs daily at midnight
+  cron.schedule('0 0 * * *', async () => {
+    const newMode = getCycleMode()
+    if (newMode !== mode) {
+      mode = newMode
+      log('info', `[CYCLE] mode switched to ${newMode}`)
+    }
   })
 }
 
-// When this file is executed directly (Render start command), start immediately
+// start immediately when executed directly
 try {
   startScheduler()
-  // 🔹 Samopinging svakih 4 minuta da Render ne uspava proces
-  const PORT = process.env.PORT || 8080
-  setInterval(() => {
-    try {
-      http.get(`http://localhost:${PORT}/health`, res => res.resume())
-    } catch {}
-  }, 4 * 60 * 1000)
 } catch {}
+
