@@ -1,0 +1,7 @@
+:root {
+  --pm-primary: #120024;
+  --pm-accent: #6C2BD9;
+  --pm-highlight: #FFD500;
+}
+
+body { background: var(--pm-primary); color: #fff; }
