@@ -1,27 +1,12 @@
-import { google } from 'googleapis'
 import { log } from '../utils/logger.js'
 import { upsertPlaylist, upsertTrack, linkTrackToPlaylist } from '../supabase/helpers.js'
-
-function readApiKey(): string | undefined {
-  const raw = process.env.YOUTUBE_API_KEYS
-  if (raw) {
-    try {
-      const arr = JSON.parse(raw)
-      if (Array.isArray(arr) && arr[0]) return arr[0]
-    } catch {
-      const parts = raw.split(/[\s,]+/).filter(Boolean)
-      if (parts[0]) return parts[0]
-    }
-  }
-  return process.env.YOUTUBE_API_KEY_1 || process.env.YOUTUBE_API_KEY || undefined
-}
+import { youtubeClient } from './client.js'
 
 export async function refreshExistingPlaylists(playlistIds: string[]) {
-  const key = readApiKey()
-  const yt = google.youtube('v3')
+  const yt = youtubeClient()
   for (const pid of playlistIds) {
     try {
-      const p = await yt.playlists.list({ id: [pid], part: ['snippet','contentDetails'], maxResults: 1, auth: key })
+      const p = await yt.playlists.list({ id: [pid], part: ['snippet','contentDetails'], maxResults: 1 })
       const item = p.data.items?.[0]
       if (item) {
         await upsertPlaylist({
@@ -40,7 +25,6 @@ export async function refreshExistingPlaylists(playlistIds: string[]) {
           part: ['snippet','contentDetails'],
           maxResults: 50,
           pageToken,
-          auth: key,
         })
         const its = r.data.items || []
         for (let i = 0; i < its.length; i++) {

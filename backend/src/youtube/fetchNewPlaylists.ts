@@ -1,26 +1,11 @@
-import { google } from 'googleapis'
 import { log } from '../utils/logger.js'
+import { youtubeClient } from './client.js'
 import { upsertPlaylist, upsertTrack, linkTrackToPlaylist } from '../supabase/helpers.js'
 
 const DEFAULT_REGIONS = ['IN', 'VN', 'PH', 'KR', 'US', 'JP', 'CN', 'RU']
 
-function readApiKey(): string | undefined {
-  const raw = process.env.YOUTUBE_API_KEYS
-  if (raw) {
-    try {
-      const arr = JSON.parse(raw)
-      if (Array.isArray(arr) && arr[0]) return arr[0]
-    } catch {
-      const parts = raw.split(/[\s,]+/).filter(Boolean)
-      if (parts[0]) return parts[0]
-    }
-  }
-  return process.env.YOUTUBE_API_KEY_1 || process.env.YOUTUBE_API_KEY || undefined
-}
-
 export async function fetchNewPlaylists(playlistIds?: string[]) {
-  const key = readApiKey()
-  const yt = google.youtube('v3')
+  const yt = youtubeClient()
   const ids = playlistIds && playlistIds.length > 0 ? playlistIds : []
 
   if (ids.length === 0) {
@@ -33,14 +18,13 @@ export async function fetchNewPlaylists(playlistIds?: string[]) {
           regionCode: region,
           maxResults: 50,
           videoCategoryId: '10',
-          auth: key,
         })
         const items = res.data.items || []
         const ids = items.map(i => i.id?.playlistId).filter(Boolean) as string[]
         log('info', `[FETCH] region=${region}, discovered=${ids.length}`)
 
         for (const pid of ids) {
-          const p = await yt.playlists.list({ id: [pid], part: ['snippet','contentDetails'], maxResults: 1, auth: key })
+          const p = await yt.playlists.list({ id: [pid], part: ['snippet','contentDetails'], maxResults: 1 })
           const item = p.data.items?.[0]
           if (!item) continue
           await upsertPlaylist({
@@ -62,7 +46,6 @@ export async function fetchNewPlaylists(playlistIds?: string[]) {
               part: ['snippet','contentDetails'],
               maxResults: 50,
               pageToken,
-              auth: key,
             })
             const its = r.data.items || []
             for (let i = 0; i < its.length; i++) {
@@ -87,7 +70,7 @@ export async function fetchNewPlaylists(playlistIds?: string[]) {
     log('info', `Manual fetch: ${ids.length} playlists`)
     for (const pid of ids) {
       try {
-        const p = await yt.playlists.list({ id: [pid], part: ['snippet','contentDetails'], maxResults: 1, auth: key })
+      const p = await yt.playlists.list({ id: [pid], part: ['snippet','contentDetails'], maxResults: 1 })
         const item = p.data.items?.[0]
         if (!item) continue
         await upsertPlaylist({
@@ -105,7 +88,6 @@ export async function fetchNewPlaylists(playlistIds?: string[]) {
             part: ['snippet','contentDetails'],
             maxResults: 50,
             pageToken,
-            auth: key,
           })
           const its = r.data.items || []
           for (let i = 0; i < its.length; i++) {
