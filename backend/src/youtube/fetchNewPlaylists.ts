@@ -4,9 +4,10 @@ import { upsertPlaylist, upsertTrack, linkTrackToPlaylist } from '../supabase/he
 
 const DEFAULT_REGIONS = ['IN', 'VN', 'PH', 'KR', 'US', 'JP', 'CN', 'RU']
 
-export async function fetchNewPlaylists(playlistIds?: string[]) {
+export async function fetchNewPlaylists(playlistIds?: string[]): Promise<number> {
   const yt = youtubeClient()
   const ids = playlistIds && playlistIds.length > 0 ? playlistIds : []
+  let totalProcessed = 0
 
   if (ids.length === 0) {
     log('info', 'No playlist IDs provided; discovering region playlists...')
@@ -20,10 +21,11 @@ export async function fetchNewPlaylists(playlistIds?: string[]) {
           videoCategoryId: '10',
         })
         const items = res.data.items || []
-        const ids = items.map(i => i.id?.playlistId).filter(Boolean) as string[]
-        log('info', `[FETCH] region=${region}, discovered=${ids.length}`)
+  const discovered = items.map(i => i.id?.playlistId).filter(Boolean) as string[]
+  log('info', `[FETCH] region=${region}, discovered=${discovered.length}`)
+  totalProcessed += discovered.length
 
-        for (const pid of ids) {
+  for (const pid of discovered) {
           const p = await yt.playlists.list({ id: [pid], part: ['snippet','contentDetails'], maxResults: 1 })
           const item = p.data.items?.[0]
           if (!item) continue
@@ -67,8 +69,9 @@ export async function fetchNewPlaylists(playlistIds?: string[]) {
       }
     }
   } else {
-    log('info', `Manual fetch: ${ids.length} playlists`)
-    for (const pid of ids) {
+  log('info', `Manual fetch: ${ids.length} playlists`)
+  totalProcessed += ids.length
+  for (const pid of ids) {
       try {
       const p = await yt.playlists.list({ id: [pid], part: ['snippet','contentDetails'], maxResults: 1 })
         const item = p.data.items?.[0]
@@ -108,4 +111,5 @@ export async function fetchNewPlaylists(playlistIds?: string[]) {
       }
     }
   }
+  return totalProcessed
 }

@@ -43,9 +43,17 @@ export async function startScheduler() {
     try {
       const ids = loadPlaylistIds()
       log('info', `[INIT] tick -> ${ids.length} playlists in mode=${mode}`)
-      if (ids.length === 0) return
-      if (mode === 'FETCH') await fetchNewPlaylists(ids)
-      else await refreshExistingPlaylists(ids)
+      if (mode === 'FETCH') {
+        if (ids.length < 5) {
+          log('info', '[DISCOVERY] Starting global region discovery mode')
+          const count = await fetchNewPlaylists()
+          log('info', `[DISCOVERY] Completed with ${count} playlists`)
+        } else {
+          await fetchNewPlaylists(ids)
+        }
+      } else {
+        if (ids.length > 0) await refreshExistingPlaylists(ids)
+      }
     } catch (e: any) {
       log('error', 'Initial tick failed', { error: e?.message })
     }
@@ -55,9 +63,21 @@ export async function startScheduler() {
   cron.schedule('0 */3 * * *', async () => {
     const ids = loadPlaylistIds()
     log('info', `[CRON] tick -> ${ids.length} playlists in mode=${mode}`)
-    if (ids.length === 0) return
-    if (mode === 'FETCH') await fetchNewPlaylists(ids)
-    else await refreshExistingPlaylists(ids)
+    try {
+      if (mode === 'FETCH') {
+        if (ids.length < 5) {
+          log('info', '[DISCOVERY] Starting global region discovery mode')
+          const count = await fetchNewPlaylists()
+          log('info', `[DISCOVERY] Completed with ${count} playlists`)
+        } else {
+          await fetchNewPlaylists(ids)
+        }
+      } else {
+        if (ids.length > 0) await refreshExistingPlaylists(ids)
+      }
+    } catch (e: any) {
+      log('error', 'Cron tick failed', { error: e?.message })
+    }
   })
 
   // cycle auto-switch – runs daily at midnight
