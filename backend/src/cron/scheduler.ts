@@ -6,17 +6,81 @@ import { log } from '../utils/logger.js'
 import { startHttpServer } from '../server/http.js'
 import { fetchNewPlaylists } from '../youtube/fetchNewPlaylists.js'
 import { refreshExistingPlaylists } from '../youtube/refreshExistingPlaylists.js'
+import { supabase } from '../supabase/client.js'
 
 dotenv.config()
 // ensure Render detects open port
 try { startHttpServer() } catch {}
 
-function getCycleMode(): 'FETCH' | 'REFRESH' {
-  const start = process.env.CYCLE_START_DATE ? new Date(process.env.CYCLE_START_DATE) : new Date('2025-10-17T00:00:00Z')
-  const now = new Date()
-  const daysPassed = Math.floor((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
-  const mode = (daysPassed % 31 === 30) ? 'REFRESH' : 'FETCH'
-  return mode
+type Mode = 'FETCH' | 'REFRESH'
+
+type SchedulerState = {
+  id: number | null
+  mode: Mode
+  day_in_cycle: number
+}
+
+const DEFAULT_STATE: SchedulerState = { id: null, mode: 'FETCH', day_in_cycle: 1 }
+
+async function readOrInitSchedulerState(): Promise<SchedulerState> {
+  // If Supabase client is unavailable, fall back to defaults
+  if (!supabase) {
+    console.warn('[STATE] Supabase unavailable, using default in-memory state.')
+    return { ...DEFAULT_STATE }
+  }
+
+  try {
+    const { data, error } = await (supabase.from('scheduler_state')
+      .select('*')
+      .limit(1)
+      .single() as any)
+
+    if (error) {
+      // Table missing or no rows yet
+      console.warn('[STATE] Failed to fetch scheduler_state; will try to insert default. Reason:', error.message)
+      const now = new Date().toISOString()
+      const { data: inserted, error: insErr } = await (supabase.from('scheduler_state')
+        .insert({ mode: 'FETCH', day_in_cycle: 1, last_tick: now, updated_at: now })
+        .select()
+        .single() as any)
+      if (insErr) {
+        console.warn('[STATE] Supabase insert failed, using in-memory defaults.', insErr.message)
+        return { ...DEFAULT_STATE }
+      }
+      return { id: inserted.id ?? null, mode: inserted.mode as Mode, day_in_cycle: inserted.day_in_cycle as number }
+    }
+
+    // Data found
+    return { id: (data as any).id ?? null, mode: (data as any).mode as Mode, day_in_cycle: (data as any).day_in_cycle as number }
+  } catch (e: any) {
+    console.warn('[STATE] Supabase unavailable, using default in-memory state.', e?.message)
+    return { ...DEFAULT_STATE }
+  }
+}
+
+async function persistNextState(prev: SchedulerState): Promise<SchedulerState> {
+  const nextDay = prev.day_in_cycle >= 31 ? 1 : prev.day_in_cycle + 1
+  const nextMode: Mode = nextDay === 31 ? 'REFRESH' as Mode : 'FETCH'
+
+  if (!supabase || !prev.id) {
+    console.warn('[STATE] Failed to update scheduler_state, continuing with last known values.')
+    return { id: prev.id, mode: nextMode, day_in_cycle: nextDay }
+  }
+
+  try {
+    const now = new Date().toISOString()
+    const { error } = await (supabase.from('scheduler_state')
+      .update({ mode: nextMode, day_in_cycle: nextDay, last_tick: now, updated_at: now })
+      .eq('id', prev.id) as any)
+    if (error) {
+      console.warn('[STATE] Failed to update scheduler_state, continuing with last known values.', error.message)
+    } else {
+      console.log(`[STATE] Cycle day=${nextDay} mode=${nextMode} (persisted)`)    
+    }
+  } catch (e: any) {
+    console.warn('[STATE] Failed to update scheduler_state, continuing with last known values.', e?.message)
+  }
+  return { id: prev.id, mode: nextMode, day_in_cycle: nextDay }
 }
 
 function loadPlaylistIds(): string[] {
@@ -35,15 +99,18 @@ function loadPlaylistIds(): string[] {
 }
 
 export async function startScheduler() {
-  let mode = getCycleMode()
-  log('info', `Cron scheduler starting in mode=${mode}`)
+  const initState = await readOrInitSchedulerState()
+  console.log(`[STATE] Scheduler initialized: day=${initState.day_in_cycle}, mode=${initState.mode}`)
+  log('info', `Cron scheduler starting in mode=${initState.mode}`)
 
   // kick off immediately once on start
   ;(async () => {
     try {
+      // Re-read latest state before running the tick
+      let state = await readOrInitSchedulerState()
       const ids = loadPlaylistIds()
-      log('info', `[INIT] tick -> ${ids.length} playlists in mode=${mode}`)
-      if (mode === 'FETCH') {
+      log('info', `[INIT] tick -> ${ids.length} playlists in mode=${state.mode}`)
+      if (state.mode === 'FETCH') {
         if (ids.length < 5) {
           log('info', '[DISCOVERY] Starting global region discovery mode')
           const count = await fetchNewPlaylists()
@@ -54,6 +121,8 @@ export async function startScheduler() {
       } else {
         if (ids.length > 0) await refreshExistingPlaylists(ids)
       }
+      // On successful tick, bump and persist state
+      state = await persistNextState(state)
     } catch (e: any) {
       log('error', 'Initial tick failed', { error: e?.message })
     }
@@ -61,10 +130,12 @@ export async function startScheduler() {
 
   // primary cron job – runs every 3h
   cron.schedule('0 */3 * * *', async () => {
-    const ids = loadPlaylistIds()
-    log('info', `[CRON] tick -> ${ids.length} playlists in mode=${mode}`)
     try {
-      if (mode === 'FETCH') {
+      // Re-read latest state before running the tick
+      let state = await readOrInitSchedulerState()
+      const ids = loadPlaylistIds()
+      log('info', `[CRON] tick -> ${ids.length} playlists in mode=${state.mode}`)
+      if (state.mode === 'FETCH') {
         if (ids.length < 5) {
           log('info', '[DISCOVERY] Starting global region discovery mode')
           const count = await fetchNewPlaylists()
@@ -75,17 +146,10 @@ export async function startScheduler() {
       } else {
         if (ids.length > 0) await refreshExistingPlaylists(ids)
       }
+      // On successful tick, bump and persist state
+      state = await persistNextState(state)
     } catch (e: any) {
       log('error', 'Cron tick failed', { error: e?.message })
-    }
-  })
-
-  // cycle auto-switch – runs daily at midnight
-  cron.schedule('0 0 * * *', async () => {
-    const newMode = getCycleMode()
-    if (newMode !== mode) {
-      mode = newMode
-      log('info', `[CYCLE] mode switched to ${newMode}`)
     }
   })
 }
