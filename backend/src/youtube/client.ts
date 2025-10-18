@@ -5,6 +5,7 @@ import { log } from '../utils/logger.js'
 dotenv.config()
 
 let currentKeyIndex = 0
+let lastLoggedIndex = -1
 
 function loadApiKeys(): string[] {
   // Preferred: comma-separated list in YOUTUBE_API_KEYS
@@ -44,6 +45,13 @@ export function getRotatingKey(ban?: Set<string>): { key: string; index: number;
   return null
 }
 
+function logKeyIndex(index: number, total: number) {
+  if (index !== lastLoggedIndex) {
+    log('info', `[YouTube] Using key index ${index + 1}/${total}`)
+    lastLoggedIndex = index
+  }
+}
+
 export async function withKey<T>(fn: (yt: youtube_v3.Youtube) => Promise<T>, ban?: Set<string>): Promise<T> {
   const localBan = ban ?? new Set<string>()
   const keys = loadApiKeys()
@@ -53,7 +61,7 @@ export async function withKey<T>(fn: (yt: youtube_v3.Youtube) => Promise<T>, ban
   let pick = getRotatingKey(localBan)
   while (pick && attempts < keys.length) {
     const { key, index, total } = pick
-    log('info', `[YouTube] Using key index ${index + 1}/${total}`)
+    logKeyIndex(index, total)
     const yt = google.youtube({ version: 'v3', auth: key })
     try {
       return await fn(yt)
@@ -78,7 +86,7 @@ export function youtubeClient(): youtube_v3.Youtube {
   }
   const idx = currentKeyIndex % keys.length
   const key = keys[idx]
-  currentKeyIndex = (idx + 1) % keys.length
-  log('info', `[YouTube] Using key index ${idx + 1}/${keys.length}`)
+  // Do NOT advance currentKeyIndex here to avoid unintended rotation on client creation
+  logKeyIndex(idx, keys.length)
   return google.youtube({ version: 'v3', auth: key })
 }

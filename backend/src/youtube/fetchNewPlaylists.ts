@@ -86,7 +86,6 @@ async function runWithTimeout<T>(fn: () => Promise<T>, ms: number, region: strin
 type FetchOpts = { playlistIds?: string[], startRegion?: string }
 
 export async function fetchNewPlaylists(arg?: string[] | FetchOpts): Promise<{ totalPlaylists: number, totalTracks: number, totalRegionsProcessed: number, lastRegion: string, unitsUsed: number }> {
-  const yt = youtubeClient()
   const budget = Number(process.env.YT_BUDGET_PER_TICK || 3000)
   let unitsUsed = 0
   let regionsDone = 0
@@ -98,6 +97,7 @@ export async function fetchNewPlaylists(arg?: string[] | FetchOpts): Promise<{ t
 
   // Manual mode: process explicit playlist IDs
   if (opts.playlistIds && opts.playlistIds.length > 0) {
+    const yt = youtubeClient()
     const ids = opts.playlistIds
     log('info', `Manual fetch: ${ids.length} playlists`)
     let totalTracks = 0
