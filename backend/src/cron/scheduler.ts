@@ -113,10 +113,19 @@ export async function startScheduler() {
       if (state.mode === 'FETCH') {
         if (ids.length < 5) {
           log('info', '[DISCOVERY] Starting global region discovery mode')
-          const count = await fetchNewPlaylists()
+          let count = 0
+          try {
+            count = await fetchNewPlaylists()
+          } catch (e: any) {
+            log('warn', '[WARN] fetchNewPlaylists failed; continuing cycle', { error: e?.message })
+          }
           log('info', `[DISCOVERY] Completed with ${count} playlists`)
         } else {
-          await fetchNewPlaylists(ids)
+          try {
+            await fetchNewPlaylists(ids)
+          } catch (e: any) {
+            log('warn', '[WARN] fetchNewPlaylists failed; continuing cycle', { error: e?.message })
+          }
         }
       } else {
         if (ids.length > 0) await refreshExistingPlaylists(ids)
@@ -138,10 +147,19 @@ export async function startScheduler() {
       if (state.mode === 'FETCH') {
         if (ids.length < 5) {
           log('info', '[DISCOVERY] Starting global region discovery mode')
-          const count = await fetchNewPlaylists()
+          let count = 0
+          try {
+            count = await fetchNewPlaylists()
+          } catch (e: any) {
+            log('warn', '[WARN] fetchNewPlaylists failed; continuing cycle', { error: e?.message })
+          }
           log('info', `[DISCOVERY] Completed with ${count} playlists`)
         } else {
-          await fetchNewPlaylists(ids)
+          try {
+            await fetchNewPlaylists(ids)
+          } catch (e: any) {
+            log('warn', '[WARN] fetchNewPlaylists failed; continuing cycle', { error: e?.message })
+          }
         }
       } else {
         if (ids.length > 0) await refreshExistingPlaylists(ids)

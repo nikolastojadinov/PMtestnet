@@ -44,6 +44,22 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out
 }
 
+class TimeoutError extends Error { constructor(message: string) { super(message); this.name = 'TimeoutError' } }
+
+async function runWithTimeout<T>(fn: () => Promise<T>, ms: number, region: string): Promise<T> {
+  let timer: NodeJS.Timeout | null = null
+  try {
+    return await Promise.race([
+      fn(),
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new TimeoutError(`Region=${region} exceeded ${ms}ms`)), ms)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
 // Returns the number of playlists processed (backward compatible with scheduler logs).
 // Also prints TOTAL logs including both playlists and tracks across all regions.
 export async function fetchNewPlaylists(playlistIds?: string[]): Promise<number> {
@@ -145,113 +161,119 @@ export async function fetchNewPlaylists(playlistIds?: string[]): Promise<number>
     let regionPlaylists = 0
     let regionTracks = 0
     try {
-      // Discover playlists for region
-      const res = await withRetry(() => yt.search.list({
-        part: ['snippet'],
-        type: ['playlist'],
-        q: 'music',
-        order: 'viewCount',
-        regionCode: region,
-        relevanceLanguage: 'en',
-        maxResults: 50,
-      }), 'search.list')
-      const items = res.data.items || []
-      const discovered = items.map(i => i.id?.playlistId).filter(Boolean) as string[]
-      regionPlaylists = discovered.length
+      await runWithTimeout(async () => {
+        // Discover playlists for region
+        const res = await withRetry(() => yt.search.list({
+          part: ['snippet'],
+          type: ['playlist'],
+          q: 'music',
+          order: 'viewCount',
+          regionCode: region,
+          relevanceLanguage: 'en',
+          maxResults: 50,
+        }), 'search.list')
+        const items = res.data.items || []
+        const discovered = items.map(i => i.id?.playlistId).filter(Boolean) as string[]
+        regionPlaylists = discovered.length
 
-      // Fetch details for all discovered playlists (sequential with retry)
-      type PDetail = { pid: string, item: any }
-      const details: PDetail[] = []
-      for (const pid of discovered) {
-        try {
-          const p = await withRetry(() => yt.playlists.list({ id: [pid], part: ['snippet', 'contentDetails'], maxResults: 1 }), 'playlists.list')
-          const item = p.data.items?.[0]
-          if (item) details.push({ pid, item })
-        } catch (e: any) {
-          log('warn', `Playlist fetch failed: ${pid}`, { error: e?.message })
-        }
-      }
-
-      // Batch upsert all playlists for the region (<=50)
-      const playlistRows: any[] = details.map(({ item }) => {
-        const id = playlistUuid(item.id!)
-        if (rich) {
-          return {
-            id,
-            external_id: item.id!,
-            name: item.snippet?.title || 'Untitled',
-            description: item.snippet?.description ?? null,
-            cover_url: item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.default?.url || null,
-            region,
-            category: 'Music',
-            item_count: (item.contentDetails as any)?.itemCount ?? null,
-            channel_title: item.snippet?.channelTitle ?? null,
-            updated_at: new Date().toISOString(),
-          }
-        }
-        return { id, name: item.snippet?.title || 'Untitled' }
-      })
-      if (playlistRows.length > 0) {
-        for (const batch of chunk(playlistRows, 50)) {
-          try { await (supabase as any).from('playlists').upsert(batch) } catch (e: any) { log('warn', 'Supabase playlists upsert failed', { error: e?.message }) }
-        }
-      }
-
-      totalPlaylists += regionPlaylists
-
-      // For each playlist, fetch items and batch upsert
-      for (const { pid, item } of details) {
-        const playlistIdUuid = playlistUuid(item.id!)
-        let pageToken: string | undefined
-        let positionBase = 0
-        do {
+        // Fetch details for all discovered playlists (sequential with retry)
+        type PDetail = { pid: string, item: any }
+        const details: PDetail[] = []
+        for (const pid of discovered) {
           try {
-            const r = await withRetry(() => yt.playlistItems.list({
-              playlistId: pid,
-              part: ['snippet', 'contentDetails'],
-              maxResults: 50,
-              pageToken,
-            }), 'playlistItems.list')
-            const its = r.data.items || []
-            const trackRows: any[] = []
-            const linkRows: any[] = []
-            for (let i = 0; i < its.length; i++) {
-              try {
-                const it = its[i]
-                const vid = it.contentDetails?.videoId
-                if (!vid) continue
-                const title = it.snippet?.title || 'Untitled'
-                const channelTitle = it.snippet?.videoOwnerChannelTitle || it.snippet?.channelTitle || null
-                const thumb = it.snippet?.thumbnails?.medium?.url || it.snippet?.thumbnails?.default?.url || null
-                const tid = trackUuid(vid)
-                if (rich) {
-                  trackRows.push({ id: tid, external_id: vid, title, artist: channelTitle ?? null, published_at: it.contentDetails?.videoPublishedAt ?? null, thumbnail_url: thumb ?? null, updated_at: new Date().toISOString() })
-                } else {
-                  trackRows.push({ id: tid, title })
-                }
-                linkRows.push({ playlist_id: playlistIdUuid, track_id: tid, position: positionBase + i, updated_at: new Date().toISOString() })
-                regionTracks++
-              } catch (e: any) {
-                log('warn', `Track build failed for playlist=${pid}`, { error: e?.message })
-              }
-            }
-            for (const batch of chunk(trackRows, 50)) {
-              try { await (supabase as any).from('tracks').upsert(batch) } catch (e: any) { log('warn', 'Supabase tracks upsert failed', { error: e?.message }) }
-            }
-            for (const batch of chunk(linkRows, 50)) {
-              try { await (supabase as any).from('playlist_tracks').upsert(batch) } catch (e: any) { log('warn', 'Supabase playlist_tracks upsert failed', { error: e?.message }) }
-            }
-
-            positionBase += its.length
-            pageToken = r.data.nextPageToken || undefined
+            const p = await withRetry(() => yt.playlists.list({ id: [pid], part: ['snippet', 'contentDetails'], maxResults: 1 }), 'playlists.list')
+            const item = p.data.items?.[0]
+            if (item) details.push({ pid, item })
           } catch (e: any) {
-            log('warn', `playlistItems.list failed for playlist=${pid}`, { error: e?.message })
-            break
+            log('warn', `Playlist fetch failed: ${pid}`, { error: e?.message })
           }
-        } while (pageToken)
-      }
+        }
+
+        // Batch upsert all playlists for the region (<=50)
+        const playlistRows: any[] = details.map(({ item }) => {
+          const id = playlistUuid(item.id!)
+          if (rich) {
+            return {
+              id,
+              external_id: item.id!,
+              name: item.snippet?.title || 'Untitled',
+              description: item.snippet?.description ?? null,
+              cover_url: item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.default?.url || null,
+              region,
+              category: 'Music',
+              item_count: (item.contentDetails as any)?.itemCount ?? null,
+              channel_title: item.snippet?.channelTitle ?? null,
+              updated_at: new Date().toISOString(),
+            }
+          }
+          return { id, name: item.snippet?.title || 'Untitled' }
+        })
+        if (playlistRows.length > 0) {
+          for (const batch of chunk(playlistRows, 50)) {
+            try { await (supabase as any).from('playlists').upsert(batch) } catch (e: any) { log('warn', 'Supabase playlists upsert failed', { error: e?.message }) }
+          }
+        }
+
+        totalPlaylists += regionPlaylists
+
+        // For each playlist, fetch items and batch upsert
+        for (const { pid, item } of details) {
+          const playlistIdUuid = playlistUuid(item.id!)
+          let pageToken: string | undefined
+          let positionBase = 0
+          do {
+            try {
+              const r = await withRetry(() => yt.playlistItems.list({
+                playlistId: pid,
+                part: ['snippet', 'contentDetails'],
+                maxResults: 50,
+                pageToken,
+              }), 'playlistItems.list')
+              const its = r.data.items || []
+              const trackRows: any[] = []
+              const linkRows: any[] = []
+              for (let i = 0; i < its.length; i++) {
+                try {
+                  const it = its[i]
+                  const vid = it.contentDetails?.videoId
+                  if (!vid) continue
+                  const title = it.snippet?.title || 'Untitled'
+                  const channelTitle = it.snippet?.videoOwnerChannelTitle || it.snippet?.channelTitle || null
+                  const thumb = it.snippet?.thumbnails?.medium?.url || it.snippet?.thumbnails?.default?.url || null
+                  const tid = trackUuid(vid)
+                  if (rich) {
+                    trackRows.push({ id: tid, external_id: vid, title, artist: channelTitle ?? null, published_at: it.contentDetails?.videoPublishedAt ?? null, thumbnail_url: thumb ?? null, updated_at: new Date().toISOString() })
+                  } else {
+                    trackRows.push({ id: tid, title })
+                  }
+                  linkRows.push({ playlist_id: playlistIdUuid, track_id: tid, position: positionBase + i, updated_at: new Date().toISOString() })
+                  regionTracks++
+                } catch (e: any) {
+                  log('warn', `Track build failed for playlist=${pid}`, { error: e?.message })
+                }
+              }
+              for (const batch of chunk(trackRows, 50)) {
+                try { await (supabase as any).from('tracks').upsert(batch) } catch (e: any) { log('warn', 'Supabase tracks upsert failed', { error: e?.message }) }
+              }
+              for (const batch of chunk(linkRows, 50)) {
+                try { await (supabase as any).from('playlist_tracks').upsert(batch) } catch (e: any) { log('warn', 'Supabase playlist_tracks upsert failed', { error: e?.message }) }
+              }
+
+              positionBase += its.length
+              pageToken = r.data.nextPageToken || undefined
+            } catch (e: any) {
+              log('warn', `playlistItems.list failed for playlist=${pid}`, { error: e?.message })
+              break
+            }
+          } while (pageToken)
+        }
+      }, 120000, region)
     } catch (err: any) {
-      log('error', `[ERROR] Region=${region} failed: ${err?.message ?? 'unknown'}`)
+      if (err?.name === 'TimeoutError') {
+        log('warn', `[WARN] Region=${region} stalled >120s, skipping to next`)
+      } else {
+        log('error', `[ERROR] Region=${region} failed: ${err?.message ?? 'unknown'}`)
+      }
     }
 
     totalTracks += regionTracks
