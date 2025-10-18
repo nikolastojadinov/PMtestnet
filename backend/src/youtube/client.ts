@@ -6,6 +6,7 @@ dotenv.config()
 
 let currentKeyIndex = 0
 let lastLoggedIndex = -1
+const exhaustedKeys = new Set<string>()
 
 function loadApiKeys(): string[] {
   // Preferred: comma-separated list in YOUTUBE_API_KEYS
@@ -31,18 +32,22 @@ export class QuotaDepletedError extends Error {
   }
 }
 
-export function getRotatingKey(ban?: Set<string>): { key: string; index: number; total: number } | null {
+function pickCurrentKey(ban?: Set<string>): { key: string; index: number; total: number } | null {
   const keys = loadApiKeys()
   if (keys.length === 0) return null
   const total = keys.length
+  const combinedBan = new Set<string>([...exhaustedKeys, ...(ban ? Array.from(ban) : [])])
   for (let step = 0; step < total; step++) {
     const idx = (currentKeyIndex + step) % total
     const k = keys[idx]
-    if (ban && ban.has(k)) continue
-    currentKeyIndex = (idx + 1) % total
+    if (combinedBan.has(k)) continue
     return { key: k, index: idx, total }
   }
   return null
+}
+
+function advanceIndex(total: number) {
+  currentKeyIndex = (currentKeyIndex + 1) % total
 }
 
 function logKeyIndex(index: number, total: number) {
@@ -53,30 +58,35 @@ function logKeyIndex(index: number, total: number) {
 }
 
 export async function withKey<T>(fn: (yt: youtube_v3.Youtube) => Promise<T>, ban?: Set<string>): Promise<T> {
-  const localBan = ban ?? new Set<string>()
   const keys = loadApiKeys()
   if (keys.length === 0) throw new Error('No YouTube API keys configured (set YOUTUBE_API_KEYS or YOUTUBE_API_KEY_1..3)')
 
+  const localBan = ban ?? new Set<string>()
   let attempts = 0
-  let pick = getRotatingKey(localBan)
-  while (pick && attempts < keys.length) {
+
+  for (;;) {
+    const pick = pickCurrentKey(localBan)
+    if (!pick) throw new QuotaDepletedError()
     const { key, index, total } = pick
     logKeyIndex(index, total)
     const yt = google.youtube({ version: 'v3', auth: key })
     try {
-      return await fn(yt)
+      const result = await fn(yt)
+      // Do NOT advance index on success; keep using current key
+      return result
     } catch (err: any) {
       if (isQuotaExceeded(err)) {
+        exhaustedKeys.add(key)
         localBan.add(key)
         log('warn', `[QUOTA] Key exhausted, switching… (idx=${index + 1}/${total})`)
-        pick = getRotatingKey(localBan)
+        advanceIndex(total)
         attempts++
+        if (attempts >= keys.length) throw new QuotaDepletedError()
         continue
       }
       throw err
     }
   }
-  throw new QuotaDepletedError()
 }
 
 export function youtubeClient(): youtube_v3.Youtube {
