@@ -75,13 +75,7 @@
     "basePath": "",
     "sassOptions": {},
     "trailingSlash": false,
-    "i18n": {
-      "locales": [
-        "en",
-        "sr"
-      ],
-      "defaultLocale": "en"
-    },
+    "i18n": null,
     "productionBrowserSourceMaps": false,
     "excludeDefaultMomentLocales": true,
     "serverRuntimeConfig": {},

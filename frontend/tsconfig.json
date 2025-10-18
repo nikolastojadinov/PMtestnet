@@ -6,18 +6,24 @@
       "DOM",
       "DOM.Iterable"
     ],
-    "module": "ESNext",
     "jsx": "preserve",
+    "module": "ESNext",
     "moduleResolution": "Bundler",
     "resolveJsonModule": true,
-    "esModuleInterop": true,
-    "strict": true,
-    "skipLibCheck": true,
-    "baseUrl": ".",
-    "allowJs": true,
-    "noEmit": true,
-    "incremental": true,
     "isolatedModules": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": [
+        "./*"
+      ]
+    },
+    "allowJs": true,
+    "skipLibCheck": true,
+    "incremental": true,
     "plugins": [
       {
         "name": "next"
@@ -25,7 +31,9 @@
     ]
   },
   "include": [
-    "./**/*",
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
     ".next/types/**/*.ts"
   ],
   "exclude": [

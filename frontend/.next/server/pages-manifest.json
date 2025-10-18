@@ -2,9 +2,5 @@
   "/_app": "pages/_app.js",
   "/_error": "pages/_error.js",
   "/_document": "pages/_document.js",
-  "/en/404": "pages/404.html",
-  "/sr/404": "pages/404.html",
-  "/404": "pages/404.html",
-  "/en/500": "pages/en/500.html",
-  "/sr/500": "pages/sr/500.html"
+  "/404": "pages/404.html"
 }

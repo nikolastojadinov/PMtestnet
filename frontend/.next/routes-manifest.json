@@ -7,7 +7,6 @@
     {
       "source": "/:path+/",
       "destination": "/:path+",
-      "locale": false,
       "internal": true,
       "statusCode": 308,
       "regex": "^(?:/((?:[^/]+?)(?:/(?:[^/]+?))*))/$"
@@ -19,16 +18,7 @@
     "afterFiles": [],
     "fallback": []
   },
-  "dynamicRoutes": [
-    {
-      "page": "/playlists/[id]",
-      "regex": "^/playlists/([^/]+?)(?:/)?$",
-      "routeKeys": {
-        "nxtPid": "nxtPid"
-      },
-      "namedRegex": "^/playlists/(?<nxtPid>[^/]+?)(?:/)?$"
-    }
-  ],
+  "dynamicRoutes": [],
   "staticRoutes": [
     {
       "page": "/",
@@ -41,34 +31,9 @@
       "regex": "^/_not\\-found(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/_not\\-found(?:/)?$"
-    },
-    {
-      "page": "/liked",
-      "regex": "^/liked(?:/)?$",
-      "routeKeys": {},
-      "namedRegex": "^/liked(?:/)?$"
-    },
-    {
-      "page": "/profile",
-      "regex": "^/profile(?:/)?$",
-      "routeKeys": {},
-      "namedRegex": "^/profile(?:/)?$"
-    },
-    {
-      "page": "/search",
-      "regex": "^/search(?:/)?$",
-      "routeKeys": {},
-      "namedRegex": "^/search(?:/)?$"
     }
   ],
   "dataRoutes": [],
-  "i18n": {
-    "locales": [
-      "en",
-      "sr"
-    ],
-    "defaultLocale": "en"
-  },
   "rsc": {
     "header": "rsc",
     "varyHeader": "rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch",
