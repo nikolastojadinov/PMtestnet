@@ -8,15 +8,13 @@ let currentKeyIndex = 0
 
 function loadApiKeys(): string[] {
   // Preferred: comma-separated list in YOUTUBE_API_KEYS
-  const allKeys = (process.env.YOUTUBE_API_KEYS?.split(',').map(k => k.trim()) ?? []).filter(Boolean)
-  if (allKeys.length > 0) return allKeys
-  // Fallback: legacy vars
-  const out: string[] = []
-  for (const k of ['YOUTUBE_API_KEY_1', 'YOUTUBE_API_KEY_2', 'YOUTUBE_API_KEY_3']) {
-    const v = process.env[k]
-    if (v) out.push(v.trim())
-  }
-  return out.filter(Boolean)
+  const primary = (process.env.YOUTUBE_API_KEYS?.split(',').map(k => k.trim()) ?? []).filter(Boolean)
+  const keys = primary.length > 0 ? primary : (['YOUTUBE_API_KEY_1','YOUTUBE_API_KEY_2','YOUTUBE_API_KEY_3']
+    .map(k => (process.env as any)[k] as string | undefined)
+    .filter(Boolean)
+    .map(v => v!.trim()))
+  // Deduplicate and filter truthy
+  return Array.from(new Set(keys)).filter(Boolean)
 }
 
 function isQuotaExceeded(err: any): boolean {
@@ -55,6 +53,7 @@ export async function withKey<T>(fn: (yt: youtube_v3.Youtube) => Promise<T>, ban
   let pick = getRotatingKey(localBan)
   while (pick && attempts < keys.length) {
     const { key, index, total } = pick
+    log('info', `[YouTube] Using key index ${index + 1}/${total}`)
     const yt = google.youtube({ version: 'v3', auth: key })
     try {
       return await fn(yt)
