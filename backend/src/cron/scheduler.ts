@@ -1,12 +1,11 @@
 import cron from 'node-cron'
-import fs from 'node:fs'
-import path from 'node:path'
 import dotenv from 'dotenv'
 import http from 'node:http'
 import { log } from '../utils/logger.js'
 import { startHttpServer } from '../server/http.js'
 import { fetchNewPlaylists } from '../youtube/fetchPlaylists.js'
 import { refreshExistingPlaylists } from '../youtube/refreshPlaylists.js'
+import { loadPlaylistIds as loadIds } from '../config/playlistSource.js'
 
 dotenv.config()
 // Ensure Render sees an open port (keep-alive)
@@ -19,26 +18,15 @@ function getMode(): Mode {
   return envMode === 'REFRESH' ? 'REFRESH' : 'FETCH'
 }
 
-function loadPlaylistIds(): string[] {
-  const file = process.env.REGIONS_FILE || process.env.REGION_MATRIX_PATH || './regions.json'
-  const p = path.isAbsolute(file) ? file : path.join(process.cwd(), file)
-  try {
-    const raw = fs.readFileSync(p, 'utf-8')
-    const data = JSON.parse(raw)
-    // podržimo niz ID-eva ili objekat {playlists: []}
-    if (Array.isArray(data)) return data
-    if (Array.isArray(data.playlists)) return data.playlists
-    return []
-  } catch (e) {
-    log('warn', 'Failed to read regions file, continuing with empty list', { file, error: (e as Error).message })
-    return []
-  }
+async function loadPlaylistIds(): Promise<{ ids: string[]; source: string }> {
+  const { ids, source } = await loadIds()
+  return { ids, source }
 }
 
 async function runOnce() {
   const mode = getMode()
-  const ids = loadPlaylistIds()
-  log('info', `Initial run (${mode}) -> processing ${ids.length} playlists`)
+  const { ids, source } = await loadPlaylistIds()
+  log('info', `Initial run (${mode}) -> processing ${ids.length} playlists (source=${source})`)
 
   if (ids.length === 0) {
     log('warn', 'No playlists found in regions.json — skipping initial fetch')
@@ -63,8 +51,8 @@ export function startScheduler() {
 
   // 🔹 Zakaži ciklus svakih 3 sata
   cron.schedule('0 */3 * * *', async () => {
-    const ids = loadPlaylistIds()
-    log('info', `Cron tick -> processing ${ids.length} playlists in mode=${mode}`)
+    const { ids, source } = await loadPlaylistIds()
+    log('info', `Cron tick -> processing ${ids.length} playlists (source=${source}) in mode=${mode}`)
     if (ids.length === 0) return
     if (mode === 'FETCH') await fetchNewPlaylists(ids)
     else await refreshExistingPlaylists(ids)
@@ -72,8 +60,8 @@ export function startScheduler() {
 
   // 🔹 Mesečni full refresh (~30 dana)
   cron.schedule('0 0 */30 * *', async () => {
-    const ids = loadPlaylistIds()
-    log('info', `Monthly full refresh for ${ids.length} playlists`)
+    const { ids, source } = await loadPlaylistIds()
+    log('info', `Monthly full refresh for ${ids.length} playlists (source=${source})`)
     if (ids.length === 0) return
     await refreshExistingPlaylists(ids)
   })

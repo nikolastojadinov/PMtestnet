@@ -8,8 +8,13 @@ function readApiKeys(): string[] {
     const keys: string[] = []
     const raw = process.env.YOUTUBE_API_KEYS
     if (raw) {
-      const arr = JSON.parse(raw)
-      if (Array.isArray(arr)) keys.push(...arr.filter(Boolean))
+      try {
+        const arr = JSON.parse(raw)
+        if (Array.isArray(arr)) keys.push(...arr.filter(Boolean))
+      } catch {
+        // Fallback: comma/whitespace-separated
+        keys.push(...raw.split(/[\s,]+/).map(s => s.trim()).filter(Boolean))
+      }
     }
     for (const k of ['YOUTUBE_API_KEY_1','YOUTUBE_API_KEY_2','YOUTUBE_API_KEY_3']) {
       const v = process.env[k]
