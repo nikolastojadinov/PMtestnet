@@ -13,16 +13,20 @@ export async function fetchNewPlaylists(playlistIds?: string[]): Promise<number>
     log('info', 'No playlist IDs provided; discovering region playlists...')
     for (const region of DEFAULT_REGIONS) {
       try {
-        const res = await yt.search.list({
-          part: ['snippet'],
-          type: ['playlist'],
-          regionCode: region,
-          maxResults: 50,
-          videoCategoryId: '10',
-        })
-        const items = res.data.items || []
-  const discovered = items.map(i => i.id?.playlistId).filter(Boolean) as string[]
-  log('info', `[FETCH] region=${region}, discovered=${discovered.length}`)
+          // Note: search.list does not support videoCategoryId for type=playlist.
+          // We use a broad query and order by viewCount, scoped by region.
+          const res = await yt.search.list({
+            part: ['snippet'],
+            type: ['playlist'],
+            q: 'music',
+            order: 'viewCount',
+            regionCode: region,
+            relevanceLanguage: 'en',
+            maxResults: 50,
+          })
+          const items = res.data.items || []
+          const discovered = items.map(i => i.id?.playlistId).filter(Boolean) as string[]
+          log('info', `[FETCH] region=${region} total=${discovered.length}`)
   totalProcessed += discovered.length
 
   for (const pid of discovered) {
