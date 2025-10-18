@@ -3,10 +3,13 @@ import dotenv from 'dotenv'
 import fs from 'node:fs'
 import path from 'node:path'
 import { log } from '../utils/logger.js'
+import { startHttpServer } from '../server/http.js'
 import { fetchNewPlaylists } from '../youtube/fetchNewPlaylists.js'
 import { refreshExistingPlaylists } from '../youtube/refreshExistingPlaylists.js'
 
 dotenv.config()
+// ensure Render detects open port
+try { startHttpServer() } catch {}
 
 function getCycleMode(): 'FETCH' | 'REFRESH' {
   const start = process.env.CYCLE_START_DATE ? new Date(process.env.CYCLE_START_DATE) : new Date('2025-10-17T00:00:00Z')
@@ -34,6 +37,19 @@ function loadPlaylistIds(): string[] {
 export async function startScheduler() {
   let mode = getCycleMode()
   log('info', `Cron scheduler starting in mode=${mode}`)
+
+  // kick off immediately once on start
+  ;(async () => {
+    try {
+      const ids = loadPlaylistIds()
+      log('info', `[INIT] tick -> ${ids.length} playlists in mode=${mode}`)
+      if (ids.length === 0) return
+      if (mode === 'FETCH') await fetchNewPlaylists(ids)
+      else await refreshExistingPlaylists(ids)
+    } catch (e: any) {
+      log('error', 'Initial tick failed', { error: e?.message })
+    }
+  })()
 
   // primary cron job – runs every 3h
   cron.schedule('0 */3 * * *', async () => {
