@@ -14,84 +14,100 @@ dotenv.config()
 // ensure Render detects open port
 try { startHttpServer() } catch {}
 
-// 🕒 Watchdog timeout: 15 minutes (was 5)
-const WATCHDOG_TIMEOUT_MS = 900_000
+// region rotation order
+const REGION_SEQUENCE = ['IN', 'VN', 'PH', 'KR', 'US', 'JP', 'CN', 'RU']
 
+// helper to move to next region
+function nextRegion(current: string): string {
+  const idx = REGION_SEQUENCE.indexOf(current)
+  return idx >= 0 && idx < REGION_SEQUENCE.length - 1
+    ? REGION_SEQUENCE[idx + 1]
+    : REGION_SEQUENCE[0]
+}
+
+// watchdog timeout (15min)
 async function runWithGlobalTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
     promise,
     new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`[WATCHDOG] fetchNewPlaylists exceeded ${ms/1000}s, aborting`)), ms)
+      setTimeout(() => reject(new Error(`[WATCHDOG] runDiscoveryTick exceeded ${ms / 1000}s, aborting`)), ms)
     ),
   ])
 }
 
 type Mode = 'FETCH' | 'REFRESH'
-
-type SchedulerState = {
-  id: number | null
-  mode: Mode
-  day_in_cycle: number
-}
+type SchedulerState = { id: number | null; mode: Mode; day_in_cycle: number }
 
 const DEFAULT_STATE: SchedulerState = { id: null, mode: 'FETCH', day_in_cycle: 1 }
 
+// read or create scheduler_state
 async function readOrInitSchedulerState(): Promise<SchedulerState> {
   if (!supabase) {
     console.warn('[STATE] Supabase unavailable, using default in-memory state.')
     return { ...DEFAULT_STATE }
   }
-
   try {
-    const { data, error } = await (supabase.from('scheduler_state')
-      .select('*')
-      .limit(1)
-      .single() as any)
-
-    if (error) {
-      console.warn('[STATE] Failed to fetch scheduler_state; will try to insert default. Reason:', error.message)
+    const { data, error } = await (supabase.from('scheduler_state').select('*').limit(1).single() as any)
+    if (error || !data) {
+      console.warn('[STATE] No scheduler_state found, inserting default.')
       const now = new Date().toISOString()
-      const { data: inserted, error: insErr } = await (supabase.from('scheduler_state')
+      const { data: inserted } = await (supabase.from('scheduler_state')
         .insert({ mode: 'FETCH', day_in_cycle: 1, last_tick: now, updated_at: now })
         .select()
         .single() as any)
-      if (insErr) {
-        console.warn('[STATE] Supabase insert failed, using in-memory defaults.', insErr.message)
-        return { ...DEFAULT_STATE }
-      }
-      return { id: inserted.id ?? null, mode: inserted.mode as Mode, day_in_cycle: inserted.day_in_cycle as number }
+      return { id: inserted?.id ?? null, mode: 'FETCH', day_in_cycle: 1 }
     }
-
-    return { id: (data as any).id ?? null, mode: (data as any).mode as Mode, day_in_cycle: (data as any).day_in_cycle as number }
-  } catch (e: any) {
-    console.warn('[STATE] Supabase unavailable, using default in-memory state.', e?.message)
+    return { id: data.id ?? null, mode: data.mode as Mode, day_in_cycle: data.day_in_cycle as number }
+  } catch {
+    console.warn('[STATE] Scheduler state unavailable, using defaults.')
     return { ...DEFAULT_STATE }
   }
 }
 
+// persist next day/mode
 async function persistNextState(prev: SchedulerState): Promise<SchedulerState> {
   const nextDay = prev.day_in_cycle >= 31 ? 1 : prev.day_in_cycle + 1
-  const nextMode: Mode = nextDay === 31 ? 'REFRESH' as Mode : 'FETCH'
-
-  if (!supabase || !prev.id) {
-    console.warn('[STATE] Failed to update scheduler_state, continuing with last known values.')
-    return { id: prev.id, mode: nextMode, day_in_cycle: nextDay }
-  }
-
+  const nextMode: Mode = nextDay === 31 ? 'REFRESH' : 'FETCH'
+  if (!supabase || !prev.id) return { id: prev.id, mode: nextMode, day_in_cycle: nextDay }
   try {
     const now = new Date().toISOString()
-    const { error } = await (supabase.from('scheduler_state')
+    await (supabase.from('scheduler_state')
       .update({ mode: nextMode, day_in_cycle: nextDay, last_tick: now, updated_at: now })
       .eq('id', prev.id) as any)
-    if (error) {
-      console.warn('[STATE] Failed to update scheduler_state, continuing with last known values.', error.message)
-    } else {
-      console.log(`[STATE] Cycle day=${nextDay} mode=${nextMode} (persisted)`)
-    }
+    console.log(`[STATE] Cycle day=${nextDay} mode=${nextMode} (persisted)`)
   } catch (e: any) {
-    console.warn('[STATE] Failed to update scheduler_state, continuing with last known values.', e?.message)
+    console.warn('[STATE] Failed to update scheduler_state', e?.message)
   }
   return { id: prev.id, mode: nextMode, day_in_cycle: nextDay }
+}
+
+// read current region or set default
+async function readOrInitDiscoveryState(): Promise<{ region: string }> {
+  if (!supabase) return { region: 'IN' }
+  try {
+    const { data, error } = await (supabase.from('discovery_state').select('last_region').limit(1).single() as any)
+    if (error || !data) {
+      await (supabase.from('discovery_state')
+        .insert({ last_region: 'IN', updated_at: new Date().toISOString() }) as any)
+      return { region: 'IN' }
+    }
+    return { region: data.last_region || 'IN' }
+  } catch {
+    return { region: 'IN' }
+  }
+}
+
+// save next region to discovery_state
+async function persistNextRegion(current: string) {
+  const next = nextRegion(current)
+  try {
+    await (supabase.from('discovery_state')
+      .update({ last_region: next, updated_at: new Date().toISOString() })
+      .neq('last_region', next) as any)
+    log('info', `[ROTATION] Next region scheduled = ${next}`)
+  } catch (e: any) {
+    log('warn', '[ROTATION] Failed to persist next region', { error: e?.message })
+  }
 }
 
 function loadPlaylistIds(): string[] {
@@ -104,7 +120,7 @@ function loadPlaylistIds(): string[] {
     if (Array.isArray(data.playlists)) return data.playlists
     return []
   } catch (e) {
-    log('warn', 'Failed to read regions file, continuing with empty list', { file, error: (e as Error).message })
+    log('warn', 'Failed to read regions file', { file, error: (e as Error).message })
     return []
   }
 }
@@ -114,113 +130,65 @@ export async function startScheduler() {
   console.log(`[STATE] Scheduler initialized: day=${initState.day_in_cycle}, mode=${initState.mode}`)
   log('info', `Cron scheduler starting in mode=${initState.mode}`)
 
-  // Create discovery tables if missing (idempotent)
-  try {
-    if (supabase) {
-      await (supabase.rpc as any)?.('noop')
-      await (supabase as any).rpc?.('sql', { q: `
-        CREATE TABLE IF NOT EXISTS discovered_playlists (
-          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-          playlist_id text UNIQUE NOT NULL,
-          region text NOT NULL,
-          discovered_at timestamptz NOT NULL DEFAULT now()
-        );
-        CREATE TABLE IF NOT EXISTS discovery_state (
-          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-          last_region text NOT NULL DEFAULT 'IN',
-          day_in_cycle int NOT NULL DEFAULT 1,
-          tick_date date NOT NULL DEFAULT CURRENT_DATE,
-          units_used_today int NOT NULL DEFAULT 0,
-          updated_at timestamptz NOT NULL DEFAULT now()
-        );
-      ` })
-    }
-  } catch {}
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+  log('info', `[TICK START] UTC=${new Date().toISOString()}, Local(${tz})=${new Date().toLocaleString()}`)
 
-  // run tick immediately once
+  // immediate tick on startup
   ;(async () => {
-    const tickStart = Date.now()
-    const utc = new Date().toISOString()
-    const local = new Date().toLocaleString('hu-HU', { timeZone: 'Europe/Budapest' })
-    log('info', `[TICK START] UTC=${utc}, Local(Europe/Budapest)=${local}`)
-
     try {
       let state = await readOrInitSchedulerState()
       const ids = loadPlaylistIds()
+      const { region } = await readOrInitDiscoveryState()
       log('info', `[INIT] tick -> ${ids.length} playlists in mode=${state.mode}`)
+      log('info', `[DISCOVERY] Starting global region discovery mode (start=${region})`)
       if (state.mode === 'FETCH') {
-        if (ids.length < 5) {
-          log('info', '[DISCOVERY] Starting global region discovery mode')
-          let count = 0
-          try {
-            const result = await runWithGlobalTimeout(runDiscoveryTick(), WATCHDOG_TIMEOUT_MS)
-            count = (result as any)?.totalPlaylists ?? (typeof result === 'number' ? result : 0)
-          } catch (e: any) {
-            log('warn', '[WARN] fetchNewPlaylists failed; continuing cycle', { error: e?.message })
-          }
-          log('info', `[DISCOVERY] Completed with ${count} playlists`)
-        } else {
-          try {
-            await runWithGlobalTimeout(runDiscoveryTick({ playlistIds: ids }), WATCHDOG_TIMEOUT_MS)
-          } catch (e: any) {
-            log('warn', '[WARN] fetchNewPlaylists failed; continuing cycle', { error: e?.message })
-          }
+        try {
+          await runWithGlobalTimeout(runDiscoveryTick({ startRegion: region }), 900000)
+          await persistNextRegion(region)
+        } catch (e: any) {
+          if (e instanceof QuotaDepletedError)
+            log('warn', '[WARN] runDiscoveryTick stopped: QuotaDepletedError')
+          else
+            log('warn', '[WARN] runDiscoveryTick error', { error: e?.message })
         }
-      } else {
-        if (ids.length > 0) await refreshExistingPlaylists(ids)
+      } else if (ids.length > 0) {
+        await refreshExistingPlaylists(ids)
       }
       state = await persistNextState(state)
     } catch (e: any) {
       log('error', 'Initial tick failed', { error: e?.message })
-    } finally {
-      const elapsed = ((Date.now() - tickStart) / 1000).toFixed(1)
-      log('info', `[TICK END] Duration=${elapsed}s`)
     }
   })()
 
-  // run every 3h
+  // cron job every 3 hours
   cron.schedule('0 */3 * * *', async () => {
-    const tickStart = Date.now()
-    const utc = new Date().toISOString()
-    const local = new Date().toLocaleString('hu-HU', { timeZone: 'Europe/Budapest' })
-    log('info', `[CRON START] UTC=${utc}, Local(Europe/Budapest)=${local}`)
-
     try {
       let state = await readOrInitSchedulerState()
       const ids = loadPlaylistIds()
+      const { region } = await readOrInitDiscoveryState()
       log('info', `[CRON] tick -> ${ids.length} playlists in mode=${state.mode}`)
+      log('info', `[DISCOVERY] Starting global region discovery mode (start=${region})`)
       if (state.mode === 'FETCH') {
-        if (ids.length < 5) {
-          log('info', '[DISCOVERY] Starting global region discovery mode')
-          let count = 0
-          try {
-            const result = await runWithGlobalTimeout(runDiscoveryTick(), WATCHDOG_TIMEOUT_MS)
-            count = (result as any)?.totalPlaylists ?? (typeof result === 'number' ? result : 0)
-          } catch (e: any) {
-            log('warn', '[WARN] fetchNewPlaylists failed; continuing cycle', { error: e?.message })
-          }
-          log('info', `[DISCOVERY] Completed with ${count} playlists`)
-        } else {
-          try {
-            await runWithGlobalTimeout(runDiscoveryTick({ playlistIds: ids }), WATCHDOG_TIMEOUT_MS)
-          } catch (e: any) {
-            log('warn', '[WARN] fetchNewPlaylists failed; continuing cycle', { error: e?.message })
-          }
+        try {
+          await runWithGlobalTimeout(runDiscoveryTick({ startRegion: region }), 900000)
+          await persistNextRegion(region)
+        } catch (e: any) {
+          if (e instanceof QuotaDepletedError)
+            log('warn', '[WARN] runDiscoveryTick stopped: QuotaDepletedError')
+          else
+            log('warn', '[WARN] runDiscoveryTick error', { error: e?.message })
         }
-      } else {
-        if (ids.length > 0) await refreshExistingPlaylists(ids)
+      } else if (ids.length > 0) {
+        await refreshExistingPlaylists(ids)
       }
       state = await persistNextState(state)
     } catch (e: any) {
       log('error', 'Cron tick failed', { error: e?.message })
-    } finally {
-      const elapsed = ((Date.now() - tickStart) / 1000).toFixed(1)
-      log('info', `[CRON END] Duration=${elapsed}s`)
     }
   })
 }
 
-// start immediately
+// start immediately when executed directly
 try {
   startScheduler()
 } catch {}
