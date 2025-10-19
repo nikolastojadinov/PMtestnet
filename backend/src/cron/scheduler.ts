@@ -5,7 +5,6 @@ import path from 'node:path'
 import { log } from '../utils/logger.js'
 import { startHttpServer } from '../server/http.js'
 import { runDiscoveryTick } from '../youtube/fetcher.js'
-import { QuotaDepletedError } from '../youtube/client.js'
 import { refreshExistingPlaylists } from '../youtube/refreshExistingPlaylists.js'
 import { supabase } from '../supabase/client.js'
 
@@ -125,13 +124,23 @@ export async function startScheduler() {
   console.log(`[STATE] Scheduler initialized: day=${initState.day_in_cycle}, mode=${initState.mode}, last_region=${initState.last_region}`)
   log('info', `Cron scheduler starting in mode=${initState.mode}`)
 
-  // immediate first run
+  // 🟢 odmah pokreni pri startu (npr. posle redeploy-a)
   await executeTick(initState)
 
-  // repeat every 3h
-  cron.schedule('0 */3 * * *', async () => {
+  // 🕘 dnevni jutarnji tick — 09:05 po Mađarskoj (07:05 UTC)
+  cron.schedule('5 7 * * *', async () => {
+    log('info', '[CRON] ☀️ Morning tick starting (09:05 CET)...')
     const state = await readOrInitSchedulerState()
     await executeTick(state)
+    log('info', '[CRON] ☀️ Morning tick completed.')
+  })
+
+  // 🌙 večernji tick — 21:05 po Mađarskoj (19:05 UTC)
+  cron.schedule('5 19 * * *', async () => {
+    log('info', '[CRON] 🌙 Evening tick starting (21:05 CET)...')
+    const state = await readOrInitSchedulerState()
+    await executeTick(state)
+    log('info', '[CRON] 🌙 Evening tick completed.')
   })
 }
 
