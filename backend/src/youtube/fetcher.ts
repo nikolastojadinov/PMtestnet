@@ -1,3 +1,4 @@
+// src/youtube/fetcher.ts
 import { log } from '../utils/logger.js'
 import { supabase } from '../supabase/client.js'
 import { discoverPlaylistsForRegion } from './discovery.js'
@@ -7,7 +8,9 @@ import { playlistUuid, trackUuid } from '../utils/id.js'
 const REGIONS = ['IN', 'VN', 'PH', 'KR', 'US', 'JP', 'CN', 'RU'] as const
 function sleep(ms: number) { return new Promise(res => setTimeout(res, ms)) }
 
-class TimeoutError extends Error { constructor(msg: string){ super(msg); this.name = 'TimeoutError' } }
+class TimeoutError extends Error {
+  constructor(msg: string) { super(msg); this.name = 'TimeoutError' }
+}
 
 function runWithTimeout<T>(fn: () => Promise<T>, ms: number): Promise<T> {
   let timer: NodeJS.Timeout | null = null
@@ -43,7 +46,13 @@ async function safeUpsertQueue(
   }
 }
 
-export type TickResult = { totalPlaylists: number, totalTracks: number, totalRegionsProcessed: number, lastRegion: string, unitsUsed: number }
+export type TickResult = {
+  totalPlaylists: number
+  totalTracks: number
+  totalRegionsProcessed: number
+  lastRegion: string
+  unitsUsed: number
+}
 
 export async function runDiscoveryTick(arg?: { playlistIds?: string[], startRegion?: string }): Promise<TickResult> {
   const budgetMax = Number(process.env.YT_BUDGET_PER_TICK || 3000)
@@ -51,7 +60,11 @@ export async function runDiscoveryTick(arg?: { playlistIds?: string[], startRegi
   const canSpend = (cost: number) => unitsUsed + cost <= budgetMax
   const spend = (cost: number) => { unitsUsed += cost }
 
-  const startRegion = arg?.startRegion && (REGIONS as readonly string[]).includes(arg.startRegion) ? arg.startRegion as typeof REGIONS[number] : REGIONS[0]
+  const startRegion =
+    arg?.startRegion && (REGIONS as readonly string[]).includes(arg.startRegion)
+      ? (arg.startRegion as typeof REGIONS[number])
+      : REGIONS[0]
+
   const startIdx = REGIONS.indexOf(startRegion)
   const order: typeof REGIONS = [...REGIONS.slice(startIdx), ...REGIONS.slice(0, startIdx)] as any
 
@@ -67,7 +80,11 @@ export async function runDiscoveryTick(arg?: { playlistIds?: string[], startRegi
     log('info', `[FETCH] Starting region=${region}`)
     const beforeUnits = unitsUsed
     try {
-      const discovery = await runWithTimeout(() => discoverPlaylistsForRegion(region, canSpend, spend, 7), 120000)
+      // discover candidate playlist IDs for the region
+      const discovery = await runWithTimeout(
+        () => discoverPlaylistsForRegion(region, canSpend, spend, 7),
+        120_000
+      )
       const ids = discovery.playlistIds
       if (ids.length === 0) {
         log('info', `[SUMMARY] region=${region} playlists=0 tracks=0 used_units=${unitsUsed - beforeUnits}`)
@@ -86,7 +103,10 @@ export async function runDiscoveryTick(arg?: { playlistIds?: string[], startRegi
       for (const batch of detailBatches) {
         if (!canSpend(1)) break
         try {
-          const res: any = await withKey((yt) => yt.playlists.list({ id: batch, part: ['snippet','contentDetails'] }), { unitCost: 1, label: `playlists.list:${region}` })
+          const res: any = await withKey(
+            (yt) => yt.playlists.list({ id: batch, part: ['snippet', 'contentDetails'] }),
+            { unitCost: 1, label: `playlists.list:${region}` }
+          )
           spend(1)
           details.push(...(res.data.items || []))
         } catch (e: any) {
@@ -97,17 +117,21 @@ export async function runDiscoveryTick(arg?: { playlistIds?: string[], startRegi
       // --- UPSERT PLAYLISTS ---
       const playlistRows: any[] = details.map((item: any) => {
         const id = playlistUuid(item.id!)
-        if (rich) return {
-          id,
-          external_id: item.id!,
-          name: item.snippet?.title || 'Untitled',
-          description: item.snippet?.description ?? null,
-          cover_url: item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.default?.url || null,
-          region, // ✅ ključno
-          category: 'Music',
-          item_count: (item.contentDetails as any)?.itemCount ?? null,
-          channel_title: item.snippet?.channelTitle ?? null,
-          created_at: new Date().toISOString(),
+        if (rich) {
+          return {
+            id,
+            external_id: item.id!,
+            name: item.snippet?.title || 'Untitled',
+            description: item.snippet?.description ?? null,
+            cover_url: item.snippet?.thumbnails?.high?.url
+              || item.snippet?.thumbnails?.default?.url
+              || null,
+            region, // važno zbog region izvještaja
+            category: 'Music',
+            item_count: (item.contentDetails as any)?.itemCount ?? null,
+            channel_title: item.snippet?.channelTitle ?? null,
+            created_at: new Date().toISOString(),
+          }
         }
         return { id, name: item.snippet?.title || 'Untitled', region }
       })
@@ -123,26 +147,58 @@ export async function runDiscoveryTick(arg?: { playlistIds?: string[], startRegi
         do {
           if (!canSpend(1)) break
           try {
-            const r: any = await withKey((yt) => yt.playlistItems.list({ playlistId: pid, part: ['snippet','contentDetails'], maxResults: 50, pageToken }), { unitCost: 1, label: `playlistItems.list:${region}` })
+            const r: any = await withKey(
+              (yt) => yt.playlistItems.list({
+                playlistId: pid,
+                part: ['snippet', 'contentDetails'],
+                maxResults: 50,
+                pageToken
+              }),
+              { unitCost: 1, label: `playlistItems.list:${region}` }
+            )
             spend(1)
+
             const its = r.data.items || []
             const trackRows: any[] = []
             const linkRows: any[] = []
+
             for (let i = 0; i < its.length; i++) {
               const it = its[i]
               const vid = it.contentDetails?.videoId
               if (!vid) continue
+
               const title = it.snippet?.title || 'Untitled'
               const channelTitle = it.snippet?.videoOwnerChannelTitle || it.snippet?.channelTitle || null
               const thumb = it.snippet?.thumbnails?.medium?.url || it.snippet?.thumbnails?.default?.url || null
               const tid = trackUuid(vid)
-              if (rich) trackRows.push({ id: tid, external_id: vid, title, artist: channelTitle ?? null, thumbnail_url: thumb ?? null, created_at: new Date().toISOString() })
-              else trackRows.push({ id: tid, title })
-              linkRows.push({ playlist_id: pidUuid, track_id: tid, position: positionBase + i, created_at: new Date().toISOString() })
+
+              if (rich) {
+                trackRows.push({
+                  id: tid,
+                  external_id: vid,
+                  title,
+                  artist: channelTitle ?? null,
+                  thumbnail_url: thumb ?? null,
+                  created_at: new Date().toISOString(),
+                })
+              } else {
+                trackRows.push({ id: tid, title })
+              }
+
+              // ❗ Fix: nema 'updated_at' u playlist_tracks – samo obavezna polja (i po želji created_at)
+              linkRows.push({
+                playlist_id: pidUuid,
+                track_id: tid,
+                position: positionBase + i,
+                created_at: new Date().toISOString(),
+              })
+
               totalTracks++
             }
+
             await safeUpsertQueue('tracks', trackRows)
             await safeUpsertQueue('playlist_tracks', linkRows)
+
             positionBase += its.length
             pageToken = r.data.nextPageToken || undefined
           } catch (e: any) {
@@ -154,7 +210,7 @@ export async function runDiscoveryTick(arg?: { playlistIds?: string[], startRegi
 
       const used = unitsUsed - beforeUnits
       log('info', `[SUMMARY] region=${region} playlists=${ids.length} tracks=${totalTracks} used_units=${used}`)
-      log('info', `[NEXT] Completed region=${region} → Next=${REGIONS[(REGIONS.indexOf(region)+1)%REGIONS.length]}`)
+      log('info', `[NEXT] Completed region=${region} → Next=${REGIONS[(REGIONS.indexOf(region) + 1) % REGIONS.length]}`)
       regionsDone++
       lastRegion = region
 
@@ -162,16 +218,19 @@ export async function runDiscoveryTick(arg?: { playlistIds?: string[], startRegi
         log('warn', `[BUDGET] Limit reached (${unitsUsed}/${budgetMax}), stopping discovery cycle.`)
         break
       }
-
     } catch (e: any) {
       if (e instanceof QuotaDepletedError) {
         log('warn', `[QUOTA] All keys exhausted; pausing 1h for refresh...`)
-        await sleep(3600000) // ⏸️ 1h pauza
+        await sleep(3_600_000) // 1h pauza dok se kvote resetuju/cooldown
+      } else if (e?.name === 'TimeoutError') {
+        log('warn', `[WARN] Region=${region} discovery timeout, skipping`)
       } else {
         log('error', `[ERROR] Region=${region} failed`, { error: e?.message })
       }
     }
+
     await sleep(1000)
+    if (unitsUsed >= budgetMax) break
   }
 
   log('info', `[TOTAL] Discovery summary: regions_done=${regionsDone}, playlists=${totalPlaylists}, tracks=${totalTracks}, units=${unitsUsed}`)
