@@ -10,8 +10,13 @@ import { refreshExistingPlaylists } from '../youtube/refreshExistingPlaylists.js
 import { supabase } from '../supabase/client.js'
 
 dotenv.config()
+
 // ensure Render detects open port
 try { startHttpServer() } catch {}
+
+// 🕒 Watchdog timeout: 15 minutes (was 5)
+const WATCHDOG_TIMEOUT_MS = 900_000
+
 async function runWithGlobalTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
     promise,
@@ -32,7 +37,6 @@ type SchedulerState = {
 const DEFAULT_STATE: SchedulerState = { id: null, mode: 'FETCH', day_in_cycle: 1 }
 
 async function readOrInitSchedulerState(): Promise<SchedulerState> {
-  // If Supabase client is unavailable, fall back to defaults
   if (!supabase) {
     console.warn('[STATE] Supabase unavailable, using default in-memory state.')
     return { ...DEFAULT_STATE }
@@ -45,7 +49,6 @@ async function readOrInitSchedulerState(): Promise<SchedulerState> {
       .single() as any)
 
     if (error) {
-      // Table missing or no rows yet
       console.warn('[STATE] Failed to fetch scheduler_state; will try to insert default. Reason:', error.message)
       const now = new Date().toISOString()
       const { data: inserted, error: insErr } = await (supabase.from('scheduler_state')
@@ -59,7 +62,6 @@ async function readOrInitSchedulerState(): Promise<SchedulerState> {
       return { id: inserted.id ?? null, mode: inserted.mode as Mode, day_in_cycle: inserted.day_in_cycle as number }
     }
 
-    // Data found
     return { id: (data as any).id ?? null, mode: (data as any).mode as Mode, day_in_cycle: (data as any).day_in_cycle as number }
   } catch (e: any) {
     console.warn('[STATE] Supabase unavailable, using default in-memory state.', e?.message)
@@ -84,7 +86,7 @@ async function persistNextState(prev: SchedulerState): Promise<SchedulerState> {
     if (error) {
       console.warn('[STATE] Failed to update scheduler_state, continuing with last known values.', error.message)
     } else {
-      console.log(`[STATE] Cycle day=${nextDay} mode=${nextMode} (persisted)`)    
+      console.log(`[STATE] Cycle day=${nextDay} mode=${nextMode} (persisted)`)
     }
   } catch (e: any) {
     console.warn('[STATE] Failed to update scheduler_state, continuing with last known values.', e?.message)
@@ -135,10 +137,14 @@ export async function startScheduler() {
     }
   } catch {}
 
-  // kick off immediately once on start
+  // run tick immediately once
   ;(async () => {
+    const tickStart = Date.now()
+    const utc = new Date().toISOString()
+    const local = new Date().toLocaleString('hu-HU', { timeZone: 'Europe/Budapest' })
+    log('info', `[TICK START] UTC=${utc}, Local(Europe/Budapest)=${local}`)
+
     try {
-      // Re-read latest state before running the tick
       let state = await readOrInitSchedulerState()
       const ids = loadPlaylistIds()
       log('info', `[INIT] tick -> ${ids.length} playlists in mode=${state.mode}`)
@@ -147,19 +153,15 @@ export async function startScheduler() {
           log('info', '[DISCOVERY] Starting global region discovery mode')
           let count = 0
           try {
-            const result = await runWithGlobalTimeout(runDiscoveryTick(), 300000)
-            count = (result as any)?.totalPlaylists ?? (typeof result === 'number' ? (result as any) : 0)
+            const result = await runWithGlobalTimeout(runDiscoveryTick(), WATCHDOG_TIMEOUT_MS)
+            count = (result as any)?.totalPlaylists ?? (typeof result === 'number' ? result : 0)
           } catch (e: any) {
-            if (e instanceof QuotaDepletedError) {
-              log('warn', '[WARN] fetchNewPlaylists failed; continuing cycle', { error: 'QuotaDepletedError' })
-            } else {
-              log('warn', '[WARN] fetchNewPlaylists failed; continuing cycle', { error: e?.message })
-            }
+            log('warn', '[WARN] fetchNewPlaylists failed; continuing cycle', { error: e?.message })
           }
           log('info', `[DISCOVERY] Completed with ${count} playlists`)
         } else {
           try {
-            await runWithGlobalTimeout(runDiscoveryTick({ playlistIds: ids }), 300000)
+            await runWithGlobalTimeout(runDiscoveryTick({ playlistIds: ids }), WATCHDOG_TIMEOUT_MS)
           } catch (e: any) {
             log('warn', '[WARN] fetchNewPlaylists failed; continuing cycle', { error: e?.message })
           }
@@ -167,17 +169,23 @@ export async function startScheduler() {
       } else {
         if (ids.length > 0) await refreshExistingPlaylists(ids)
       }
-      // On successful tick, bump and persist state
       state = await persistNextState(state)
     } catch (e: any) {
       log('error', 'Initial tick failed', { error: e?.message })
+    } finally {
+      const elapsed = ((Date.now() - tickStart) / 1000).toFixed(1)
+      log('info', `[TICK END] Duration=${elapsed}s`)
     }
   })()
 
-  // primary cron job – runs every 3h
+  // run every 3h
   cron.schedule('0 */3 * * *', async () => {
+    const tickStart = Date.now()
+    const utc = new Date().toISOString()
+    const local = new Date().toLocaleString('hu-HU', { timeZone: 'Europe/Budapest' })
+    log('info', `[CRON START] UTC=${utc}, Local(Europe/Budapest)=${local}`)
+
     try {
-      // Re-read latest state before running the tick
       let state = await readOrInitSchedulerState()
       const ids = loadPlaylistIds()
       log('info', `[CRON] tick -> ${ids.length} playlists in mode=${state.mode}`)
@@ -186,19 +194,15 @@ export async function startScheduler() {
           log('info', '[DISCOVERY] Starting global region discovery mode')
           let count = 0
           try {
-            const result = await runWithGlobalTimeout(runDiscoveryTick(), 300000)
-            count = (result as any)?.totalPlaylists ?? (typeof result === 'number' ? (result as any) : 0)
+            const result = await runWithGlobalTimeout(runDiscoveryTick(), WATCHDOG_TIMEOUT_MS)
+            count = (result as any)?.totalPlaylists ?? (typeof result === 'number' ? result : 0)
           } catch (e: any) {
-            if (e instanceof QuotaDepletedError) {
-              log('warn', '[WARN] fetchNewPlaylists failed; continuing cycle', { error: 'QuotaDepletedError' })
-            } else {
-              log('warn', '[WARN] fetchNewPlaylists failed; continuing cycle', { error: e?.message })
-            }
+            log('warn', '[WARN] fetchNewPlaylists failed; continuing cycle', { error: e?.message })
           }
           log('info', `[DISCOVERY] Completed with ${count} playlists`)
         } else {
           try {
-            await runWithGlobalTimeout(runDiscoveryTick({ playlistIds: ids }), 300000)
+            await runWithGlobalTimeout(runDiscoveryTick({ playlistIds: ids }), WATCHDOG_TIMEOUT_MS)
           } catch (e: any) {
             log('warn', '[WARN] fetchNewPlaylists failed; continuing cycle', { error: e?.message })
           }
@@ -206,16 +210,17 @@ export async function startScheduler() {
       } else {
         if (ids.length > 0) await refreshExistingPlaylists(ids)
       }
-      // On successful tick, bump and persist state
       state = await persistNextState(state)
     } catch (e: any) {
       log('error', 'Cron tick failed', { error: e?.message })
+    } finally {
+      const elapsed = ((Date.now() - tickStart) / 1000).toFixed(1)
+      log('info', `[CRON END] Duration=${elapsed}s`)
     }
   })
 }
 
-// start immediately when executed directly
+// start immediately
 try {
   startScheduler()
 } catch {}
-
