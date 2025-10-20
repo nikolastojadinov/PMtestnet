@@ -1,8 +1,8 @@
 import { google, youtube_v3 } from 'googleapis'
+import dotenv from 'dotenv'
 import { log } from '../utils/logger.js'
 
-// Removed dotenv.config() because Render already injects process.env
-// Keeping environment values safe from being overwritten.
+dotenv.config()
 
 let currentKeyIndex = 0
 let lastLoggedIndex = -1
@@ -10,20 +10,21 @@ let cachedKeys: string[] = []
 const cooldownUntil = new Map<string, number>()
 const metrics = new Map<string, { used_units: number; quota_exceeded: number; last_used: number; cooldown_until?: number }>()
 
+// ✅ Parse comma-separated API keys safely
 function loadApiKeys(): string[] {
-  const raw = process.env.YOUTUBE_API_KEYS
+  let raw = process.env.YOUTUBE_API_KEYS || ''
   if (!raw || typeof raw !== 'string') {
-    log('error', '[YouTube] No YOUTUBE_API_KEYS found in environment. (process.env.YOUTUBE_API_KEYS is undefined)')
+    log('error', '[YouTube] No YOUTUBE_API_KEYS found in environment.')
     return []
   }
 
   const keys = raw
     .split(',')
-    .map(k => k.trim().replace(/^"|"$/g, '')) // strip quotes if present
+    .map(k => k.trim().replace(/^"|"$/g, '')) // remove quotes if any
     .filter(Boolean)
 
   if (keys.length === 0) {
-    log('error', '[YouTube] Failed to parse any valid keys from YOUTUBE_API_KEYS.')
+    log('error', '[YouTube] No valid YouTube API keys found in YOUTUBE_API_KEYS.')
   } else if (cachedKeys.length === 0) {
     cachedKeys = keys
     log('info', `[YouTube] Initialized ${keys.length} API key(s) from YOUTUBE_API_KEYS.`)
@@ -77,7 +78,7 @@ export async function withKey<T>(
   options?: WithKeyOptions
 ): Promise<T> {
   const keys = loadApiKeys()
-  if (keys.length === 0) throw new Error('No YouTube API keys configured.')
+  if (keys.length === 0) throw new Error('No YouTube API keys configured')
 
   const label = options?.label
   const unitCost = options?.unitCost ?? 0
@@ -116,7 +117,13 @@ export async function withKey<T>(
         })
         advanceIndex(total)
         attempts++
-        if (attempts >= keys.length) throw new QuotaDepletedError()
+
+        // ✅ New logic: if all keys are exhausted, pause for 60min then retry
+        if (attempts >= keys.length) {
+          log('warn', `[QUOTA] All keys temporarily exhausted — entering 60min cooldown.`)
+          await new Promise(res => setTimeout(res, 60 * 60 * 1000)) // wait 1h
+          attempts = 0
+        }
         continue
       }
       throw err
@@ -126,7 +133,7 @@ export async function withKey<T>(
 
 export function youtubeClient(): youtube_v3.Youtube {
   const keys = loadApiKeys()
-  if (keys.length === 0) throw new Error('No YouTube API keys configured.')
+  if (keys.length === 0) throw new Error('No YouTube API keys configured')
   const idx = currentKeyIndex % keys.length
   const key = keys[idx]
   logKeyIndex(idx, keys.length)
