@@ -4,31 +4,33 @@ import { log } from '../utils/logger.js'
 
 dotenv.config()
 
-let apiKeys: string[] = []
 let currentKeyIndex = 0
 let lastLoggedIndex = -1
+let cachedKeys: string[] = []
 const cooldownUntil = new Map<string, number>()
 const metrics = new Map<string, { used_units: number; quota_exceeded: number; last_used: number; cooldown_until?: number }>()
 
-// ✅ Load all keys once on startup
-function initializeKeys(): string[] {
-  if (apiKeys.length > 0) return apiKeys
-  const raw = process.env.YOUTUBE_API_KEYS || ''
-  const parsed = raw
-    .split(',')
-    .map(k => k.trim())
-    .filter(Boolean)
-  if (parsed.length === 0) {
-    throw new Error('❌ No YouTube API keys found in YOUTUBE_API_KEYS')
+function loadApiKeys(): string[] {
+  // ✅ Safe parsing even if there are commas or whitespace
+  let raw = process.env.YOUTUBE_API_KEYS || ''
+  if (!raw || typeof raw !== 'string') {
+    log('error', '[YouTube] Failed to parse YOUTUBE_API_KEYS from environment (empty or invalid).')
+    return []
   }
-  apiKeys = [...new Set(parsed)]
-  log('info', `[YouTube] Initialized ${apiKeys.length} API key(s) from YOUTUBE_API_KEYS.`)
-  return apiKeys
-}
 
-function getKeys(): string[] {
-  if (apiKeys.length === 0) return initializeKeys()
-  return apiKeys
+  const keys = raw
+    .split(',')
+    .map(k => k.trim().replace(/^"|"$/g, '')) // strip quotes if any
+    .filter(Boolean)
+
+  if (keys.length === 0) {
+    log('error', '[YouTube] No valid YouTube API keys found in YOUTUBE_API_KEYS.')
+  } else if (cachedKeys.length === 0) {
+    cachedKeys = keys
+    log('info', `[YouTube] Loaded ${keys.length} API key(s) from YOUTUBE_API_KEYS.`)
+  }
+
+  return cachedKeys
 }
 
 function isQuotaExceeded(err: any): boolean {
@@ -45,15 +47,15 @@ export class QuotaDepletedError extends Error {
 }
 
 function pickCurrentKey(): { key: string; index: number; total: number } | null {
-  const keys = getKeys()
+  const keys = loadApiKeys()
   if (keys.length === 0) return null
   const total = keys.length
   for (let i = 0; i < total; i++) {
     const idx = (currentKeyIndex + i) % total
-    const k = keys[idx]
-    const until = cooldownUntil.get(k)
-    if (typeof until === 'number' && until > Date.now()) continue // skip cooling key
-    return { key: k, index: idx, total }
+    const key = keys[idx]
+    const until = cooldownUntil.get(key)
+    if (until && until > Date.now()) continue // cooling down
+    return { key, index: idx, total }
   }
   return null
 }
@@ -71,8 +73,11 @@ function logKeyIndex(index: number, total: number) {
 
 type WithKeyOptions = { label?: string; unitCost?: number }
 
-export async function withKey<T>(fn: (yt: youtube_v3.Youtube) => Promise<T>, options?: WithKeyOptions): Promise<T> {
-  const keys = getKeys()
+export async function withKey<T>(
+  fn: (yt: youtube_v3.Youtube) => Promise<T>,
+  options?: WithKeyOptions
+): Promise<T> {
+  const keys = loadApiKeys()
   if (keys.length === 0) throw new Error('No YouTube API keys configured')
 
   const label = options?.label
@@ -106,7 +111,10 @@ export async function withKey<T>(fn: (yt: youtube_v3.Youtube) => Promise<T>, opt
         cooldownUntil.set(key, until)
         m.cooldown_until = until
         metrics.set(key, m)
-        log('warn', `[QUOTA] Key exhausted, switching… (idx=${index + 1}/${total})`, { label: label ?? null, cooldown_until: new Date(until).toISOString() })
+        log('warn', `[QUOTA] Key exhausted, switching… (idx=${index + 1}/${total})`, {
+          label: label ?? null,
+          cooldown_until: new Date(until).toISOString(),
+        })
         advanceIndex(total)
         attempts++
         if (attempts >= keys.length) throw new QuotaDepletedError()
@@ -118,7 +126,7 @@ export async function withKey<T>(fn: (yt: youtube_v3.Youtube) => Promise<T>, opt
 }
 
 export function youtubeClient(): youtube_v3.Youtube {
-  const keys = getKeys()
+  const keys = loadApiKeys()
   if (keys.length === 0) throw new Error('No YouTube API keys configured')
   const idx = currentKeyIndex % keys.length
   const key = keys[idx]
