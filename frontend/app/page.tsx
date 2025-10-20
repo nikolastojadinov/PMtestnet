@@ -1,8 +1,28 @@
-import { categories, recentlyPlayed } from '../lib/categories'
+"use client"
+import { useEffect, useState } from 'react'
 import CategoryRow from '../components/CategoryRow'
-import PlaylistCard from '../components/PlaylistCard'
+import Loader from '../components/shared/Loader'
+import { getPlaylistsByCategory } from '../lib/fetchPlaylists'
+
+type Grouped = Record<string, Array<{ id: string; title: string; region?: string | null; cover_url?: string | null }>>
 
 export default function Page() {
+  const [groups, setGroups] = useState<Grouped | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let canceled = false
+    ;(async () => {
+      try {
+        const data = await getPlaylistsByCategory()
+        if (!canceled) setGroups(data)
+      } finally {
+        if (!canceled) setLoading(false)
+      }
+    })()
+    return () => { canceled = true }
+  }, [])
+
   return (
     <div className="space-y-10">
       {/* Search */}
@@ -15,19 +35,12 @@ export default function Page() {
         </div>
       </section>
 
-      {/* Recently Played grid: 2 columns x 4 rows */}
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold">Recently Played</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {recentlyPlayed.slice(0, 8).map((p) => (
-            <PlaylistCard key={p.id} title={p.title} region={p.region} cover={p.cover} />
-          ))}
-        </div>
-      </section>
+      {loading && (
+        <Loader />
+      )}
 
-      {/* Categories - horizontal rows */}
-      {categories.map((c) => (
-        <CategoryRow key={c.id} title={c.title} playlists={c.playlists} />
+      {!loading && groups && Object.keys(groups).map((title) => (
+        <CategoryRow key={title} title={title} playlists={groups[title] || []} />
       ))}
     </div>
   )

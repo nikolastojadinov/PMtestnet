@@ -1,14 +1,15 @@
 import PlaylistCard from './PlaylistCard'
-import type { Playlist } from '../lib/categories'
 
-export default function CategoryRow({ title, playlists }: { title: string; playlists: Playlist[] }) {
+type Row = { id: string; title: string; region?: string | null; cover_url?: string | null }
+
+export default function CategoryRow({ title, playlists }: { title: string; playlists: Row[] }) {
   return (
     <section className="space-y-3">
       <h2 className="text-lg font-semibold">{title}</h2>
       <div className="flex gap-4 overflow-x-auto pb-2 snap-x">
         {playlists.map((p) => (
           <div className="w-44 shrink-0 snap-start" key={p.id}>
-            <PlaylistCard title={p.title} region={p.region} cover={p.cover} />
+            <PlaylistCard title={p.title} region={p.region || ''} cover={p.cover_url || '/covers/readme.txt'} />
           </div>
         ))}
       </div>
