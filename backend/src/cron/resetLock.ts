@@ -1,26 +1,42 @@
-import dotenv from 'dotenv'
 import { supabase } from '../supabase/client.js'
+import { log } from '../utils/logger.js'
 
-dotenv.config()
+/**
+ * Manual or automatic lock reset utility
+ * --------------------------------------
+ * This script clears any stale scheduler_state locks.
+ * You can safely run it anytime from Render shell:
+ *    node dist/cron/resetLock.js
+ */
 
-async function reset() {
-  if (!supabase) {
-    console.warn('[resetLock] Supabase not configured.')
-    return
+async function resetSchedulerLock() {
+  try {
+    const { data, error } = await (supabase
+      .from('scheduler_state')
+      .update({
+        is_locked: false,
+        updated_at: new Date().toISOString(),
+      })
+      .neq('is_locked', false)
+      .select()
+      .single() as any)
+
+    if (error) {
+      log('error', '[resetLock] Failed to reset scheduler lock', { error: error.message })
+      process.exit(1)
+    }
+
+    if (data) {
+      log('info', '[resetLock] Scheduler lock cleared ✅', data)
+    } else {
+      log('info', '[resetLock] No active lock found — nothing to clear.')
+    }
+
+    process.exit(0)
+  } catch (e: any) {
+    log('error', '[resetLock] Unexpected error', { error: e?.message })
+    process.exit(1)
   }
-  const now = new Date().toISOString()
-  const { error } = await (supabase
-    .from('scheduler_state')
-    .update({ is_locked: false, updated_at: now }) as any)
-  if (error) {
-    console.error('[resetLock] Failed to reset lock:', error.message)
-    process.exitCode = 1
-    return
-  }
-  console.log('[resetLock] Lock cleared (is_locked=false).')
 }
 
-reset().catch((e) => {
-  console.error('[resetLock] Fatal:', e?.message || e)
-  process.exit(1)
-})
+resetSchedulerLock()
