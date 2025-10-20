@@ -1,13 +1,7 @@
 [build]
+  base = "frontend"
   command = "npm run build"
-  publish = "frontend/out"
+  publish = "out"
 
-[[plugins]]
-  package = "@netlify/plugin-nextjs"
-
-[build.environment]
-  NEXT_PUBLIC_SUPABASE_URL = "https://ofkfygqrfenctzitigae.supabase.co"
-  NEXT_PUBLIC_SUPABASE_ANON_KEY = "tvoj_anon_key"
-  NEXT_PUBLIC_BACKEND_URL = "https://pmtestnet.onrender.com"
-  NEXT_PUBLIC_PI_APP_ID = "tvoj_pi_app_id"
-  NEXT_PUBLIC_FRONTEND_URL = "https://pmtestnet.netlify.app"
+# Note: No Next.js plugin is required for static export (output: 'export').
+# Set environment variables in Netlify UI for deployment instead of committing here.
