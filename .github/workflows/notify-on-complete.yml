@@ -1,16 +1,12 @@
-name: Notify user on task completion
+name: Notify on Complete
 
 on:
   push:
     branches:
       - main
-    # Izbegni self-trigger kada menjamo workflow fajlove
-    paths-ignore:
-      - ".github/**"
 
 jobs:
-  send_email:
-    name: Send notification email if commit message matches
+  notify:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -42,24 +38,7 @@ jobs:
             }
             core.setOutput('should_notify', match ? 'true' : 'false')
 
-      - name: Send notification email
+  # Email step removed: YAHOO_SMTP_* secrets not in use
+      - name: Notification
         if: steps.check.outputs.should_notify == 'true'
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.mail.yahoo.com
-          server_port: 465
-          secure: true
-          username: ${{ secrets.YAHOO_SMTP_USER }}
-          password: ${{ secrets.YAHOO_SMTP_PASS }}
-          subject: "✅ Purple Music — zadatak uspešno završen"
-          to: "nikolastojadinov@yahoo.co.uk"
-          from: "Purple Music Notifier <${{ secrets.YAHOO_SMTP_USER }}>"
-          body: |
-            Zdravo Nikola 👋
-
-            Copilot je upravo završio izvršavanje zadatka u Codespace-u.
-            Sve promene su uspešno izvršene i commit-ovane u repozitorijum (branch: main).
-
-            Ako želiš, možeš sada odobriti 'git push' ručno iz Codespace-a, ukoliko to nije već urađeno.
-
-            — Purple Music Automation
+        run: echo "✅ Deployment complete."
