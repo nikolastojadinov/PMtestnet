@@ -4,6 +4,8 @@ import getSupabase from '../lib/supabaseClient'
 
 type Playlist = { id: string; title: string; region: string | null; cover_url: string | null; category: string | null }
 
+export const dynamic = 'force-dynamic'
+
 export default async function Page() {
   const categories = ['Most popular', 'Trending now', 'Best of 80s', 'Best of 90s', 'Best of 2000'] as const
 

@@ -1,7 +1,7 @@
 [build]
   base = "frontend"
   command = "npm run build"
-  publish = "out"
+  publish = ".next"
 
-# Note: No Next.js plugin is required for static export (output: 'export').
-# Set environment variables in Netlify UI for deployment instead of committing here.
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
