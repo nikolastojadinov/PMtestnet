@@ -20,8 +20,8 @@ export default function SearchBar() {
       try {
         const { data, error } = await supabase
           .from('playlists')
-          .select('id, title, name')
-          .ilike('title', `%${query}%`)
+          .select('id, title, name, region')
+          .or(`title.ilike.%${query}%,region.ilike.%${query}%`)
           .limit(10)
         if (error) {
           console.warn('[search] playlists error:', error.message)
@@ -48,8 +48,11 @@ export default function SearchBar() {
       {results.length > 0 && (
         <div className="mt-3 bg-[#1a0121] rounded-xl p-2 shadow-lg divide-y divide-white/5 border border-white/10">
           {results.map((r) => (
-            <Link key={r.id} href={`/playlist/${r.id}`} className="block p-2 hover:bg-[#290234] rounded">
-              {(r.title || r.name) ?? 'Untitled'}
+            <Link key={r.id} href={`/playlist/${r.id}`} className="flex items-center justify-between p-2 hover:bg-[#290234] rounded">
+              <span>{(r.title || r.name) ?? 'Untitled'}</span>
+              {('region' in r) && (r as any).region && (
+                <span className="text-xs text-white/50 ml-3">{(r as any).region}</span>
+              )}
             </Link>
           ))}
         </div>
