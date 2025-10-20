@@ -1,40 +1,120 @@
-import { createClient } from '@supabase/supabase-js'
-import { notFound } from 'next/navigation'
+'use client'
 
-export const dynamic = 'force-dynamic'
+import { useEffect, useState } from 'react'
+import { useParams } from 'next/navigation'
+import { getSupabaseClient } from '../../../lib/supabaseClient'
 
-export default async function PlaylistPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  const supabase = createClient(url, anon)
+type Playlist = {
+  id: string
+  title: string
+  description?: string | null
+  cover_url?: string | null
+}
 
-  const { data: playlist } = await supabase
-    .from('playlists')
-    .select('id, title, description, cover_url, region, category, item_count, channel_title, created_at')
-    .eq('id', id)
-    .single()
+type TrackRow = {
+  track_id: string
+  tracks: {
+    title: string | null
+    artist: string | null
+    duration: string | null
+  }
+}
 
-  if (!playlist) return notFound()
+export default function PlaylistPage() {
+  const params = useParams<{ id: string }>()
+  const [playlist, setPlaylist] = useState<Playlist | null>(null)
+  const [tracks, setTracks] = useState<TrackRow[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const id = params?.id
+    if (id) void loadPlaylist(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params?.id])
+
+  async function loadPlaylist(id: string) {
+    setLoading(true)
+    const supabase = getSupabaseClient()
+    if (!supabase) {
+      setLoading(false)
+      return
+    }
+    const { data: playlistData, error: playlistError } = await supabase
+      .from('v_playlists_full')
+      .select('*')
+      .eq('id', id)
+      .single()
+
+    if (playlistError) {
+      // eslint-disable-next-line no-console
+      console.error(playlistError)
+    } else {
+      setPlaylist(playlistData as Playlist)
+    }
+
+    const { data: trackData, error: trackError } = await supabase
+      .from('playlist_tracks')
+      .select('track_id, tracks(title, artist, duration)')
+      .eq('playlist_id', id)
+
+    if (trackError) {
+      // eslint-disable-next-line no-console
+      console.error(trackError)
+    } else {
+      const normalized = ((trackData as any[]) || []).map((row: any) => {
+        const t = Array.isArray(row.tracks) ? row.tracks[0] : row.tracks
+        return {
+          track_id: row.track_id as string,
+          tracks: {
+            title: t?.title ?? null,
+            artist: t?.artist ?? null,
+            duration: t?.duration ?? null,
+          },
+        } as TrackRow
+      }).filter((r) => r.tracks && (r.tracks.title || r.tracks.artist))
+
+      setTracks(normalized)
+    }
+
+    setLoading(false)
+  }
+
+  if (loading) return <div className="text-white p-6">Loading...</div>
+  if (!playlist) return <div className="text-white p-6">Playlist not found.</div>
 
   return (
-    <main className="min-h-screen bg-[#0d001a] text-white p-6">
-      <h1 className="text-2xl font-semibold text-purple-200">{playlist.title}</h1>
+    <div className="min-h-screen bg-black text-white p-4">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={playlist.cover_url || 'https://placehold.co/200x200/6b21a8/ffffff?text=No+Cover'}
+        src={playlist.cover_url || '/placeholder.png'}
         alt={playlist.title}
-        className="w-[200px] rounded-md mt-4"
+        className="w-full h-48 object-cover rounded-lg mb-4"
       />
-      <div className="mt-4 text-white/80">
-        <p>{playlist.description || 'No description available.'}</p>
-        <div className="mt-3 grid grid-cols-2 gap-3 text-sm text-white/70">
-          <div><span className="text-white/50">Region:</span> {playlist.region || '—'}</div>
-          <div><span className="text-white/50">Category:</span> {playlist.category || '—'}</div>
-          <div><span className="text-white/50">Items:</span> {playlist.item_count ?? '—'}</div>
-          <div><span className="text-white/50">Channel:</span> {playlist.channel_title || '—'}</div>
-        </div>
+      <h1 className="text-2xl font-bold mb-2">{playlist.title}</h1>
+      <button className="px-4 py-2 bg-purple-600 rounded-lg mb-6 hover:bg-purple-700">
+        ▶ Play All
+      </button>
+
+      <div>
+        {tracks.length > 0 ? (
+          tracks.map((item, index) => (
+            <div
+              key={`${item.track_id}-${index}`}
+              className="grid grid-cols-3 gap-2 items-center p-3 border-b border-purple-800/40"
+            >
+              <span className="truncate">{item.tracks?.title || 'Untitled'}</span>
+              <span className="text-gray-400 text-sm truncate">
+                {item.tracks?.artist || 'Unknown'}
+              </span>
+              <span className="text-gray-500 text-xs text-right">
+                {item.tracks?.duration || '–'}
+              </span>
+            </div>
+          ))
+        ) : (
+          <div className="text-gray-500">No tracks found in this playlist.</div>
+        )}
       </div>
-    </main>
+    </div>
   )
 }

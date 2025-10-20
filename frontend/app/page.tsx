@@ -1,75 +1,168 @@
-import PlaylistRow from '@/components/PlaylistRow'
-import SearchBar from '@/components/SearchBar'
-import { createClient } from '@supabase/supabase-js'
-import type { Playlist } from '@/types/playlist'
+'use client'
 
-export const dynamic = 'force-dynamic'
+import { useEffect, useState } from 'react'
+import { getSupabaseClient } from '../lib/supabaseClient'
 
-export default async function Page() {
-  const categories = [
-    { title: 'Most popular' as const },
-    { title: 'Trending now' as const },
-    { title: 'Best of 80s' as const },
-    { title: 'Best of 90s' as const },
-    { title: 'Best of 2000' as const },
-  ]
+type Playlist = {
+  id: string
+  title: string
+  description?: string | null
+  cover_url?: string | null
+  item_count?: number | null
+  created_at?: string | null
+}
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  const supabase = url && anon ? createClient(url, anon) : null
-  const playlistsByCategory: Record<string, Playlist[]> = {}
+export default function HomePage() {
+  const [search, setSearch] = useState('')
+  const [results, setResults] = useState<Playlist[]>([])
+  const [categories, setCategories] = useState<Record<string, Playlist[]>>({})
+  const [loading, setLoading] = useState(true)
 
-  if (supabase) {
-    for (const cat of categories) {
-      let query = supabase
-        .from('playlists')
-        .select('id, external_id, title, name, description, cover_url, region, category, item_count, channel_title, created_at')
-        .eq('is_public', true)
+  useEffect(() => {
+    fetchCategories()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-      switch (cat.title) {
-        case 'Most popular':
-          // Higher item_count first
-          query = query.gt('item_count', 30).order('item_count', { ascending: false })
-          break
-        case 'Trending now':
-          // Newest first
-          query = query.order('created_at', { ascending: false, nullsFirst: false })
-          break
-        case 'Best of 80s':
-          query = query.ilike('title', '%80s%')
-          break
-        case 'Best of 90s':
-          query = query.ilike('title', '%90s%')
-          break
-        case 'Best of 2000':
-          query = query.ilike('title', '%2000%')
-          break
+  async function fetchCategories() {
+    setLoading(true)
+    try {
+      const supabase = getSupabaseClient()
+      if (!supabase) {
+        setCategories({})
+        setLoading(false)
+        return
+      }
+      const [popularRes, trendingRes, eightiesRes, ninetiesRes, twoThousandsRes] = await Promise.all([
+        supabase
+          .from('v_playlists_full')
+          .select('*')
+          .gt('item_count', 0)
+          .order('item_count', { ascending: false })
+          .limit(20),
+        supabase
+          .from('v_playlists_full')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(20),
+        supabase
+          .from('v_playlists_full')
+          .select('*')
+          .or('title.ilike.%80s%,description.ilike.%80s%')
+          .limit(20),
+        supabase
+          .from('v_playlists_full')
+          .select('*')
+          .or('title.ilike.%90s%,description.ilike.%90s%')
+          .limit(20),
+        supabase
+          .from('v_playlists_full')
+          .select('*')
+          .or('title.ilike.%2000%,title.ilike.%2000s%,title.ilike.%00s%,description.ilike.%2000%,description.ilike.%2000s%,description.ilike.%00s%')
+          .limit(20)
+      ])
+
+      const mapped: Record<string, Playlist[]> = {
+        'Most Popular': (popularRes.data as Playlist[]) || [],
+        'Trending Now': (trendingRes.data as Playlist[]) || [],
+        'Best of 80s': (eightiesRes.data as Playlist[]) || [],
+        'Best of 90s': (ninetiesRes.data as Playlist[]) || [],
+        'Best of 2000': (twoThousandsRes.data as Playlist[]) || []
       }
 
-      const { data } = await query.limit(8)
-      playlistsByCategory[cat.title] = (data || []).map((r: any) => ({
-        id: r.id,
-        external_id: r.external_id ?? null,
-        title: r.title || r.name || 'Untitled',
-        description: r.description ?? null,
-        cover_url: r.cover_url ?? null,
-        region: r.region ?? null,
-        category: r.category ?? null,
-        item_count: r.item_count ?? null,
-        channel_title: r.channel_title ?? null,
-        created_at: r.created_at ?? null,
-      })) as Playlist[]
+      setCategories(mapped)
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error(e)
+    } finally {
+      setLoading(false)
     }
-  } else {
-    for (const { title } of categories) playlistsByCategory[title] = []
+  }
+
+  async function handleSearch(value: string) {
+    setSearch(value)
+    const q = value.trim()
+    if (q.length === 0) {
+      setResults([])
+      return
+    }
+    const supabase = getSupabaseClient()
+    if (!supabase) return
+
+    const { data, error } = await supabase
+      .from('v_playlists_full')
+      .select('*')
+      .or(`title.ilike.%${q}%,description.ilike.%${q}%`)
+      .limit(50)
+
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error(error)
+    } else {
+      setResults((data as Playlist[]) || [])
+    }
   }
 
   return (
-    <main className="min-h-screen bg-[#120016] text-white px-4 pb-20 space-y-8">
-      <SearchBar />
-      {categories.map(({ title }) => (
-        <PlaylistRow key={title} title={title} playlists={playlistsByCategory[title] || []} />
-      ))}
-    </main>
+    <div className="min-h-screen bg-black text-white p-4">
+      <h1 className="text-2xl font-bold text-purple-400 mb-6">Purple Music</h1>
+
+      <input
+        type="text"
+        value={search}
+        onChange={(e) => handleSearch(e.target.value)}
+        placeholder="Search for playlists, artists, or songs"
+        className="w-full p-3 rounded-xl bg-purple-900/30 border border-purple-700 focus:outline-none text-purple-100 mb-6"
+      />
+
+      {search && results.length > 0 && (
+        <div>
+          {results.map((playlist) => (
+            <a
+              key={playlist.id}
+              href={`/playlist/${playlist.id}`}
+              className="block mb-3 p-3 rounded-lg bg-purple-800/30 hover:bg-purple-700/40 transition"
+            >
+              <div className="font-semibold">{playlist.title}</div>
+              <div className="text-sm text-gray-400">
+                {playlist.description || 'No description'}
+              </div>
+            </a>
+          ))}
+        </div>
+      )}
+
+      {!search && (
+        <div>
+          {loading && <div className="text-gray-400">Loading…</div>}
+          {!loading && Object.keys(categories).map((cat) => (
+            <div key={cat} className="mb-8">
+              <h2 className="text-xl font-semibold mb-3">{cat}</h2>
+              <div className="flex overflow-x-auto gap-4">
+                {categories[cat].length > 0 ? (
+                  categories[cat].map((playlist) => (
+                    <a
+                      key={playlist.id}
+                      href={`/playlist/${playlist.id}`}
+                      className="flex-shrink-0 w-40 p-2 bg-purple-800/20 rounded-lg hover:bg-purple-700/40 transition"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={playlist.cover_url || '/placeholder.png'}
+                        alt={playlist.title}
+                        className="w-full h-24 object-cover rounded-md mb-2"
+                      />
+                      <div className="text-sm text-white line-clamp-2">{playlist.title}</div>
+                    </a>
+                  ))
+                ) : (
+                  <div className="text-gray-500 text-sm">No playlists</div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
+
