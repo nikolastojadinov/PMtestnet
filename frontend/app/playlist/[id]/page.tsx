@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { getSupabaseClient } from '../../../lib/supabaseClient'
 
+const FALLBACK_COVER = 'https://ofkfygqrfenctzitigae.supabase.co/storage/v1/object/public/Covers/IMG_0596.png'
+
 type Playlist = {
-  id: string
+  playlist_id: string
   title: string
   description?: string | null
   cover_url?: string | null
@@ -24,7 +26,7 @@ export default function PlaylistPage() {
   const params = useParams<{ id: string }>()
   const [playlist, setPlaylist] = useState<Playlist | null>(null)
   const [tracks, setTracks] = useState<TrackRow[]>([])
-  const [loading, setLoading] = useState(true)
+  const [notFound, setNotFound] = useState(false)
 
   useEffect(() => {
     const id = params?.id
@@ -33,24 +35,20 @@ export default function PlaylistPage() {
   }, [params?.id])
 
   async function loadPlaylist(id: string) {
-    setLoading(true)
     const supabase = getSupabaseClient()
-    if (!supabase) {
-      setLoading(false)
-      return
-    }
+    if (!supabase) return
+
     const { data: playlistData, error: playlistError } = await supabase
-      .from('v_playlists_full')
+      .from('public.v_playlists_full')
       .select('*')
-      .eq('id', id)
+      .eq('playlist_id', id)
       .single()
 
-    if (playlistError) {
-      // eslint-disable-next-line no-console
-      console.error(playlistError)
-    } else {
-      setPlaylist(playlistData as Playlist)
+    if (playlistError || !playlistData) {
+      setNotFound(true)
+      return
     }
+    setPlaylist(playlistData as Playlist)
 
     const { data: trackData, error: trackError } = await supabase
       .from('playlist_tracks')
@@ -71,22 +69,19 @@ export default function PlaylistPage() {
             duration: t?.duration ?? null,
           },
         } as TrackRow
-      }).filter((r) => r.tracks && (r.tracks.title || r.tracks.artist))
-
+      })
       setTracks(normalized)
     }
-
-    setLoading(false)
   }
 
-  if (loading) return <div className="text-white p-6">Loading...</div>
-  if (!playlist) return <div className="text-white p-6">Playlist not found.</div>
+  if (notFound) return <div className="text-white p-6">Playlist not found.</div>
+  if (!playlist) return <div className="text-white p-6">Loading...</div>
 
   return (
     <div className="min-h-screen bg-black text-white p-4">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={playlist.cover_url || '/placeholder.png'}
+        src={playlist.cover_url || FALLBACK_COVER}
         alt={playlist.title}
         className="w-full h-48 object-cover rounded-lg mb-4"
       />
@@ -100,15 +95,11 @@ export default function PlaylistPage() {
           tracks.map((item, index) => (
             <div
               key={`${item.track_id}-${index}`}
-              className="grid grid-cols-3 gap-2 items-center p-3 border-b border-purple-800/40"
+              className="flex justify-between p-3 border-b border-purple-800/40"
             >
-              <span className="truncate">{item.tracks?.title || 'Untitled'}</span>
-              <span className="text-gray-400 text-sm truncate">
-                {item.tracks?.artist || 'Unknown'}
-              </span>
-              <span className="text-gray-500 text-xs text-right">
-                {item.tracks?.duration || '–'}
-              </span>
+              <span>{item.tracks.title}</span>
+              <span className="text-gray-400 text-sm">{item.tracks.artist || 'Unknown'}</span>
+              <span className="text-gray-500 text-xs">{item.tracks.duration || '–'}</span>
             </div>
           ))
         ) : (
