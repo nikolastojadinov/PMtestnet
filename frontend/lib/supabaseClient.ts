@@ -1,12 +1,35 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { createClient } from '@supabase/supabase-js'
 
-let _client: SupabaseClient | null = null
+let supabaseClient: ReturnType<typeof createClient> | null = null
 
-export function getSupabaseClient(): SupabaseClient | null {
-  if (_client) return _client
+export function getSupabaseClient() {
+  if (supabaseClient) return supabaseClient
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (!supabaseUrl || !supabaseAnonKey) return null
-  _client = createClient(supabaseUrl, supabaseAnonKey)
-  return _client
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.error('[Supabase] Missing environment variables. Check Netlify settings.')
+    return null
+  }
+
+  try {
+    supabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: true,
+      },
+      global: {
+        headers: {
+          'x-frontend-origin': process.env.NEXT_PUBLIC_FRONTEND_URL || '',
+        },
+      },
+    })
+
+    console.log('[Supabase] Client initialized.')
+    return supabaseClient
+  } catch (error) {
+    console.error('[Supabase] Failed to initialize client:', error)
+    return null
+  }
 }
