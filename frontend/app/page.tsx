@@ -1,47 +1,41 @@
-"use client"
-import { useEffect, useState } from 'react'
-import CategoryRow from '../components/CategoryRow'
-import Loader from '../components/shared/Loader'
-import { getPlaylistsByCategory } from '../lib/fetchPlaylists'
+import PlaylistRow from '@/components/PlaylistRow'
+import SearchBar from '@/components/SearchBar'
+import getSupabase from '../lib/supabaseClient'
 
-type Grouped = Record<string, Array<{ id: string; title: string; region?: string | null; cover_url?: string | null }>>
+type Playlist = { id: string; title: string; region: string | null; cover_url: string | null; category: string | null }
 
-export default function Page() {
-  const [groups, setGroups] = useState<Grouped | null>(null)
-  const [loading, setLoading] = useState(true)
+export default async function Page() {
+  const categories = ['Most popular', 'Trending now', 'Best of 80s', 'Best of 90s', 'Best of 2000'] as const
 
-  useEffect(() => {
-    let canceled = false
-    ;(async () => {
-      try {
-        const data = await getPlaylistsByCategory()
-        if (!canceled) setGroups(data)
-      } finally {
-        if (!canceled) setLoading(false)
-      }
-    })()
-    return () => { canceled = true }
-  }, [])
+  const supabase = getSupabase()
+  const playlistsByCategory: Record<string, Playlist[]> = {}
+
+  if (supabase) {
+    for (const cat of categories) {
+      const { data } = await supabase
+        .from('playlists')
+        .select('id, title, name, region, category, cover_url')
+        .eq('is_public', true)
+        .eq('category', cat)
+        .limit(8)
+      playlistsByCategory[cat] = (data || []).map((r: any) => ({
+        id: r.id,
+        title: r.title || r.name || 'Untitled',
+        region: r.region ?? null,
+        category: r.category ?? null,
+        cover_url: r.cover_url ?? null,
+      }))
+    }
+  } else {
+    for (const cat of categories) playlistsByCategory[cat] = []
+  }
 
   return (
-    <div className="space-y-10">
-      {/* Search */}
-      <section>
-        <div className="relative">
-          <input
-            placeholder="Search for playlists, artists, or songs"
-            className="w-full rounded-full bg-white/5 border border-white/10 px-5 py-3 outline-none focus:border-[#6C2BD9] focus:shadow-[0_0_0_3px_rgba(108,43,217,0.35)] transition"
-          />
-        </div>
-      </section>
-
-      {loading && (
-        <Loader />
-      )}
-
-      {!loading && groups && Object.keys(groups).map((title) => (
-        <CategoryRow key={title} title={title} playlists={groups[title] || []} />
+    <main className="min-h-screen bg-[#120016] text-white px-4 pb-20 space-y-8">
+      <SearchBar />
+      {categories.map((cat) => (
+        <PlaylistRow key={cat} title={cat} playlists={playlistsByCategory[cat] || []} />
       ))}
-    </div>
+    </main>
   )
 }
