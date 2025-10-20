@@ -1,13 +1,12 @@
 import { supabase } from '../supabase/client.js'
-import { withKey } from './client.js'
+import { withKey, QuotaDepletedError } from './client.js'
 import { log } from '../utils/logger.js'
 
-// 🔹 Lokalizovane ključne reči po regionima
 const REGION_KEYWORDS: Record<string, string[]> = {
   IN: ['bollywood songs', 'indian music', 'top hindi hits', 'punjabi hits', 'love songs'],
   VN: ['vietnam top music', 'nhạc trẻ', 'nhạc remix', 'vpop', 'nhạc ballad'],
   PH: ['opm hits', 'pinoy top songs', 'tagalog music', 'filipino hits'],
-  KR: ['kpop hits', 'korean top songs', 'ballad', 'kdrama ost', 'kpop playlist'],
+  KR: ['kpop hits', 'kpop playlist', 'ballad', 'kdrama ost', 'korean pop'],
   JP: ['jpop hits', 'japanese music', 'anime songs', 'city pop', 'top jpop'],
   US: ['top music', 'billboard', 'pop hits', 'edm', 'rap'],
   RU: ['russian pop', 'русская музыка', 'топ песни', 'поп музыка'],
@@ -36,7 +35,6 @@ export type RegionDiscoveryResult = {
   newFetches: number
 }
 
-// ✅ Glavna funkcija za otkrivanje playlisti po regionu
 export async function discoverPlaylistsForRegion(
   region: string,
   budgetCanSpend: (cost: number) => boolean,
@@ -44,16 +42,16 @@ export async function discoverPlaylistsForRegion(
   ttlDays = 7
 ): Promise<RegionDiscoveryResult> {
 
-  // 1️⃣ Cache — koristi već preuzete plejliste u poslednjih N dana
+  // 1️⃣ Cache check
   let cached: string[] = []
   try {
-    const { data, error } = await (supabase as any)
+    const { data } = await (supabase as any)
       .from('discovered_playlists')
       .select('playlist_id')
       .eq('region', region)
       .gte('fetched_on', ttlDate(ttlDays))
       .limit(100)
-    if (!error) cached = (data || []).map((r: any) => r.playlist_id)
+    cached = (data || []).map((r: any) => r.playlist_id)
   } catch {}
 
   if (cached.length > 0) {
@@ -61,7 +59,7 @@ export async function discoverPlaylistsForRegion(
     return { region, playlistIds: cached, cacheHits: cached.length, newFetches: 0 }
   }
 
-  // 2️⃣ Odabir ključnih reči
+  // 2️⃣ Discover fresh playlists
   const baseKeywords = REGION_KEYWORDS[region] || REGION_KEYWORDS.default
   const keywords = shuffle(baseKeywords)
   const found = new Set<string>()
@@ -78,7 +76,7 @@ export async function discoverPlaylistsForRegion(
           type: ['playlist'],
           q,
           regionCode: region,
-          videoCategoryId: '10', // 🎵 samo muzika
+          videoCategoryId: '10',
           relevanceLanguage: 'en',
           maxResults: 10
         }),
@@ -93,14 +91,21 @@ export async function discoverPlaylistsForRegion(
 
       budgetSpend(cost)
       newFetches++
+
     } catch (e: any) {
+      // 🧠 NOVO: Ako su svi API ključevi iscrpljeni — čekaj 1h i probaj ponovo
+      if (e instanceof QuotaDepletedError) {
+        log('warn', `[WAIT] All API keys exhausted. Cooling down for 60 minutes before continuing...`)
+        await new Promise(res => setTimeout(res, 60 * 60 * 1000))
+        return await discoverPlaylistsForRegion(region, budgetCanSpend, budgetSpend, ttlDays)
+      }
       log('warn', `[SEARCH] region=${region} q="${q}" failed`, { error: e?.message })
     }
   }
 
   const playlistIds = Array.from(found)
 
-  // 3️⃣ Ukloni već postojeće plejliste iz Supabase baze
+  // 3️⃣ Remove already existing playlists
   let uniqueIds = playlistIds
   try {
     const { data: existing } = await (supabase as any)
@@ -109,23 +114,15 @@ export async function discoverPlaylistsForRegion(
       .in('external_id', playlistIds)
     const existingIds = new Set(existing?.map((r: any) => r.external_id))
     uniqueIds = playlistIds.filter(id => !existingIds.has(id))
-  } catch (e: any) {
-    log('warn', `[FILTER] Failed to check existing playlists`, { error: e?.message })
-  }
+  } catch {}
 
-  // 4️⃣ Upsert novih playlisti u cache
+  // 4️⃣ Upsert new ones into cache
   if (uniqueIds.length > 0) {
     const nowIso = new Date().toISOString()
     const rows = uniqueIds.map(pid => ({ playlist_id: pid, region, fetched_on: nowIso }))
     try {
       await (supabase as any).from('discovered_playlists').upsert(rows, { onConflict: 'playlist_id' })
-    } catch (e: any) {
-      log('warn', `[UPSERT] Fallback for discovered_playlists`, { error: e?.message })
-      try {
-        const fallbackRows = uniqueIds.map(pid => ({ playlist_id: pid, region, discovered_at: nowIso }))
-        await (supabase as any).from('discovered_playlists').upsert(fallbackRows, { onConflict: 'playlist_id' })
-      } catch {}
-    }
+    } catch {}
   }
 
   log('info', `[DISCOVERY] Region=${region} new=${uniqueIds.length} cacheHits=${cached.length}`)
