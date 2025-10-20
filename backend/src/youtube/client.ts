@@ -4,44 +4,31 @@ import { log } from '../utils/logger.js'
 
 dotenv.config()
 
+let apiKeys: string[] = []
 let currentKeyIndex = 0
 let lastLoggedIndex = -1
-const cooldownUntil = new Map<string, number>() // key -> epoch ms
+const cooldownUntil = new Map<string, number>()
 const metrics = new Map<string, { used_units: number; quota_exceeded: number; last_used: number; cooldown_until?: number }>()
 
-function safeParseKeys(): string[] {
-  try {
-    const raw = process.env.YOUTUBE_API_KEYS
-    if (typeof raw === 'string' && raw.trim().length > 0) {
-      const keys = raw
-        .split(',')
-        .map(k => k.trim())
-        .filter(Boolean)
-      log('info', `[YouTube] Loaded ${keys.length} API key(s) from YOUTUBE_API_KEYS.`)
-      return keys
-    }
-  } catch (err: any) {
-    console.warn('[YouTube] Failed to parse YOUTUBE_API_KEYS:', err?.message)
-  }
-
-  // fallback — pojedinačne varijable
-  const fallback = ['YOUTUBE_API_KEY_1','YOUTUBE_API_KEY_2','YOUTUBE_API_KEY_3']
-    .map(k => (process.env as any)[k] as string | undefined)
+// ✅ Load all keys once on startup
+function initializeKeys(): string[] {
+  if (apiKeys.length > 0) return apiKeys
+  const raw = process.env.YOUTUBE_API_KEYS || ''
+  const parsed = raw
+    .split(',')
+    .map(k => k.trim())
     .filter(Boolean)
-    .map(v => v!.trim())
-
-  if (fallback.length > 0) {
-    log('info', `[YouTube] Loaded ${fallback.length} API key(s) from individual vars.`)
-    return fallback
+  if (parsed.length === 0) {
+    throw new Error('❌ No YouTube API keys found in YOUTUBE_API_KEYS')
   }
-
-  console.error('[YouTube] ⚠️ No API keys found in environment.')
-  return []
+  apiKeys = [...new Set(parsed)]
+  log('info', `[YouTube] Initialized ${apiKeys.length} API key(s) from YOUTUBE_API_KEYS.`)
+  return apiKeys
 }
 
-function loadApiKeys(): string[] {
-  const keys = safeParseKeys()
-  return Array.from(new Set(keys)).filter(Boolean)
+function getKeys(): string[] {
+  if (apiKeys.length === 0) return initializeKeys()
+  return apiKeys
 }
 
 function isQuotaExceeded(err: any): boolean {
@@ -57,20 +44,15 @@ export class QuotaDepletedError extends Error {
   }
 }
 
-function pickCurrentKey(ban?: Set<string>): { key: string; index: number; total: number } | null {
-  const keys = loadApiKeys()
+function pickCurrentKey(): { key: string; index: number; total: number } | null {
+  const keys = getKeys()
   if (keys.length === 0) return null
   const total = keys.length
-  const combinedBan = new Set<string>([...(ban ? Array.from(ban) : [])])
-  for (let step = 0; step < total; step++) {
-    const idx = (currentKeyIndex + step) % total
+  for (let i = 0; i < total; i++) {
+    const idx = (currentKeyIndex + i) % total
     const k = keys[idx]
-    if (combinedBan.has(k)) continue
     const until = cooldownUntil.get(k)
-    if (typeof until === 'number' && until > Date.now()) {
-      // still cooling down; skip
-      continue
-    }
+    if (typeof until === 'number' && until > Date.now()) continue // skip cooling key
     return { key: k, index: idx, total }
   }
   return null
@@ -88,13 +70,13 @@ function logKeyIndex(index: number, total: number) {
 }
 
 type WithKeyOptions = { label?: string; unitCost?: number }
+
 export async function withKey<T>(fn: (yt: youtube_v3.Youtube) => Promise<T>, options?: WithKeyOptions): Promise<T> {
-  const keys = loadApiKeys()
-  if (keys.length === 0) throw new Error('No YouTube API keys configured (set YOUTUBE_API_KEYS or YOUTUBE_API_KEY_1..3)')
+  const keys = getKeys()
+  if (keys.length === 0) throw new Error('No YouTube API keys configured')
 
   const label = options?.label
   const unitCost = options?.unitCost ?? 0
-
   let attempts = 0
 
   for (;;) {
@@ -102,11 +84,13 @@ export async function withKey<T>(fn: (yt: youtube_v3.Youtube) => Promise<T>, opt
     if (!pick) throw new QuotaDepletedError()
     const { key, index, total } = pick
     logKeyIndex(index, total)
+
     const now = Date.now()
     const m = metrics.get(key) || { used_units: 0, quota_exceeded: 0, last_used: 0 }
     m.last_used = now
     metrics.set(key, m)
     const yt = google.youtube({ version: 'v3', auth: key })
+
     try {
       const result = await fn(yt)
       if (unitCost > 0) {
@@ -134,10 +118,8 @@ export async function withKey<T>(fn: (yt: youtube_v3.Youtube) => Promise<T>, opt
 }
 
 export function youtubeClient(): youtube_v3.Youtube {
-  const keys = loadApiKeys()
-  if (keys.length === 0) {
-    throw new Error('No YouTube API keys configured (set YOUTUBE_API_KEYS or YOUTUBE_API_KEY_1..3)')
-  }
+  const keys = getKeys()
+  if (keys.length === 0) throw new Error('No YouTube API keys configured')
   const idx = currentKeyIndex % keys.length
   const key = keys[idx]
   logKeyIndex(idx, keys.length)
