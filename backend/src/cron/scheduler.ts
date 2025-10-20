@@ -119,19 +119,116 @@ async function executeTick(state: SchedulerState) {
   }
 }
 
+// ----- Global lock helpers ---------------------------------------------------
+async function ensureSchedulerRow() {
+  try {
+    if (!supabase) return null
+    const { data, error } = await (supabase
+      .from('scheduler_state')
+      .select('id, is_locked')
+      .limit(1)
+      .single() as any)
+    if (error || !data) {
+      const now = new Date().toISOString()
+      const { data: inserted, error: insErr } = await (supabase
+        .from('scheduler_state')
+        .insert({
+          mode: 'FETCH',
+          day_in_cycle: 1,
+          last_region: 'IN',
+          last_tick: now,
+          updated_at: now,
+          is_locked: false,
+        })
+        .select('id, is_locked')
+        .single() as any)
+      if (insErr) {
+        console.warn('[LOCK] Failed to initialize scheduler_state row:', insErr.message)
+        return null
+      }
+      return inserted
+    }
+    return data
+  } catch (e: any) {
+    console.warn('[LOCK] Error ensuring scheduler_state row:', e?.message)
+    return null
+  }
+}
+
+async function acquireLock(): Promise<boolean> {
+  if (!supabase) {
+    console.warn('[LOCK] Supabase unavailable, proceeding without global lock.')
+    return true
+  }
+
+  const row = await ensureSchedulerRow()
+  if (!row) {
+    console.warn('[LOCK] Unable to read/init scheduler_state; skipping this tick.')
+    return false
+  }
+
+  try {
+    if (row.is_locked) {
+      console.warn('[LOCK] Scheduler is already running on another instance, skipping this tick.')
+      return false
+    }
+
+    const now = new Date().toISOString()
+    const { error: updErr } = await (supabase
+      .from('scheduler_state')
+      .update({ is_locked: true, updated_at: now })
+      .eq('id', row.id) as any)
+    if (updErr) {
+      console.warn('[LOCK] Failed to acquire lock:', updErr.message)
+      return false
+    }
+    console.log('[LOCK] Scheduler lock acquired.')
+    return true
+  } catch (e: any) {
+    console.warn('[LOCK] Unexpected error acquiring lock:', e?.message)
+    return false
+  }
+}
+
+async function releaseLock(): Promise<void> {
+  if (!supabase) return
+  try {
+    const now = new Date().toISOString()
+    await (supabase
+      .from('scheduler_state')
+      .update({ is_locked: false, updated_at: now }) as any)
+    console.log('[LOCK] Scheduler lock released.')
+  } catch (e: any) {
+    console.warn('[LOCK] Failed to release lock:', e?.message)
+  }
+}
+
+async function runWithLock(fn: () => Promise<void>, state: SchedulerState) {
+  const locked = await acquireLock()
+  if (!locked) {
+    log('warn', '[LOCK] Another instance is active, exiting.')
+    return
+  }
+  try {
+    await fn()
+  } finally {
+    await releaseLock()
+  }
+}
+
 export async function startScheduler() {
   const initState = await readOrInitSchedulerState()
   console.log(`[STATE] Scheduler initialized: day=${initState.day_in_cycle}, mode=${initState.mode}, last_region=${initState.last_region}`)
   log('info', `Cron scheduler starting in mode=${initState.mode}`)
 
   // 🟢 odmah pokreni pri startu (npr. posle redeploy-a)
-  await executeTick(initState)
+  await runWithLock(() => executeTick(initState), initState)
 
   // 🕘 dnevni jutarnji tick — 09:05 po Mađarskoj (07:05 UTC)
   cron.schedule('5 7 * * *', async () => {
     log('info', '[CRON] ☀️ Morning tick starting (09:05 CET)...')
     const state = await readOrInitSchedulerState()
-    await executeTick(state)
+    await runWithLock(() => executeTick(state), state)
     log('info', '[CRON] ☀️ Morning tick completed.')
   })
 
@@ -139,7 +236,7 @@ export async function startScheduler() {
   cron.schedule('5 19 * * *', async () => {
     log('info', '[CRON] 🌙 Evening tick starting (21:05 CET)...')
     const state = await readOrInitSchedulerState()
-    await executeTick(state)
+    await runWithLock(() => executeTick(state), state)
     log('info', '[CRON] 🌙 Evening tick completed.')
   })
 }

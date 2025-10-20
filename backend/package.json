@@ -10,6 +10,7 @@
     "build": "tsc -p tsconfig.json",
   "start": "node dist/index.js",
   "start:scheduler": "node dist/cron/scheduler.js",
+    "reset:lock": "node dist/cron/resetLock.js",
     "dev": "node --loader ts-node/esm src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
