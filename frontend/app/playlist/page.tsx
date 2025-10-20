@@ -1,8 +1,8 @@
-'use client'
+"use client"
 
-import { useEffect, useState } from 'react'
-import { useParams } from 'next/navigation'
-import { getSupabaseClient } from '../../../lib/supabaseClient'
+import { Suspense, useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { getSupabaseClient } from '../../lib/supabaseClient'
 
 const FALLBACK_COVER = 'https://ofkfygqrfenctzitigae.supabase.co/storage/v1/object/public/Covers/IMG_0596.png'
 
@@ -22,26 +22,27 @@ type TrackRow = {
   }
 }
 
-export default function PlaylistPage() {
-  const params = useParams<{ id: string }>()
+function PlaylistClient() {
+  const params = useSearchParams()
+  const id = params.get('id') || ''
+
   const [playlist, setPlaylist] = useState<Playlist | null>(null)
   const [tracks, setTracks] = useState<TrackRow[]>([])
   const [notFound, setNotFound] = useState(false)
 
   useEffect(() => {
-    const id = params?.id
     if (id) void loadPlaylist(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params?.id])
+  }, [id])
 
-  async function loadPlaylist(id: string) {
+  async function loadPlaylist(pid: string) {
     const supabase = getSupabaseClient()
     if (!supabase) return
 
     const { data: playlistData, error: playlistError } = await supabase
       .from('public.v_playlists_full')
       .select('*')
-      .eq('playlist_id', id)
+      .eq('playlist_id', pid)
       .single()
 
     if (playlistError || !playlistData) {
@@ -53,7 +54,7 @@ export default function PlaylistPage() {
     const { data: trackData, error: trackError } = await supabase
       .from('playlist_tracks')
       .select('track_id, tracks(title, artist, duration)')
-      .eq('playlist_id', id)
+      .eq('playlist_id', pid)
 
     if (trackError) {
       // eslint-disable-next-line no-console
@@ -74,6 +75,7 @@ export default function PlaylistPage() {
     }
   }
 
+  if (!id) return <div className="text-white p-6">No playlist selected.</div>
   if (notFound) return <div className="text-white p-6">Playlist not found.</div>
   if (!playlist) return <div className="text-white p-6">Loading...</div>
 
@@ -107,5 +109,13 @@ export default function PlaylistPage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function PlaylistPage() {
+  return (
+    <Suspense fallback={<div className="text-white p-6">Loading...</div>}>
+      <PlaylistClient />
+    </Suspense>
   )
 }

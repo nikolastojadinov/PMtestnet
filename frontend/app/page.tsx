@@ -37,7 +37,7 @@ export default function HomePage() {
     }
 
     const { data, error } = await supabase
-      .from('v_playlists_full')
+      .from('public.v_playlists_full')
       .select('*')
       .limit(100)
     if (error) {
@@ -89,7 +89,7 @@ export default function HomePage() {
     if (!supabase) return
 
     const { data, error } = await supabase
-      .from('v_playlists_full')
+      .from('public.v_playlists_full')
       .select('*')
       .or(`title.ilike.%${q}%,description.ilike.%${q}%`)
       .limit(25)
@@ -144,7 +144,7 @@ export default function HomePage() {
           {results.map((playlist) => (
             <a
               key={playlist.playlist_id}
-              href={`/playlist/${playlist.playlist_id}`}
+              href={`/playlist?id=${encodeURIComponent(playlist.playlist_id)}`}
               className="block mb-3 p-3 rounded-lg bg-purple-800/30 hover:bg-purple-700/40 transition"
             >
               <div className="font-semibold">{playlist.title}</div>
@@ -161,7 +161,7 @@ export default function HomePage() {
                 list.map((playlist) => (
                   <a
                     key={playlist.playlist_id}
-                    href={`/playlist/${playlist.playlist_id}`}
+                    href={`/playlist?id=${encodeURIComponent(playlist.playlist_id)}`}
                     className="flex-shrink-0 w-40 p-2 bg-purple-800/20 rounded-lg hover:bg-purple-700/40 transition"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
