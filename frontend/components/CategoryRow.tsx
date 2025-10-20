@@ -5,9 +5,11 @@ export default function CategoryRow({ title, playlists }: { title: string; playl
   return (
     <section className="space-y-3">
       <h2 className="text-lg font-semibold">{title}</h2>
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+      <div className="flex gap-4 overflow-x-auto pb-2 snap-x">
         {playlists.map((p) => (
-          <PlaylistCard key={p.id} title={p.title} region={p.region} />
+          <div className="w-44 shrink-0 snap-start" key={p.id}>
+            <PlaylistCard title={p.title} region={p.region} cover={p.cover} />
+          </div>
         ))}
       </div>
     </section>
