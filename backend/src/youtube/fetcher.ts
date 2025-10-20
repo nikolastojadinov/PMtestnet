@@ -46,12 +46,14 @@ async function safeUpsertQueue(
   }
 }
 
+// ✅ prošireni tip rezultata
 export type TickResult = {
   totalPlaylists: number
   totalTracks: number
   totalRegionsProcessed: number
   lastRegion: string
   unitsUsed: number
+  quotaExceeded?: boolean // <-- dodato
 }
 
 export async function runDiscoveryTick(arg?: { playlistIds?: string[], startRegion?: string }): Promise<TickResult> {
@@ -74,6 +76,7 @@ export async function runDiscoveryTick(arg?: { playlistIds?: string[], startRegi
   let totalTracks = 0
   let regionsDone = 0
   let lastRegion: string = startRegion
+  let quotaExceeded = false // <-- dodato
   const rich = process.env.SUPABASE_RICH_SCHEMA === '1'
 
   for (const region of order) {
@@ -126,7 +129,7 @@ export async function runDiscoveryTick(arg?: { playlistIds?: string[], startRegi
             cover_url: item.snippet?.thumbnails?.high?.url
               || item.snippet?.thumbnails?.default?.url
               || null,
-            region, // važno zbog region izvještaja
+            region, 
             category: 'Music',
             item_count: (item.contentDetails as any)?.itemCount ?? null,
             channel_title: item.snippet?.channelTitle ?? null,
@@ -185,7 +188,6 @@ export async function runDiscoveryTick(arg?: { playlistIds?: string[], startRegi
                 trackRows.push({ id: tid, title })
               }
 
-              // ❗ Fix: nema 'updated_at' u playlist_tracks – samo obavezna polja (i po želji created_at)
               linkRows.push({
                 playlist_id: pidUuid,
                 track_id: tid,
@@ -220,8 +222,10 @@ export async function runDiscoveryTick(arg?: { playlistIds?: string[], startRegi
       }
     } catch (e: any) {
       if (e instanceof QuotaDepletedError) {
+        quotaExceeded = true // ✅ detektuj kvotu
         log('warn', `[QUOTA] All keys exhausted; pausing 1h for refresh...`)
-        await sleep(3_600_000) // 1h pauza dok se kvote resetuju/cooldown
+        await sleep(3_600_000)
+        break // prekini odmah da scheduler može da rotira ključ
       } else if (e?.name === 'TimeoutError') {
         log('warn', `[WARN] Region=${region} discovery timeout, skipping`)
       } else {
@@ -234,5 +238,5 @@ export async function runDiscoveryTick(arg?: { playlistIds?: string[], startRegi
   }
 
   log('info', `[TOTAL] Discovery summary: regions_done=${regionsDone}, playlists=${totalPlaylists}, tracks=${totalTracks}, units=${unitsUsed}`)
-  return { totalPlaylists, totalTracks, totalRegionsProcessed: regionsDone, lastRegion, unitsUsed }
+  return { totalPlaylists, totalTracks, totalRegionsProcessed: regionsDone, lastRegion, unitsUsed, quotaExceeded }
 }
