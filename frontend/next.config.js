@@ -2,21 +2,18 @@
 const nextConfig = {
   reactStrictMode: true,
   output: 'standalone',
-  experimental: {
-    serverActions: true,
-  },
   eslint: {
     ignoreDuringBuilds: true,
   },
-  // 👇 Obavezno: sprečava prerender (static export)
-  // i forsira dinamičko renderovanje svake stranice
+  // Disable Next Image optimization for Netlify if desired
   images: {
     unoptimized: true,
   },
-  // 👇 SSR fallback – omogućava dinamički response na Netlify-u
+  // Stable build id
   generateBuildId: async () => {
     return 'purple-music-build'
   },
+  // Global no-store headers to avoid caching issues on SSR
   async headers() {
     return [
       {

@@ -1,26 +1,3 @@
-'use client'
-
-import { useEffect, useState } from 'react'
-import { getSupabaseClient } from '../lib/supabaseClient'
-
-const FALLBACK_COVER =
-  'https://ofkfygqrfenctzitigae.supabase.co/storage/v1/object/public/Covers/IMG_0596.png'
-
-type Playlist = {
-  playlist_id: string
-  title: string
-  description?: string | null
-  cover_url?: string | null
-  item_count?: number | null
-  created_at?: string | null
-}
-
-export default function HomePage() {
-  const [search, setSearch] = useState('')
-  const [results, setResults] = useState<Playlist[]>([])
-  const [categories, setCategories] = useState<Record<string, Playlist[]>>({})
-  const [loading, setLoading] = useState<boolean>(true)
-  const [error, setError] = useState<string | null>(null)
 "use client"
 
 import { useEffect, useState } from 'react'
@@ -46,6 +23,7 @@ export default function HomePage() {
 
   useEffect(() => {
     void loadCategories()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   async function loadCategories() {
