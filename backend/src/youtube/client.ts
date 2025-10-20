@@ -1,8 +1,8 @@
 import { google, youtube_v3 } from 'googleapis'
-import dotenv from 'dotenv'
 import { log } from '../utils/logger.js'
 
-dotenv.config()
+// Removed dotenv.config() because Render already injects process.env
+// Keeping environment values safe from being overwritten.
 
 let currentKeyIndex = 0
 let lastLoggedIndex = -1
@@ -11,23 +11,22 @@ const cooldownUntil = new Map<string, number>()
 const metrics = new Map<string, { used_units: number; quota_exceeded: number; last_used: number; cooldown_until?: number }>()
 
 function loadApiKeys(): string[] {
-  // ✅ Safe parsing even if there are commas or whitespace
-  let raw = process.env.YOUTUBE_API_KEYS || ''
+  const raw = process.env.YOUTUBE_API_KEYS
   if (!raw || typeof raw !== 'string') {
-    log('error', '[YouTube] Failed to parse YOUTUBE_API_KEYS from environment (empty or invalid).')
+    log('error', '[YouTube] No YOUTUBE_API_KEYS found in environment. (process.env.YOUTUBE_API_KEYS is undefined)')
     return []
   }
 
   const keys = raw
     .split(',')
-    .map(k => k.trim().replace(/^"|"$/g, '')) // strip quotes if any
+    .map(k => k.trim().replace(/^"|"$/g, '')) // strip quotes if present
     .filter(Boolean)
 
   if (keys.length === 0) {
-    log('error', '[YouTube] No valid YouTube API keys found in YOUTUBE_API_KEYS.')
+    log('error', '[YouTube] Failed to parse any valid keys from YOUTUBE_API_KEYS.')
   } else if (cachedKeys.length === 0) {
     cachedKeys = keys
-    log('info', `[YouTube] Loaded ${keys.length} API key(s) from YOUTUBE_API_KEYS.`)
+    log('info', `[YouTube] Initialized ${keys.length} API key(s) from YOUTUBE_API_KEYS.`)
   }
 
   return cachedKeys
@@ -54,7 +53,7 @@ function pickCurrentKey(): { key: string; index: number; total: number } | null 
     const idx = (currentKeyIndex + i) % total
     const key = keys[idx]
     const until = cooldownUntil.get(key)
-    if (until && until > Date.now()) continue // cooling down
+    if (until && until > Date.now()) continue // still cooling down
     return { key, index: idx, total }
   }
   return null
@@ -78,7 +77,7 @@ export async function withKey<T>(
   options?: WithKeyOptions
 ): Promise<T> {
   const keys = loadApiKeys()
-  if (keys.length === 0) throw new Error('No YouTube API keys configured')
+  if (keys.length === 0) throw new Error('No YouTube API keys configured.')
 
   const label = options?.label
   const unitCost = options?.unitCost ?? 0
@@ -127,7 +126,7 @@ export async function withKey<T>(
 
 export function youtubeClient(): youtube_v3.Youtube {
   const keys = loadApiKeys()
-  if (keys.length === 0) throw new Error('No YouTube API keys configured')
+  if (keys.length === 0) throw new Error('No YouTube API keys configured.')
   const idx = currentKeyIndex % keys.length
   const key = keys[idx]
   logKeyIndex(idx, keys.length)
