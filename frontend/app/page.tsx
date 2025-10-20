@@ -1,14 +1,15 @@
 import PlaylistRow from '@/components/PlaylistRow'
 import SearchBar from '@/components/SearchBar'
-import getSupabase from '../lib/supabaseClient'
+import { createClient } from '@supabase/supabase-js'
 import type { Playlist } from '@/types/playlist'
 
 export const dynamic = 'force-dynamic'
 
 export default async function Page() {
   const categories = ['Most popular', 'Trending now', 'Best of 80s', 'Best of 90s', 'Best of 2000'] as const
-
-  const supabase = getSupabase()
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const supabase = url && anon ? createClient(url, anon) : null
   const playlistsByCategory: Record<string, Playlist[]> = {}
 
   if (supabase) {
