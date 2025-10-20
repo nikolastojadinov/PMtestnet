@@ -9,14 +9,38 @@ let lastLoggedIndex = -1
 const cooldownUntil = new Map<string, number>() // key -> epoch ms
 const metrics = new Map<string, { used_units: number; quota_exceeded: number; last_used: number; cooldown_until?: number }>()
 
-function loadApiKeys(): string[] {
-  // Preferred: comma-separated list in YOUTUBE_API_KEYS
-  const primary = (process.env.YOUTUBE_API_KEYS?.split(',').map(k => k.trim()) ?? []).filter(Boolean)
-  const keys = primary.length > 0 ? primary : (['YOUTUBE_API_KEY_1','YOUTUBE_API_KEY_2','YOUTUBE_API_KEY_3']
+function safeParseKeys(): string[] {
+  try {
+    const raw = process.env.YOUTUBE_API_KEYS
+    if (typeof raw === 'string' && raw.trim().length > 0) {
+      const keys = raw
+        .split(',')
+        .map(k => k.trim())
+        .filter(Boolean)
+      log('info', `[YouTube] Loaded ${keys.length} API key(s) from YOUTUBE_API_KEYS.`)
+      return keys
+    }
+  } catch (err: any) {
+    console.warn('[YouTube] Failed to parse YOUTUBE_API_KEYS:', err?.message)
+  }
+
+  // fallback — pojedinačne varijable
+  const fallback = ['YOUTUBE_API_KEY_1','YOUTUBE_API_KEY_2','YOUTUBE_API_KEY_3']
     .map(k => (process.env as any)[k] as string | undefined)
     .filter(Boolean)
-    .map(v => v!.trim()))
-  // Deduplicate and filter truthy
+    .map(v => v!.trim())
+
+  if (fallback.length > 0) {
+    log('info', `[YouTube] Loaded ${fallback.length} API key(s) from individual vars.`)
+    return fallback
+  }
+
+  console.error('[YouTube] ⚠️ No API keys found in environment.')
+  return []
+}
+
+function loadApiKeys(): string[] {
+  const keys = safeParseKeys()
   return Array.from(new Set(keys)).filter(Boolean)
 }
 
@@ -89,12 +113,11 @@ export async function withKey<T>(fn: (yt: youtube_v3.Youtube) => Promise<T>, opt
         m.used_units += unitCost
         metrics.set(key, m)
       }
-      // Stay on this key until quotaExceeded
       return result
     } catch (err: any) {
       if (isQuotaExceeded(err)) {
         m.quota_exceeded += 1
-        const coolMs = 60 * 60 * 1000 // 60 minutes
+        const coolMs = 60 * 60 * 1000 // 1h cooldown
         const until = Date.now() + coolMs
         cooldownUntil.set(key, until)
         m.cooldown_until = until
@@ -117,7 +140,6 @@ export function youtubeClient(): youtube_v3.Youtube {
   }
   const idx = currentKeyIndex % keys.length
   const key = keys[idx]
-  // Do NOT advance currentKeyIndex here to avoid unintended rotation on client creation
   logKeyIndex(idx, keys.length)
   return google.youtube({ version: 'v3', auth: key })
 }
