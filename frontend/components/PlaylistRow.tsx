@@ -1,6 +1,7 @@
 import PlaylistCard from './PlaylistCard'
+import type { Playlist } from '@/types/playlist'
 
-type Row = { id: string; title: string; region?: string | null; cover_url?: string | null }
+type Row = Pick<Playlist, 'id' | 'title' | 'region' | 'cover_url'>
 
 export default function PlaylistRow({ title, playlists }: { title: string; playlists: Row[] }) {
   return (
@@ -9,7 +10,7 @@ export default function PlaylistRow({ title, playlists }: { title: string; playl
       <div className="flex gap-4 overflow-x-auto pb-2 snap-x">
         {playlists.map((p) => (
           <div className="w-44 shrink-0 snap-start" key={p.id}>
-            <PlaylistCard id={p.id} title={p.title} region={p.region || ''} cover={p.cover_url || '/covers/readme.txt'} />
+            <PlaylistCard id={p.id} title={p.title || 'Untitled'} region={p.region || ''} cover={p.cover_url || '/covers/readme.txt'} />
           </div>
         ))}
       </div>

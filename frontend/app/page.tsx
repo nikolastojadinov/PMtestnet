@@ -1,8 +1,7 @@
 import PlaylistRow from '@/components/PlaylistRow'
 import SearchBar from '@/components/SearchBar'
 import getSupabase from '../lib/supabaseClient'
-
-type Playlist = { id: string; title: string; region: string | null; cover_url: string | null; category: string | null }
+import type { Playlist } from '@/types/playlist'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,17 +15,22 @@ export default async function Page() {
     for (const cat of categories) {
       const { data } = await supabase
         .from('playlists')
-        .select('id, title, name, region, category, cover_url')
+        .select('id, external_id, title, name, description, cover_url, region, category, item_count, channel_title, created_at')
         .eq('is_public', true)
         .eq('category', cat)
         .limit(8)
       playlistsByCategory[cat] = (data || []).map((r: any) => ({
         id: r.id,
+        external_id: r.external_id ?? null,
         title: r.title || r.name || 'Untitled',
+        description: r.description ?? null,
+        cover_url: r.cover_url ?? null,
         region: r.region ?? null,
         category: r.category ?? null,
-        cover_url: r.cover_url ?? null,
-      }))
+        item_count: r.item_count ?? null,
+        channel_title: r.channel_title ?? null,
+        created_at: r.created_at ?? null,
+      })) as Playlist[]
     }
   } else {
     for (const cat of categories) playlistsByCategory[cat] = []

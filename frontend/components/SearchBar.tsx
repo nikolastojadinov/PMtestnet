@@ -2,8 +2,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import getSupabase from '../lib/supabaseClient'
+import type { Playlist } from '@/types/playlist'
 
-type Row = { id: string; title?: string | null; name?: string | null }
+type Row = Pick<Playlist, 'id' | 'title' | 'region'> & { name?: string | null }
 
 export default function SearchBar() {
   const [query, setQuery] = useState('')
@@ -20,7 +21,7 @@ export default function SearchBar() {
       try {
         const { data, error } = await supabase
           .from('playlists')
-          .select('id, title, name, region')
+          .select('id, title, name, region, cover_url')
           .or(`title.ilike.%${query}%,region.ilike.%${query}%`)
           .limit(10)
         if (error) {
@@ -50,8 +51,8 @@ export default function SearchBar() {
           {results.map((r) => (
             <Link key={r.id} href={`/playlist/${r.id}`} className="flex items-center justify-between p-2 hover:bg-[#290234] rounded">
               <span>{(r.title || r.name) ?? 'Untitled'}</span>
-              {('region' in r) && (r as any).region && (
-                <span className="text-xs text-white/50 ml-3">{(r as any).region}</span>
+              {r.region && (
+                <span className="text-xs text-white/50 ml-3">{r.region}</span>
               )}
             </Link>
           ))}
