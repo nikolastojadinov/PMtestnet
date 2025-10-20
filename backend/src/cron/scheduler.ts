@@ -19,10 +19,36 @@ type SchedulerState = {
   mode: Mode
   day_in_cycle: number
   last_region?: string
+  updated_at?: string
+  is_locked?: boolean
 }
 
 const DEFAULT_STATE: SchedulerState = { id: null, mode: 'FETCH', day_in_cycle: 1, last_region: 'IN' }
+const LOCK_TTL_MS = 10 * 60 * 1000 // 10 minutes
 
+// ------------------ API Key rotation ------------------------------------------
+let activeKeyIndex = 0
+let apiKeys: string[] = []
+try {
+  apiKeys = JSON.parse(process.env.YOUTUBE_API_KEYS || '[]')
+  if (!Array.isArray(apiKeys) || apiKeys.length === 0) {
+    console.warn('[YouTube] No YOUTUBE_API_KEYS found in environment.')
+  }
+} catch {
+  console.warn('[YouTube] Failed to parse YOUTUBE_API_KEYS from environment.')
+}
+
+function getActiveKey(): string | null {
+  return apiKeys[activeKeyIndex] || null
+}
+
+function rotateApiKey() {
+  if (apiKeys.length <= 1) return
+  activeKeyIndex = (activeKeyIndex + 1) % apiKeys.length
+  console.log(`[YouTube] Rotated to next API key (${activeKeyIndex + 1}/${apiKeys.length})`)
+}
+
+// ------------------ State helpers --------------------------------------------
 async function readOrInitSchedulerState(): Promise<SchedulerState> {
   if (!supabase) {
     console.warn('[STATE] Supabase unavailable, using defaults.')
@@ -35,16 +61,30 @@ async function readOrInitSchedulerState(): Promise<SchedulerState> {
       console.warn('[STATE] scheduler_state missing, inserting defaults.')
       const now = new Date().toISOString()
       const { data: inserted } = await (supabase.from('scheduler_state')
-        .insert({ mode: 'FETCH', day_in_cycle: 1, last_region: 'IN', last_tick: now, updated_at: now })
+        .insert({ mode: 'FETCH', day_in_cycle: 1, last_region: 'IN', last_tick: now, updated_at: now, is_locked: false })
         .select()
         .single() as any)
       return inserted ?? { ...DEFAULT_STATE }
     }
+
+    // 🧹 auto-unlock if lock is stale (>10 min)
+    if (data.is_locked && data.updated_at) {
+      const lockTime = new Date(data.updated_at).getTime()
+      const diff = Date.now() - lockTime
+      if (diff > LOCK_TTL_MS) {
+        console.warn('[LOCK] Stale lock detected, clearing it automatically.')
+        await supabase.from('scheduler_state').update({ is_locked: false }).eq('id', data.id)
+        data.is_locked = false
+      }
+    }
+
     return { 
       id: data.id ?? null,
       mode: data.mode as Mode,
       day_in_cycle: data.day_in_cycle as number,
-      last_region: data.last_region ?? 'IN'
+      last_region: data.last_region ?? 'IN',
+      updated_at: data.updated_at,
+      is_locked: data.is_locked
     }
   } catch (e: any) {
     console.warn('[STATE] Supabase unavailable, using defaults.', e?.message)
@@ -95,19 +135,26 @@ function loadPlaylistIds(): string[] {
   }
 }
 
+// ------------------ Main tick logic ------------------------------------------
 async function executeTick(state: SchedulerState) {
   try {
     const startRegion = state.last_region ?? 'IN'
-    log('info', `[TICK START] UTC=${new Date().toISOString()}, startRegion=${startRegion}`)
+    const activeKey = getActiveKey()
+    log('info', `[TICK START] UTC=${new Date().toISOString()}, startRegion=${startRegion}, apiKey=${activeKey?.slice(0,8)}...`)
 
     const ids = loadPlaylistIds()
     if (state.mode === 'FETCH') {
       try {
         const result = await runDiscoveryTick({ startRegion })
+        if (result?.quotaExceeded) {
+          console.warn('[YouTube] Quota exceeded — rotating to next key.')
+          rotateApiKey()
+        }
         await persistNextState(state, result.lastRegion)
         log('info', `[TICK END] Completed FETCH tick with ${result.totalPlaylists} playlists, lastRegion=${result.lastRegion}`)
       } catch (e: any) {
         log('error', '[TICK FAIL] Discovery tick failed', { error: e?.message })
+        if (e?.message?.includes('quotaExceeded')) rotateApiKey()
       }
     } else {
       if (ids.length > 0) await refreshExistingPlaylists(ids)
@@ -119,13 +166,13 @@ async function executeTick(state: SchedulerState) {
   }
 }
 
-// ----- Global lock helpers ---------------------------------------------------
+// ------------------ Lock management ------------------------------------------
 async function ensureSchedulerRow() {
   try {
     if (!supabase) return null
     const { data, error } = await (supabase
       .from('scheduler_state')
-      .select('id, is_locked')
+      .select('id, is_locked, updated_at')
       .limit(1)
       .single() as any)
     if (error || !data) {
@@ -147,6 +194,16 @@ async function ensureSchedulerRow() {
         return null
       }
       return inserted
+    }
+
+    // 🧹 unlock stale lock
+    if (data.is_locked && data.updated_at) {
+      const diff = Date.now() - new Date(data.updated_at).getTime()
+      if (diff > LOCK_TTL_MS) {
+        console.warn('[LOCK] Stale lock found — unlocking automatically.')
+        await supabase.from('scheduler_state').update({ is_locked: false }).eq('id', data.id)
+        data.is_locked = false
+      }
     }
     return data
   } catch (e: any) {
@@ -216,15 +273,16 @@ async function runWithLock(fn: () => Promise<void>, state: SchedulerState) {
   }
 }
 
+// ------------------ Entry point ----------------------------------------------
 export async function startScheduler() {
   const initState = await readOrInitSchedulerState()
   console.log(`[STATE] Scheduler initialized: day=${initState.day_in_cycle}, mode=${initState.mode}, last_region=${initState.last_region}`)
   log('info', `Cron scheduler starting in mode=${initState.mode}`)
 
-  // 🟢 odmah pokreni pri startu (npr. posle redeploy-a)
+  // 🟢 run immediately after deploy
   await runWithLock(() => executeTick(initState), initState)
 
-  // 🕘 dnevni jutarnji tick — 09:05 po Mađarskoj (07:05 UTC)
+  // 🕘 daily morning tick — 09:05 CET (07:05 UTC)
   cron.schedule('5 7 * * *', async () => {
     log('info', '[CRON] ☀️ Morning tick starting (09:05 CET)...')
     const state = await readOrInitSchedulerState()
@@ -232,7 +290,7 @@ export async function startScheduler() {
     log('info', '[CRON] ☀️ Morning tick completed.')
   })
 
-  // 🌙 večernji tick — 21:05 po Mađarskoj (19:05 UTC)
+  // 🌙 nightly tick — 21:05 CET (19:05 UTC)
   cron.schedule('5 19 * * *', async () => {
     log('info', '[CRON] 🌙 Evening tick starting (21:05 CET)...')
     const state = await readOrInitSchedulerState()
@@ -241,5 +299,4 @@ export async function startScheduler() {
   })
 }
 
-// start immediately when executed directly
 try { startScheduler() } catch {}
