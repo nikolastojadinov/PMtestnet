@@ -1,4 +1,4 @@
-import { createClient } from 'supabase';
+import { createClient } from '@supabase/supabase-js';
 
 let supabase = null;
 
