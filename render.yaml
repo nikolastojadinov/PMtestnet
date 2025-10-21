@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: purple-music-backend
+    env: node
+    plan: starter
+    region: frankfurt
+    rootDirectory: backend
+    buildCommand: "npm ci --omit=dev"
+    startCommand: "npm start"
+    autoDeploy: true
+    envVars:
+      - key: TZ
+        value: Europe/Budapest
+      - key: NODE_VERSION
+        value: "20"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE
+        sync: false
+      - key: BACKEND_BASE_URL
+        sync: false
+      - key: YOUTUBE_API_KEYS
+        sync: false
+      - key: BOOTSTRAP_FETCH
+        sync: false
+    healthCheckPath: /health
+    disk:
+      name: data
+      sizeGB: 1
