@@ -1,24 +1,12 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "target": "ES2020",
+    "module": "ES2020",
+    "moduleResolution": "node",
     "outDir": "dist",
-    "rootDir": ".",
-    "allowJs": true,
-    "checkJs": false,
-    "strict": true,
     "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
-    "skipLibCheck": true,
     "resolveJsonModule": true,
-    "lib": ["ES2022"],
-    "types": ["node"]
+    "skipLibCheck": true
   },
-  "include": [
-    "cron/**/*",
-    "services/**/*",
-    "utils/**/*"
-  ],
-  "exclude": ["dist", "node_modules"]
+  "include": ["cron/**/*.ts", "regions.json"]
 }
