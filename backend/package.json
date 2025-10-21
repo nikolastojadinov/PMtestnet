@@ -5,7 +5,8 @@
   "main": "cron/scheduler.js",
   "scripts": {
     "start": "node cron/scheduler.js",
-    "dev": "nodemon cron/scheduler.js"
+    "dev": "nodemon cron/scheduler.js",
+    "build": "echo 'No build step needed'"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.6",
