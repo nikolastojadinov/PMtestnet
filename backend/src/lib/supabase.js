@@ -9,9 +9,11 @@ export function getSupabase() {
 
 export async function initSupabase() {
   const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE; // service role for server-side upserts
+  const key = process.env.SUPABASE_SERVICE_ROLE;
   if (!url || !key) throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE');
-  supabase = createClient(url, key);
-  // quick connectivity check
-  console.log('[supabase] client initialized');
+  supabase = createClient(url, key, {
+    auth: { persistSession: false },
+    global: { headers: { 'x-client-info': 'purple-music-backend' } }
+  });
+  console.log('[supabase] initialized');
 }
