@@ -8,6 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const regionsPath = path.join(__dirname, '..', 'regions.json');
 const regions = JSON.parse(await fs.readFile(regionsPath, 'utf-8'));
+console.log(`[INFO] [REGIONS] Loaded ${Array.isArray(regions) ? regions.length : 0} regions`);
 
 const FETCH_DAYS = 30;
 const FETCH_INTERVAL_MINUTES = 30;
