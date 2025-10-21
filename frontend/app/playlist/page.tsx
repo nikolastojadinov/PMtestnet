@@ -1,121 +1,73 @@
-"use client"
+"use client";
 
-import { Suspense, useEffect, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
-import { getSupabaseClient } from '../../lib/supabaseClient'
+import { Suspense, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { getSupabaseClient } from '../../lib/supabase';
+import TrackRow from '../../components/TrackRow';
+import Player from '../../components/Player';
 
-const FALLBACK_COVER = 'https://ofkfygqrfenctzitigae.supabase.co/storage/v1/object/public/Covers/IMG_0596.png'
+function PlaylistClient(){
+  const params = useSearchParams();
+  const id = params.get('id') || '';
+  const [pl,setPl] = useState<any>(null);
+  const [tracks,setTracks] = useState<any[]>([]);
+  const [current,setCurrent] = useState<any|null>(null);
+  const [show,setShow] = useState(false);
 
-type Playlist = {
-  playlist_id: string
-  title: string
-  description?: string | null
-  cover_url?: string | null
-}
+  useEffect(()=>{
+    if(!id) return;
+    (async ()=>{
+      const sb = getSupabaseClient();
+      if(!sb) return;
+      const { data: p } = await sb.from('playlists').select('*').eq('id', id).single();
+      setPl(p);
+      const { data: pts, error: rpcErr } = await sb.rpc('get_playlist_tracks', { p_playlist_id: id });
+      if(!rpcErr && pts){ setTracks(pts as any[]); }
+      else {
+        const { data: joined } = await sb.from('playlist_tracks')
+          .select('position, tracks(id, external_id, title, artist, cover_url)')
+          .eq('playlist_id', id).order('position',{ascending:true});
+        const mapped = (joined||[]).map((r:any)=> ({ position:r.position, ...r.tracks }));
+        setTracks(mapped);
+      }
+    })();
+  },[id]);
 
-type TrackRow = {
-  track_id: string
-  tracks: {
-    title: string | null
-    artist: string | null
-    duration: string | null
-  }
-}
-
-function PlaylistClient() {
-  const params = useSearchParams()
-  const id = params.get('id') || ''
-
-  const [playlist, setPlaylist] = useState<Playlist | null>(null)
-  const [tracks, setTracks] = useState<TrackRow[]>([])
-  const [notFound, setNotFound] = useState(false)
-
-  useEffect(() => {
-    if (id) void loadPlaylist(id)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id])
-
-  async function loadPlaylist(pid: string) {
-    const supabase = getSupabaseClient()
-    if (!supabase) return
-
-    const { data: playlistData, error: playlistError } = await supabase
-      .from('public.v_playlists_full')
-      .select('*')
-      .eq('playlist_id', pid)
-      .single()
-
-    if (playlistError || !playlistData) {
-      setNotFound(true)
-      return
-    }
-    setPlaylist(playlistData as Playlist)
-
-    const { data: trackData, error: trackError } = await supabase
-      .from('playlist_tracks')
-      .select('track_id, tracks(title, artist, duration)')
-      .eq('playlist_id', pid)
-
-    if (trackError) {
-      // eslint-disable-next-line no-console
-      console.error(trackError)
-    } else {
-      const normalized = ((trackData as any[]) || []).map((row: any) => {
-        const t = Array.isArray(row.tracks) ? row.tracks[0] : row.tracks
-        return {
-          track_id: row.track_id as string,
-          tracks: {
-            title: t?.title ?? null,
-            artist: t?.artist ?? null,
-            duration: t?.duration ?? null,
-          },
-        } as TrackRow
-      })
-      setTracks(normalized)
-    }
-  }
-
-  if (!id) return <div className="text-white p-6">No playlist selected.</div>
-  if (notFound) return <div className="text-white p-6">Playlist not found.</div>
-  if (!playlist) return <div className="text-white p-6">Loading...</div>
+  if(!id) return <div className="muted">No playlist selected.</div>;
 
   return (
-    <div className="min-h-screen bg-black text-white p-4">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={playlist.cover_url || FALLBACK_COVER}
-        alt={playlist.title}
-        className="w-full h-48 object-cover rounded-lg mb-4"
-      />
-      <h1 className="text-2xl font-bold mb-2">{playlist.title}</h1>
-      <button className="px-4 py-2 bg-purple-600 rounded-lg mb-6 hover:bg-purple-700">
-        ▶ Play All
-      </button>
+    <>
+      {pl && (
+        <div className="card" style={{padding:12, marginBottom:12}}>
+          <div className="row">
+            {pl.cover_url && <img src={pl.cover_url} alt="" width={84} height={84} style={{borderRadius:8,objectFit:'cover'}} />}
+            <div>
+              <div className="h2">{pl.title}</div>
+              <div className="muted">{pl.channel_title} • {pl.item_count ?? tracks.length} tracks</div>
+              <div className="row" style={{gap:8, marginTop:8}}>
+                <button className="cta" onClick={()=>{ setCurrent(tracks[0]); setShow(true); }}>▶ Play All</button>
+                <a className="ghost" target="_blank" rel="noreferrer" href={`https://www.youtube.com/playlist?list=${pl.external_id}`}>Open on YouTube</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div>
-        {tracks.length > 0 ? (
-          tracks.map((item, index) => (
-            <div
-              key={`${item.track_id}-${index}`}
-              className="flex justify-between p-3 border-b border-purple-800/40"
-            >
-              <span>{item.tracks.title}</span>
-              <span className="text-gray-400 text-sm">{item.tracks.artist || 'Unknown'}</span>
-              <span className="text-gray-500 text-xs">{item.tracks.duration || '–'}</span>
-            </div>
-          ))
-        ) : (
-          <div className="text-gray-500">No tracks found in this playlist.</div>
-        )}
+        {tracks.map((t:any, i:number)=> (
+          <TrackRow key={t.id||i} track={t} onPlay={()=>{ setCurrent(t); setShow(true); }} />
+        ))}
       </div>
-    </div>
-  )
+
+      {show && current && <Player videoId={current.external_id} title={current.title} onClose={()=>setShow(false)} />}
+    </>
+  );
 }
 
-export default function PlaylistPage() {
+export default function PlaylistPage(){
   return (
-    <Suspense fallback={<div className="text-white p-6">Loading...</div>}>
+    <Suspense fallback={<div className="muted">Loading…</div>}>
       <PlaylistClient />
     </Suspense>
-  )
+  );
 }
