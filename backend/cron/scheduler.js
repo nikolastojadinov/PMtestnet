@@ -1,7 +1,13 @@
 import 'dotenv/config';
 import { fetchPlaylistsForRegion } from '../services/youtubeService.js';
 import { supabase } from '../utils/supabaseClient.js';
-import regions from '../regions.json' assert { type: 'json' };
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const regionsPath = path.join(__dirname, '..', 'regions.json');
+const regions = JSON.parse(await fs.readFile(regionsPath, 'utf-8'));
 
 const FETCH_DAYS = 30;
 const FETCH_INTERVAL_MINUTES = 30;
