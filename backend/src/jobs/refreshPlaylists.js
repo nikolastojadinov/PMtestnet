@@ -1,3 +1,12 @@
+/**
+ * Manual run (local):
+ *   cd backend && cp .env.example .env && edit .env
+ *   npm run jobs:fetch:once
+ *   npm run jobs:refresh:once
+ * Deployed (Render):
+ *   BOOTSTRAP_FETCH=true triggers one-time fetch after first deploy.
+ *   Cron schedule: fetch@09:05, refresh@21:05 (Europe/Budapest).
+ */
 import 'dotenv/config';
 import axios from 'axios';
 import { getSupabase } from '../lib/supabase.js';

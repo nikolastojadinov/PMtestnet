@@ -1,7 +1,17 @@
+/**
+ * Manual run (local):
+ *   cd backend && cp .env.example .env && edit .env
+ *   npm run jobs:fetch:once
+ *   npm run jobs:refresh:once
+ * Deployed (Render):
+ *   BOOTSTRAP_FETCH=true triggers one-time fetch after first deploy.
+ *   Cron schedule: fetch@09:05, refresh@21:05 (Europe/Budapest).
+ */
 import 'dotenv/config';
 import axios from 'axios';
-import regions from '../data/region_codes.json' assert { type: 'json' };
+import regions from '../data/region_codes.json' with { type: 'json' };
 import { upsertPlaylists } from '../lib/db.js';
+import { initSupabase } from '../lib/supabase.js';
 
 const API_KEYS = (process.env.YOUTUBE_API_KEYS || '').split(',').map(s => s.trim()).filter(Boolean);
 let keyIndex = 0;
@@ -79,7 +89,10 @@ export async function runFetchPlaylists({ reason = 'manual' } = {}) {
 
 // CLI one-off run: node src/jobs/fetchPlaylists.js --once
 if (process.argv.includes('--once')) {
-  runFetchPlaylists({ reason: 'cli-once' }).then(() => process.exit(0)).catch(err => {
+  (async () => {
+    await initSupabase();
+    await runFetchPlaylists({ reason: 'cli-once' });
+  })().then(() => process.exit(0)).catch(err => {
     console.error(err); process.exit(1);
   });
 }
