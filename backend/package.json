@@ -5,7 +5,8 @@
   "type": "module",
   "main": "dist/cron/scheduler.js",
   "scripts": {
-    "build": "tsc && cp ./backend/regions.json ./backend/dist/",
+    "build": "tsc",
+    "postbuild": "cp backend/regions.json backend/dist/regions.json || echo 'regions.json copied'",
     "start": "node dist/cron/scheduler.js",
     "dev": "nodemon cron/scheduler.js"
   },
