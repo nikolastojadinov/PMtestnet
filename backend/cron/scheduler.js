@@ -86,7 +86,7 @@ async function schedulerTick() {
 }
 
 (async function startScheduler() {
-  console.log(`[INFO] Cron scheduler starting...`);
+  console.log(`[INFO] Cron scheduler starting... env=${process.env.NODE_ENV||'unknown'}`);
   await loadSchedulerState();
   while (true) {
     try {

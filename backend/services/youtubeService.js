@@ -9,6 +9,9 @@ let currentKeyIndex = 0;
 let cooldownUntil = null;
 const delay = ms => new Promise(res => setTimeout(res, ms));
 
+// Log key count early for deploy diagnostics
+console.log(`[INFO] [YouTube] Initialized ${YOUTUBE_KEYS.length} API key(s)`);
+
 function getCurrentKey() {
   return YOUTUBE_KEYS[currentKeyIndex];
 }
