@@ -18,6 +18,5 @@ const PORT = process.env.PORT || 8080;
     console.log(`[backend] listening on :${PORT} (TZ=${process.env.TZ || 'system'})`);
   });
 })().catch((err) => {
-  console.error('[backend] fatal startup error:', err);
-  process.exit(1);
+  console.error('[backend] startup error (non-fatal):', err?.message || err);
 });
