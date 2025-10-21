@@ -28,5 +28,10 @@ package-lock.json
 backend/.env
 backend/.env.*
 
+# Allow example env files to be tracked
+!.env.example
+!backend/.env.example
+!frontend/.env.example
+
 # VS Code
 .vscode/

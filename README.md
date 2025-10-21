@@ -1,6 +1,20 @@
 # PMtestnet
 Purple Music — modern Pi Browser web app for streaming music via YouTube IFrame API, Supabase, and Render backend. Automatic Pi SDK login, playlists sync, payments in Pi currency, and multilingual support. Built with Next.js on Netlify.
 
+## Render (Backend) environment
+
+Set the following environment variables in your Render service (Dashboard → Environment):
+
+- SUPABASE_URL
+- SUPABASE_SERVICE_KEY  (preferred) or SUPABASE_ANON_KEY
+- YOUTUBE_API_KEYS      (comma-separated)
+
+Build command: `cd backend && npm ci`
+
+Start command: `cd backend && npm run start`
+
+Node version is pinned via `backend/package.json` engines to `22.x`.
+
 ## Backend data writes: safe default vs rich mode
 
 The backend now supports a safe default write mode and an optional rich write mode for Supabase:
