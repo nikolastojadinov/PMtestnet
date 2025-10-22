@@ -1,26 +1,26 @@
-// ✅ FULL REWRITE — Maksimalni dnevni fetch sa rotacijom ključeva, paginacijom i quota guardom (60%)
+// ✅ FULL REWRITE — Stabilan dnevni fetch plejlista (50% quota usage, 6 API ključeva, rotacija, paginacija i quota guard)
 
 import axios from 'axios';
 import { upsertPlaylists } from '../lib/db.js';
 import { pickTodayRegions, nextKeyFactory, sleep } from '../lib/utils.js';
 
+// ⚙️ Podešavanja kvote i ograničenja
+const MAX_QUOTA_CALLS = 30000;       // 50% od ukupne kvote (6x10.000 = 60.000 QUs)
+const COST_PER_REQUEST = 100;        // 100 QUs po YouTube Search API pozivu
+const MAX_REGIONS_PER_DAY = 30;      // oko 30 regiona dnevno
+const MAX_PAGES_PER_REGION = 3;      // ~75 plejlista po regionu
+let apiCallsToday = 0;               // brojač poziva
+
+// 🔑 Rotacija svih aktivnih YouTube API ključeva
 const API_KEYS = (process.env.YOUTUBE_API_KEYS || '')
   .split(',')
   .map(s => s.trim())
   .filter(Boolean);
 
 if (API_KEYS.length < 1) throw new Error('YOUTUBE_API_KEYS missing.');
+const nextKey = nextKeyFactory(API_KEYS);
 
-const nextKey = nextKeyFactory(API_KEYS); // 🔁 rotacija API ključeva
-
-// 🎯 Konstante
-const MAX_REGIONS_PER_DAY = 30;   // koliko regiona dnevno
-const MAX_PAGES_PER_REGION = 3;   // max 3 stranice po regionu (≈75 playlisti po regionu)
-const MAX_QUOTA_CALLS = 18000;    // 60% od ukupnih 30.000 quota units
-const COST_PER_REQUEST = 100;     // 100 units po API pozivu (YouTube Search: 100 QUs)
-
-let apiCallsToday = 0; // brojač poziva
-
+// 🎧 Dohvata plejliste po regionu (do 3 stranice × 25 = ~75 playlisti)
 async function searchPlaylistsForRegion(regionCode, q = 'music playlist') {
   let all = [];
   let pageToken = null;
@@ -28,7 +28,7 @@ async function searchPlaylistsForRegion(regionCode, q = 'music playlist') {
 
   do {
     if (apiCallsToday * COST_PER_REQUEST >= MAX_QUOTA_CALLS) {
-      console.warn(`[quota] limit reached (${apiCallsToday * COST_PER_REQUEST} QUs used) — stopping early`);
+      console.warn(`[quota] Reached playlist limit (${apiCallsToday * COST_PER_REQUEST} QUs used) — stopping.`);
       break;
     }
 
@@ -69,11 +69,11 @@ async function searchPlaylistsForRegion(regionCode, q = 'music playlist') {
       pageToken = data.nextPageToken || null;
       pages++;
 
-      await sleep(300); // mala pauza između stranica
+      await sleep(250); // kratka pauza između stranica
     } catch (e) {
       if (e.response?.status === 403 && e.response?.data?.error?.message?.includes('quota')) {
-        console.warn(`[quota] key exhausted — switching...`);
-        continue;
+        console.warn('[quota] Key exhausted — rotating...');
+        continue; // koristi sledeći ključ
       } else {
         console.error(`[fetch:${regionCode}]`, e.response?.data || e.message);
         break;
@@ -92,41 +92,46 @@ async function searchPlaylistsForRegion(regionCode, q = 'music playlist') {
   return unique;
 }
 
+// 🚀 Glavna funkcija (pokreće se u 09:05 po lokalnom vremenu)
 export async function runFetchPlaylists({ reason = 'manual' } = {}) {
+  console.log(`[fetch] ▶ Start (${reason})`);
+  console.log(`[quota] daily limit = ${MAX_QUOTA_CALLS} QUs (~${MAX_QUOTA_CALLS / COST_PER_REQUEST} API calls)`);
+  console.log(`[quota] active keys = ${API_KEYS.length}`);
+  console.log(`[fetch] mode = Playlist phase (50% quota)`);
+
   const regions = pickTodayRegions(MAX_REGIONS_PER_DAY);
-  console.log(`[fetch] start (${reason}) regions=${regions.join(',')}`);
-  console.log(`[quota] daily limit set to ${MAX_QUOTA_CALLS} QUs (≈${MAX_QUOTA_CALLS / COST_PER_REQUEST} API calls)`);
+  console.log(`[fetch] target regions: ${regions.join(', ')}`);
 
   const batch = [];
 
-  for (const r of regions) {
+  for (const region of regions) {
     if (apiCallsToday * COST_PER_REQUEST >= MAX_QUOTA_CALLS) {
-      console.warn(`[quota] global limit reached (${apiCallsToday} calls) — ending fetch early.`);
+      console.warn(`[quota] limit reached at ${apiCallsToday} calls — stopping early.`);
       break;
     }
 
     try {
-      const rows = await searchPlaylistsForRegion(r);
-      console.log(`[fetch] ${r}: +${rows.length}`);
+      const rows = await searchPlaylistsForRegion(region);
+      console.log(`[fetch] ${region}: +${rows.length}`);
       batch.push(...rows);
-
-      await sleep(500); // mala pauza između regiona
+      await sleep(400); // pauza između regiona
     } catch (e) {
-      console.error(`[fetch:${r}]`, e.response?.data || e.message);
+      console.error(`[fetch:${region}]`, e.response?.data || e.message);
     }
   }
 
-  if (batch.length) {
-    const uniqueBatch = Object.values(
-      batch.reduce((acc, row) => {
-        acc[row.external_id] = row;
-        return acc;
-      }, {})
-    );
+  // 🧩 Globalno uklanjanje duplikata
+  const uniqueBatch = Object.values(
+    batch.reduce((acc, row) => {
+      acc[row.external_id] = row;
+      return acc;
+    }, {})
+  );
 
+  if (uniqueBatch.length) {
     const { count, error } = await upsertPlaylists(uniqueBatch);
     if (error) throw error;
-    console.log(`[fetch] upserted ${count} unique playlists`);
+    console.log(`[fetch] upserted ${count} unique playlists ✅`);
   } else {
     console.log('[fetch] nothing to upsert');
   }
