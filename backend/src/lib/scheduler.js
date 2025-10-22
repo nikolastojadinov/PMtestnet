@@ -1,76 +1,21 @@
-// ✅ FULL REWRITE — Jedan dnevni job u 12:20 lokalno (10:20 UTC na Renderu)
+// ✅ FULL REWRITE — Dva dnevna joba: plejliste u 09:05 i pesme u 14:00 lokalno
 
 import cron from 'node-cron';
 import { runFetchPlaylists } from '../jobs/fetchPlaylists.js';
-import { runRefreshPlaylists } from '../jobs/refreshPlaylists.js';
-import { daysSince, parseYMD, todayLocalISO } from './utils.js';
+import { runFetchTracks } from '../jobs/fetchTracksFromPlaylist.js';
 
-// 12:20 lokalno = 10:20 UTC
-const SCHEDULE = '20 10 * * *';
-
-/**
- * Fazni sistem:
- *  - Day 1 .. 29  -> FETCH (svaki dan u 12:20)
- *  - Day >= 30    -> REFRESH (svaki dan u 12:20), meta-dan = (day - 29) u intervalu 1..29 u ciklusu
- * Env:
- *  - CYCLE_START_DATE = 'YYYY-MM-DD' (dan 1 počinje tada)
- *  - PHASE = 'fetch' | 'refresh' (opciono; automatski prelaz posle 29. dana je garantovan)
- */
-export function getPhaseInfo(now = new Date()) {
-  const startStr = process.env.CYCLE_START_DATE;
-  if (!startStr) throw new Error('Missing CYCLE_START_DATE (YYYY-MM-DD).');
-
-  const start = parseYMD(startStr);
-  const day = Math.max(1, daysSince(start, now) + 1);
-
-  // Automatski prelaz posle 29. dana
-  let phase = day <= 29 ? 'fetch' : 'refresh';
-  const hinted = (process.env.PHASE || '').toLowerCase();
-  if (hinted === 'fetch' && day <= 29) phase = 'fetch';
-  if (hinted === 'refresh') phase = 'refresh';
-
-  // Target refresh dan 1..29
-  let targetDay = null;
-  if (phase === 'refresh') {
-    const mod = ((day - 30) % 29 + 29) % 29;
-    targetDay = mod + 1;
-  }
-
-  return { today: todayLocalISO(now), cycleStart: startStr, day, phase, targetDay };
-}
-
-export function startDailyJob() {
-  cron.schedule(SCHEDULE, async () => {
-    const info = getPhaseInfo(new Date());
-    try {
-      if (info.phase === 'fetch') {
-        console.log(`[scheduler] 12:20 → FETCH (day=${info.day})`);
-        await runFetchPlaylists({ reason: `daily-12:20-day${info.day}` });
-      } else {
-        console.log(`[scheduler] 12:20 → REFRESH (day=${info.day}, targetDay=${info.targetDay})`);
-        await runRefreshPlaylists({ reason: `daily-12:20-day${info.day}`, targetDay: info.targetDay });
-      }
-    } catch (e) {
-      console.error('[scheduler] job error:', e);
-    }
+export function startDualJobs() {
+  // 🎧 Fetch plejlista (09:05 lokalno = 07:05 UTC)
+  cron.schedule('5 7 * * *', async () => {
+    console.log('[scheduler] 09:05 → FETCH PLAYLISTS');
+    await runFetchPlaylists({ reason: 'daily-09:05' });
   }, { timezone: 'UTC' });
 
-  const info = getPhaseInfo(new Date());
-  console.log(
-    `[scheduler] cron set @10:20 UTC (12:20 local); phase=${info.phase}, day=${info.day}${
-      info.targetDay ? `, targetDay=${info.targetDay}` : ''
-    }`
-  );
-}
+  // 🎵 Fetch pesama (14:00 lokalno = 12:00 UTC)
+  cron.schedule('0 12 * * *', async () => {
+    console.log('[scheduler] 14:00 → FETCH TRACKS');
+    await runFetchTracks({ reason: 'daily-14:00' });
+  }, { timezone: 'UTC' });
 
-// Ručni pokretači
-export async function runFetchNow(reason = 'manual') {
-  return runFetchPlaylists({ reason });
-}
-
-export async function runRefreshNow(reason = 'manual', targetDay = null) {
-  const info = getPhaseInfo(new Date());
-  const t = targetDay || info.targetDay;
-  if (!t) throw new Error('No targetDay computed for refresh.');
-  return runRefreshPlaylists({ reason, targetDay: t });
+  console.log('[scheduler] cron set: playlists@07:05 UTC, tracks@12:00 UTC');
 }
