@@ -1,9 +1,13 @@
-// ✅ FULL REWRITE — Fetch tracks for all playlists fetched today
-// Preuzima do 50 pesama po plejlisti i upisuje ih u `tracks` + `playlist_tracks`
+// ✅ FULL REWRITE — Stable YouTube track fetcher with quota guard (50% daily usage)
 
 import axios from 'axios';
 import { getSupabase } from '../lib/supabase.js';
-import { nextKeyFactory, dateWindowForCycleDay, sleep } from '../lib/utils.js';
+import { nextKeyFactory, sleep } from '../lib/utils.js';
+
+// 🔧 Konfiguracija kvote
+const MAX_API_CALLS_PER_DAY = 30000; // koristi 50% od ukupne kvote (6×10k)
+const MAX_PAGES_PER_PLAYLIST = 3; // do 150 pesama po playlisti (3×50)
+const MAX_PLAYLISTS_PER_RUN = 60; // dnevno obradi max 60 playlisti
 
 const API_KEYS = (process.env.YOUTUBE_API_KEYS || '')
   .split(',')
@@ -13,13 +17,20 @@ const API_KEYS = (process.env.YOUTUBE_API_KEYS || '')
 if (!API_KEYS.length) throw new Error('YOUTUBE_API_KEYS missing.');
 
 const nextKey = nextKeyFactory(API_KEYS);
+let apiCallsToday = 0;
 
+// 🎵 Fetch pesama iz jedne YouTube playliste
 async function fetchTracksForPlaylist(playlistId) {
   const all = [];
   let pageToken = null;
   let pages = 0;
 
   do {
+    if (apiCallsToday >= MAX_API_CALLS_PER_DAY) {
+      console.warn(`[quota-guard] Track fetch limit reached (${apiCallsToday})`);
+      break;
+    }
+
     const key = nextKey();
     const url = 'https://www.googleapis.com/youtube/v3/playlistItems';
     const params = {
@@ -32,11 +43,13 @@ async function fetchTracksForPlaylist(playlistId) {
 
     try {
       const { data } = await axios.get(url, { params });
+      apiCallsToday++;
+
       const items = (data.items || []).map(it => ({
         external_id: it.contentDetails?.videoId,
         title: it.snippet?.title ?? null,
         artist: it.snippet?.videoOwnerChannelTitle ?? null,
-        duration: null, // nema duration u ovom endpointu
+        duration: null, // YouTube ne vraća trajanje ovde
         cover_url:
           it.snippet?.thumbnails?.high?.url ??
           it.snippet?.thumbnails?.default?.url ??
@@ -50,17 +63,16 @@ async function fetchTracksForPlaylist(playlistId) {
       pageToken = data.nextPageToken || null;
       pages++;
       await sleep(300);
-
     } catch (e) {
       if (e.response?.status === 403 && e.response?.data?.error?.message?.includes('quota')) {
-        console.warn('[quota] switching key...');
+        console.warn('[quota] switching API key...');
         continue;
       } else {
-        console.error('[track-fetch]', e.response?.data || e.message);
+        console.error(`[tracks:${playlistId}]`, e.response?.data || e.message);
         break;
       }
     }
-  } while (pageToken && pages < 3);
+  } while (pageToken && pages < MAX_PAGES_PER_PLAYLIST);
 
   // 🧹 Ukloni duplikate
   const unique = Object.values(
@@ -73,28 +85,34 @@ async function fetchTracksForPlaylist(playlistId) {
   return unique;
 }
 
+// 🚀 Glavna funkcija
 export async function runFetchTracks({ reason = 'manual' } = {}) {
   const sb = getSupabase();
   console.log(`[tracks] start (${reason})`);
 
-  // Preuzmi sve plejliste iz danasnjeg fetch-a
+  // 🎯 Uzmi samo plejlistе koje su fetch-ovane danas
   const today = new Date().toISOString().split('T')[0];
   const { data: playlists, error } = await sb
     .from('playlists')
     .select('id, external_id, title')
     .gte('fetched_on', `${today}T00:00:00Z`)
     .lt('fetched_on', `${today}T23:59:59Z`)
-    .limit(50);
+    .limit(MAX_PLAYLISTS_PER_RUN);
 
   if (error) throw error;
   console.log(`[tracks] ${playlists?.length || 0} playlists to process`);
 
-  for (const pl of playlists) {
+  for (const pl of playlists || []) {
+    if (apiCallsToday >= MAX_API_CALLS_PER_DAY) {
+      console.warn(`[quota-guard] Daily track limit reached (${apiCallsToday}). Ending early.`);
+      break;
+    }
+
     try {
       const tracks = await fetchTracksForPlaylist(pl.external_id);
       if (!tracks.length) continue;
 
-      // upsert pesme u `tracks`
+      // 💾 Upsert u `tracks`
       const { data: inserted, error: err1 } = await sb
         .from('tracks')
         .upsert(tracks, { onConflict: 'external_id' })
@@ -102,7 +120,7 @@ export async function runFetchTracks({ reason = 'manual' } = {}) {
 
       if (err1) throw err1;
 
-      // poveži pesme sa playlistom
+      // 🔗 Upsert u `playlist_tracks`
       const rels = inserted.map(t => ({
         playlist_id: pl.id,
         track_id: t.id,
@@ -122,5 +140,5 @@ export async function runFetchTracks({ reason = 'manual' } = {}) {
     }
   }
 
-  console.log('[tracks] done ✅');
+  console.log(`[tracks] done ✅ total API calls: ${apiCallsToday}`);
 }
