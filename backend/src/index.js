@@ -1,42 +1,40 @@
-// FULL REWRITE — Express server + scheduler wiring + endpoints
+// ✅ FULL REWRITE — Express server + dual scheduler (playlists + tracks)
 
 import 'dotenv/config';
 import express from 'express';
-import { initSupabase } from './lib/supabase.js'; // već postoji kod tebe; ne menjamo ga
-import { startDailyJob, runFetchNow, runRefreshNow, getPhaseInfo } from './lib/scheduler.js';
+import { initSupabase } from './lib/supabase.js';
+import { startDualJobs } from './lib/scheduler.js';
+import { runFetchPlaylists } from './jobs/fetchPlaylists.js';
+import { runFetchTracks } from './jobs/fetchTracksFromPlaylist.js';
 
 const app = express();
 app.use(express.json());
 
-// Health
+// 🩺 Health check
 app.get('/health', async (_req, res) => {
   try {
     const ok = await initSupabase(); // idempotentno
-    const phase = getPhaseInfo();
-    res.json({ ok: true, db: ok, phase });
+    res.json({ ok: true, db: ok, message: 'Backend is healthy and Supabase connected' });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-// Manual fetch (guard: samo kad je faza fetch)
+// ▶️ Manual fetch playlists
 app.post('/fetch', async (_req, res) => {
-  const { phase } = getPhaseInfo();
-  if (phase !== 'fetch') return res.status(409).json({ ok: false, error: 'Not in FETCH phase' });
   try {
-    await runFetchNow('manual-endpoint');
-    res.json({ ok: true });
+    await runFetchPlaylists({ reason: 'manual-endpoint' });
+    res.json({ ok: true, message: 'Manual playlist fetch started' });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-// Manual refresh (radi uvek — korisno za test)
-app.post('/refresh', async (_req, res) => {
+// 🎵 Manual fetch tracks (songs)
+app.post('/fetch-tracks', async (_req, res) => {
   try {
-    const info = getPhaseInfo();
-    await runRefreshNow('manual-endpoint', info.targetDay);
-    res.json({ ok: true, ...info });
+    await runFetchTracks({ reason: 'manual-endpoint' });
+    res.json({ ok: true, message: 'Manual track fetch started' });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
@@ -44,9 +42,10 @@ app.post('/refresh', async (_req, res) => {
 
 const PORT = process.env.PORT || 8080;
 
+// 🚀 Startup
 (async () => {
-  await initSupabase();       // pokreni Supabase (bez ovoga jobovi nemaju DB)
-  startDailyJob();            // zakazuje jedini dnevni job u 09:05
+  await initSupabase(); // pokreni Supabase konekciju
+  startDualJobs();      // zakazuje 09:05 (playlists) + 14:00 (tracks)
   app.listen(PORT, () => {
     console.log(`[backend] listening on :${PORT}`);
   });
