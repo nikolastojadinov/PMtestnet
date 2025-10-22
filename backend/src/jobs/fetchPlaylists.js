@@ -1,8 +1,8 @@
-// ✅ FULL REWRITE — Tier-rotated playlist fetcher with quota guard + daily logging
-// - 6 ključeva po 10k QUs → koristi ~9,500 QUs/dan za plejliste (ostatak ostaje za trake)
-// - TIER rotacija regiona + rotacija query-ja (teme)
-// - automatski prelazi na sledeći API ključ kod 403 (quota)
-// - dnevni log → tabela fetch_runs
+// ✅ FULL REWRITE — Smart multi-tier playlist fetcher with global/regional queries & quota guard
+// - koristi 6 API ključeva × 10k QUs (60k ukupno)
+// - koristi ~9,500 QUs/dan za plejliste (50% dnevne kvote)
+// - uključuje GLOBAL + REGIONAL + DEFAULT query poolove
+// - automatska rotacija ključeva i dnevni log u Supabase
 
 import axios from 'axios';
 import { upsertPlaylists } from '../lib/db.js';
@@ -11,52 +11,60 @@ import { nextKeyFactory, sleep, todayLocalISO, parseYMD, daysSince } from '../li
 import { pickTodayPlan } from '../lib/monthlyCycle.js';
 
 // ───────────────────────────────────────────────────────────────────────────────
-// KONFIG
+// 🔧 KONFIGURACIJA
 
 const API_KEYS = (process.env.YOUTUBE_API_KEYS || '')
   .split(',')
   .map(s => s.trim())
   .filter(Boolean);
 
-if (API_KEYS.length < 1) throw new Error('YOUTUBE_API_KEYS missing.');
+if (!API_KEYS.length) throw new Error('YOUTUBE_API_KEYS missing.');
 
 const nextKey = nextKeyFactory(API_KEYS);
 
-// ~9,500 QUs/dan za plejliste (Search: 100 QUs/poziv)
+// kvota — koristi 9.500 QUs (50%) dnevno
 const MAX_DAILY_QUOTA_QUS = 9500;
-const COST_PER_REQUEST_QUS = 100; // YouTube Search
-const MAX_REGION_PAGES_FALLBACK = 2; // ako tier ne kaže drugačije
+const COST_PER_REQUEST_QUS = 100; // YouTube search
 const DELAY_BETWEEN_PAGES_MS = 300;
 const DELAY_BETWEEN_REGIONS_MS = 500;
+const MAX_REGION_PAGES_FALLBACK = 2;
 
-// Kružna rotacija tema po regionu (da ne dobijamo stalno iste liste)
-const QUERY_POOL = [
-  'music playlist',
-  'top hits',
-  'best songs',
-  'pop mix',
-  'hip hop playlist',
-  'dance hits',
-  'rock classics',
-  'edm mix',
-  'chill music',
-  'party playlist',
+// ───────────────────────────────────────────────────────────────────────────────
+// 🎧 QUERY POOLS
+
+// GLOBAL – pretrage bez regionCode (najtraženiji worldwide)
+const GLOBAL_QUERY_POOL = [
+  'top hits', 'global hits', 'best songs', 'viral hits', 'chart toppers',
+  'billboard hot 100', 'global top 50', 'pop hits', 'hip hop hits',
+  'edm hits', 'dance hits', 'rock classics', 'throwback hits',
+  'party mix', 'workout playlist', 'study music', 'chill mix'
 ];
 
-// ───────────────────────────────────────────────────────────────────────────────
-// STATE
+// DEFAULT – generički upiti koji rade svuda
+const DEFAULT_QUERY_POOL = [
+  'music playlist', 'top hits', 'best songs', 'pop mix',
+  'hip hop playlist', 'dance hits', 'rock classics',
+  'edm mix', 'chill music', 'party playlist'
+];
 
-let apiCallsToday = 0;
-function quotaLeftQUs() {
-  return Math.max(0, MAX_DAILY_QUOTA_QUS - apiCallsToday * COST_PER_REQUEST_QUS);
-}
-function quotaExceeded() {
-  return apiCallsToday * COST_PER_REQUEST_QUS >= MAX_DAILY_QUOTA_QUS;
-}
+// REGIONAL – lokalizovani termini za specifične regione
+const REGIONAL_QUERY_POOLS = {
+  ES: ['reggaeton', 'musica top', 'exitos 2025', 'pop latino', 'bachata'],
+  PT: ['sertanejo', 'funk carioca', 'pagode', 'samba', 'piseiro', 'forró'],
+  TR: ['türkçe pop', 'şarkılar', 'rap müzik', 'en iyi şarkılar'],
+  RU: ['лучшие песни', 'русский поп', 'русский рэп', 'хиты'],
+  VN: ['nhạc trẻ', 'vpop', 'nhạc remix', 'nhạc EDM', 'nhạc tâm trạng'],
+  PH: ['opm hits', 'pinoy top hits', 'tagalog songs'],
+  KR: ['k-pop hits', 'kpop playlist', 'k-hip hop', 'k-indie'],
+  JP: ['j-pop hits', 'vocaloid', 'anisong', 'city pop'],
+  RS: ['narodna muzika', 'balkan hits', 'ex yu rock', 'zabavna muzika'],
+  IN: ['bollywood hits', 'hindi songs', 'punjabi hits', 'indian pop'],
+  ID: ['dangdut', 'indonesia hits', 'musik pop indonesia'],
+  TH: ['thai pop', 'เพลงไทย', 'เพลงลูกทุ่ง', 'เพลงฮิต'],
+  NG: ['afrobeats', 'naija hits', 'afropop', 'lagos vibes']
+};
 
-// ───────────────────────────────────────────────────────────────────────────────
-// HELPERS
-
+// rotatori query-ja
 function nextQueryFactory(pool) {
   let i = -1;
   const p = pool.filter(Boolean);
@@ -67,48 +75,57 @@ function nextQueryFactory(pool) {
   };
 }
 
-const nextQuery = nextQueryFactory(QUERY_POOL);
+const nextGlobalQuery = nextQueryFactory(GLOBAL_QUERY_POOL);
+const nextDefaultQuery = nextQueryFactory(DEFAULT_QUERY_POOL);
 
-/**
- * Jedan API poziv (YouTube Search) sa automatskom rotacijom ključa na 403-quota.
- */
+function getRegionalQuery(region) {
+  const pool = REGIONAL_QUERY_POOLS[region];
+  if (!pool) return nextDefaultQuery();
+  const fn = nextQueryFactory(pool);
+  return fn();
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// 🧮 STATE
+
+let apiCallsToday = 0;
+function quotaLeftQUs() {
+  return Math.max(0, MAX_DAILY_QUOTA_QUS - apiCallsToday * COST_PER_REQUEST_QUS);
+}
+function quotaExceeded() {
+  return apiCallsToday * COST_PER_REQUEST_QUS >= MAX_DAILY_QUOTA_QUS;
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// 🔁 FETCH FUNKCIJE
+
 async function callYouTubeSearch(params) {
   while (true) {
     const key = nextKey();
     try {
       const url = 'https://www.googleapis.com/youtube/v3/search';
       const { data } = await axios.get(url, { params: { key, ...params } });
-      apiCallsToday++; // 1 search = 100 QUs
+      apiCallsToday++;
       return data;
     } catch (e) {
       const msg = e?.response?.data?.error?.message || e.message;
       const status = e?.response?.status;
-      // quota / rate rotate
       if (status === 403 && /quota/i.test(msg)) {
-        console.warn('[quota] key exhausted → rotating to next key…');
-        // samo nastavi krug sa sledećim ključem
+        console.warn('[quota] key exhausted → rotating...');
         continue;
       }
-      // ostali errori: propagiraj
       throw e;
     }
   }
 }
 
-/**
- * Preuzmi do `maxPages` stranica plejlista za jedan region i zadati query.
- * Ako region === 'GLOBAL', preskačemo regionCode (global search).
- */
 async function fetchRegionPlaylists(regionCode, maxPages, query) {
   const all = [];
   let pageToken = null;
   let pages = 0;
 
   do {
-    if (quotaExceeded()) {
-      console.warn(`[quota] daily budget reached (${apiCallsToday * COST_PER_REQUEST_QUS} QUs).`);
-      break;
-    }
+    if (quotaExceeded()) break;
 
     const baseParams = {
       part: 'snippet',
@@ -123,7 +140,6 @@ async function fetchRegionPlaylists(regionCode, maxPages, query) {
 
     try {
       const data = await callYouTubeSearch(params);
-
       const items = (data.items || []).map(it => ({
         external_id: it.id?.playlistId,
         title: it.snippet?.title ?? null,
@@ -152,54 +168,51 @@ async function fetchRegionPlaylists(regionCode, maxPages, query) {
     }
   } while (pageToken && pages < (maxPages || MAX_REGION_PAGES_FALLBACK));
 
-  // dedupe po external_id
+  // dedupe
   const unique = Object.values(
     all.reduce((acc, p) => {
       if (!acc[p.external_id]) acc[p.external_id] = p;
       return acc;
     }, {})
   );
-
   return unique;
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
-// MAIN
+// 🚀 MAIN ENTRY
 
 export async function runFetchPlaylists({ reason = 'manual' } = {}) {
   apiCallsToday = 0;
-
-  // Izračun ciklus-dana (1..n) radi loga
   const startStr = process.env.CYCLE_START_DATE;
   const cycleDay = startStr ? Math.max(1, daysSince(parseYMD(startStr), new Date()) + 1) : null;
 
-  // Plan za danas (iz monthlyCycle.js)
-  const plan = pickTodayPlan(new Date()); // { steps: [{region, pages}, ...] }
+  const plan = pickTodayPlan(new Date()); // { steps: [{region, pages}] }
 
-  console.log(`[fetch] start: reason=${reason}`);
-  console.log(`[fetch] plan regions: ${plan.steps.map(s => `${s.region}(p${s.pages})`).join(', ')}`);
-  console.log(`[quota] budget today: ${MAX_DAILY_QUOTA_QUS} QUs (~${MAX_DAILY_QUOTA_QUS / COST_PER_REQUEST_QUS} calls).`);
+  console.log(`[fetch] start (${reason}) — ${plan.steps.length} regions`);
+  console.log(`[quota] daily budget ${MAX_DAILY_QUOTA_QUS} QUs (~${MAX_DAILY_QUOTA_QUS / COST_PER_REQUEST_QUS} API calls)`);
 
   const sb = getSupabase();
   const startedAt = new Date().toISOString();
-
   const batch = [];
   const usedRegions = [];
+
   for (const step of plan.steps) {
     if (quotaExceeded()) break;
 
-    const query = nextQuery();
+    // izaberi query po regionu
+    let query;
+    if (step.region === 'GLOBAL') query = nextGlobalQuery();
+    else query = getRegionalQuery(step.region);
+
     const rows = await fetchRegionPlaylists(step.region, step.pages, query);
-    console.log(`[fetch] ${step.region}: +${rows.length} (query="${query}")`);
+    console.log(`[fetch] ${step.region}: +${rows.length} (${query})`);
     batch.push(...rows);
     usedRegions.push({ region: step.region, pages: step.pages, query });
 
     await sleep(DELAY_BETWEEN_REGIONS_MS);
-
     if (quotaExceeded()) break;
   }
 
-  // Globalni dedupe
   const uniqueBatch = Object.values(
     batch.reduce((acc, row) => {
       acc[row.external_id] = row;
@@ -211,13 +224,13 @@ export async function runFetchPlaylists({ reason = 'manual' } = {}) {
   if (uniqueBatch.length) {
     const { count, error } = await upsertPlaylists(uniqueBatch);
     if (error) throw error;
-    upsertedCount = count || uniqueBatch.length; // zavisi kako je implementiran upsertPlaylists
+    upsertedCount = count || uniqueBatch.length;
     console.log(`[fetch] upserted ${upsertedCount} unique playlists`);
   } else {
     console.log('[fetch] nothing to upsert');
   }
 
-  // Log u fetch_runs
+  // log u fetch_runs
   const finishedAt = new Date().toISOString();
   try {
     await sb.from('fetch_runs').insert({
@@ -234,6 +247,6 @@ export async function runFetchPlaylists({ reason = 'manual' } = {}) {
     console.error('[fetch] failed to log fetch_runs:', e.message);
   }
 
-  console.log(`[fetch] total API calls: ${apiCallsToday} (${apiCallsToday * COST_PER_REQUEST_QUS} QUs) — left: ${quotaLeftQUs()} QUs`);
+  console.log(`[fetch] total API calls: ${apiCallsToday} (${apiCallsToday * COST_PER_REQUEST_QUS} QUs used, left ${quotaLeftQUs()} QUs)`);
   console.log('[fetch] done ✅');
 }
