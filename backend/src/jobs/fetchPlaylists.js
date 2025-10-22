@@ -1,52 +1,128 @@
-// ✅ FULL REWRITE — Stabilan dnevni fetch plejlista (50% quota usage, 6 API ključeva, rotacija, paginacija i quota guard)
+// ✅ FULL REWRITE — Tier-rotated playlist fetcher with quota guard + daily logging
+// - 6 ključeva po 10k QUs → koristi ~9,500 QUs/dan za plejliste (ostatak ostaje za trake)
+// - TIER rotacija regiona + rotacija query-ja (teme)
+// - automatski prelazi na sledeći API ključ kod 403 (quota)
+// - dnevni log → tabela fetch_runs
 
 import axios from 'axios';
 import { upsertPlaylists } from '../lib/db.js';
-import { pickTodayRegions, nextKeyFactory, sleep } from '../lib/utils.js';
+import { getSupabase } from '../lib/supabase.js';
+import { nextKeyFactory, sleep, todayLocalISO, parseYMD, daysSince } from '../lib/utils.js';
+import { pickTodayPlan } from '../lib/monthlyCycle.js';
 
-// ⚙️ Podešavanja kvote i ograničenja
-const MAX_QUOTA_CALLS = 30000;       // 50% od ukupne kvote (6x10.000 = 60.000 QUs)
-const COST_PER_REQUEST = 100;        // 100 QUs po YouTube Search API pozivu
-const MAX_REGIONS_PER_DAY = 30;      // oko 30 regiona dnevno
-const MAX_PAGES_PER_REGION = 3;      // ~75 plejlista po regionu
-let apiCallsToday = 0;               // brojač poziva
+// ───────────────────────────────────────────────────────────────────────────────
+// KONFIG
 
-// 🔑 Rotacija svih aktivnih YouTube API ključeva
 const API_KEYS = (process.env.YOUTUBE_API_KEYS || '')
   .split(',')
   .map(s => s.trim())
   .filter(Boolean);
 
 if (API_KEYS.length < 1) throw new Error('YOUTUBE_API_KEYS missing.');
+
 const nextKey = nextKeyFactory(API_KEYS);
 
-// 🎧 Dohvata plejliste po regionu (do 3 stranice × 25 = ~75 playlisti)
-async function searchPlaylistsForRegion(regionCode, q = 'music playlist') {
-  let all = [];
+// ~9,500 QUs/dan za plejliste (Search: 100 QUs/poziv)
+const MAX_DAILY_QUOTA_QUS = 9500;
+const COST_PER_REQUEST_QUS = 100; // YouTube Search
+const MAX_REGION_PAGES_FALLBACK = 2; // ako tier ne kaže drugačije
+const DELAY_BETWEEN_PAGES_MS = 300;
+const DELAY_BETWEEN_REGIONS_MS = 500;
+
+// Kružna rotacija tema po regionu (da ne dobijamo stalno iste liste)
+const QUERY_POOL = [
+  'music playlist',
+  'top hits',
+  'best songs',
+  'pop mix',
+  'hip hop playlist',
+  'dance hits',
+  'rock classics',
+  'edm mix',
+  'chill music',
+  'party playlist',
+];
+
+// ───────────────────────────────────────────────────────────────────────────────
+// STATE
+
+let apiCallsToday = 0;
+function quotaLeftQUs() {
+  return Math.max(0, MAX_DAILY_QUOTA_QUS - apiCallsToday * COST_PER_REQUEST_QUS);
+}
+function quotaExceeded() {
+  return apiCallsToday * COST_PER_REQUEST_QUS >= MAX_DAILY_QUOTA_QUS;
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// HELPERS
+
+function nextQueryFactory(pool) {
+  let i = -1;
+  const p = pool.filter(Boolean);
+  return () => {
+    if (!p.length) return 'music playlist';
+    i = (i + 1) % p.length;
+    return p[i];
+  };
+}
+
+const nextQuery = nextQueryFactory(QUERY_POOL);
+
+/**
+ * Jedan API poziv (YouTube Search) sa automatskom rotacijom ključa na 403-quota.
+ */
+async function callYouTubeSearch(params) {
+  while (true) {
+    const key = nextKey();
+    try {
+      const url = 'https://www.googleapis.com/youtube/v3/search';
+      const { data } = await axios.get(url, { params: { key, ...params } });
+      apiCallsToday++; // 1 search = 100 QUs
+      return data;
+    } catch (e) {
+      const msg = e?.response?.data?.error?.message || e.message;
+      const status = e?.response?.status;
+      // quota / rate rotate
+      if (status === 403 && /quota/i.test(msg)) {
+        console.warn('[quota] key exhausted → rotating to next key…');
+        // samo nastavi krug sa sledećim ključem
+        continue;
+      }
+      // ostali errori: propagiraj
+      throw e;
+    }
+  }
+}
+
+/**
+ * Preuzmi do `maxPages` stranica plejlista za jedan region i zadati query.
+ * Ako region === 'GLOBAL', preskačemo regionCode (global search).
+ */
+async function fetchRegionPlaylists(regionCode, maxPages, query) {
+  const all = [];
   let pageToken = null;
   let pages = 0;
 
   do {
-    if (apiCallsToday * COST_PER_REQUEST >= MAX_QUOTA_CALLS) {
-      console.warn(`[quota] Reached playlist limit (${apiCallsToday * COST_PER_REQUEST} QUs used) — stopping.`);
+    if (quotaExceeded()) {
+      console.warn(`[quota] daily budget reached (${apiCallsToday * COST_PER_REQUEST_QUS} QUs).`);
       break;
     }
 
-    const key = nextKey();
-    const url = 'https://www.googleapis.com/youtube/v3/search';
-    const params = {
-      key,
+    const baseParams = {
       part: 'snippet',
       maxResults: 25,
       type: 'playlist',
-      q,
-      regionCode,
-      pageToken,
+      q: query,
     };
 
+    const params = regionCode === 'GLOBAL'
+      ? { ...baseParams, pageToken }
+      : { ...baseParams, regionCode, pageToken };
+
     try {
-      const { data } = await axios.get(url, { params });
-      apiCallsToday++;
+      const data = await callYouTubeSearch(params);
 
       const items = (data.items || []).map(it => ({
         external_id: it.id?.playlistId,
@@ -56,32 +132,27 @@ async function searchPlaylistsForRegion(regionCode, q = 'music playlist') {
           it.snippet?.thumbnails?.high?.url ??
           it.snippet?.thumbnails?.default?.url ??
           null,
-        region: regionCode,
+        region: regionCode === 'GLOBAL' ? null : regionCode,
         category: 'Music',
         is_public: true,
         fetched_on: new Date().toISOString(),
         channel_title: it.snippet?.channelTitle ?? null,
         language_guess: it.snippet?.defaultLanguage ?? null,
         quality_score: 0.5,
-      })).filter(r => !!r.external_id);
+      })).filter(x => !!x.external_id);
 
       all.push(...items);
       pageToken = data.nextPageToken || null;
       pages++;
 
-      await sleep(250); // kratka pauza između stranica
+      await sleep(DELAY_BETWEEN_PAGES_MS);
     } catch (e) {
-      if (e.response?.status === 403 && e.response?.data?.error?.message?.includes('quota')) {
-        console.warn('[quota] Key exhausted — rotating...');
-        continue; // koristi sledeći ključ
-      } else {
-        console.error(`[fetch:${regionCode}]`, e.response?.data || e.message);
-        break;
-      }
+      console.error(`[fetch:${regionCode}]`, e.response?.data || e.message);
+      break;
     }
-  } while (pageToken && pages < MAX_PAGES_PER_REGION);
+  } while (pageToken && pages < (maxPages || MAX_REGION_PAGES_FALLBACK));
 
-  // 🧹 Ukloni duplikate unutar regiona
+  // dedupe po external_id
   const unique = Object.values(
     all.reduce((acc, p) => {
       if (!acc[p.external_id]) acc[p.external_id] = p;
@@ -92,35 +163,43 @@ async function searchPlaylistsForRegion(regionCode, q = 'music playlist') {
   return unique;
 }
 
-// 🚀 Glavna funkcija (pokreće se u 09:05 po lokalnom vremenu)
-export async function runFetchPlaylists({ reason = 'manual' } = {}) {
-  console.log(`[fetch] ▶ Start (${reason})`);
-  console.log(`[quota] daily limit = ${MAX_QUOTA_CALLS} QUs (~${MAX_QUOTA_CALLS / COST_PER_REQUEST} API calls)`);
-  console.log(`[quota] active keys = ${API_KEYS.length}`);
-  console.log(`[fetch] mode = Playlist phase (50% quota)`);
+// ───────────────────────────────────────────────────────────────────────────────
+// MAIN
 
-  const regions = pickTodayRegions(MAX_REGIONS_PER_DAY);
-  console.log(`[fetch] target regions: ${regions.join(', ')}`);
+export async function runFetchPlaylists({ reason = 'manual' } = {}) {
+  apiCallsToday = 0;
+
+  // Izračun ciklus-dana (1..n) radi loga
+  const startStr = process.env.CYCLE_START_DATE;
+  const cycleDay = startStr ? Math.max(1, daysSince(parseYMD(startStr), new Date()) + 1) : null;
+
+  // Plan za danas (iz monthlyCycle.js)
+  const plan = pickTodayPlan(new Date()); // { steps: [{region, pages}, ...] }
+
+  console.log(`[fetch] start: reason=${reason}`);
+  console.log(`[fetch] plan regions: ${plan.steps.map(s => `${s.region}(p${s.pages})`).join(', ')}`);
+  console.log(`[quota] budget today: ${MAX_DAILY_QUOTA_QUS} QUs (~${MAX_DAILY_QUOTA_QUS / COST_PER_REQUEST_QUS} calls).`);
+
+  const sb = getSupabase();
+  const startedAt = new Date().toISOString();
 
   const batch = [];
+  const usedRegions = [];
+  for (const step of plan.steps) {
+    if (quotaExceeded()) break;
 
-  for (const region of regions) {
-    if (apiCallsToday * COST_PER_REQUEST >= MAX_QUOTA_CALLS) {
-      console.warn(`[quota] limit reached at ${apiCallsToday} calls — stopping early.`);
-      break;
-    }
+    const query = nextQuery();
+    const rows = await fetchRegionPlaylists(step.region, step.pages, query);
+    console.log(`[fetch] ${step.region}: +${rows.length} (query="${query}")`);
+    batch.push(...rows);
+    usedRegions.push({ region: step.region, pages: step.pages, query });
 
-    try {
-      const rows = await searchPlaylistsForRegion(region);
-      console.log(`[fetch] ${region}: +${rows.length}`);
-      batch.push(...rows);
-      await sleep(400); // pauza između regiona
-    } catch (e) {
-      console.error(`[fetch:${region}]`, e.response?.data || e.message);
-    }
+    await sleep(DELAY_BETWEEN_REGIONS_MS);
+
+    if (quotaExceeded()) break;
   }
 
-  // 🧩 Globalno uklanjanje duplikata
+  // Globalni dedupe
   const uniqueBatch = Object.values(
     batch.reduce((acc, row) => {
       acc[row.external_id] = row;
@@ -128,14 +207,33 @@ export async function runFetchPlaylists({ reason = 'manual' } = {}) {
     }, {})
   );
 
+  let upsertedCount = 0;
   if (uniqueBatch.length) {
     const { count, error } = await upsertPlaylists(uniqueBatch);
     if (error) throw error;
-    console.log(`[fetch] upserted ${count} unique playlists ✅`);
+    upsertedCount = count || uniqueBatch.length; // zavisi kako je implementiran upsertPlaylists
+    console.log(`[fetch] upserted ${upsertedCount} unique playlists`);
   } else {
     console.log('[fetch] nothing to upsert');
   }
 
-  console.log(`[fetch] total API calls: ${apiCallsToday} (${apiCallsToday * COST_PER_REQUEST} QUs)`);
+  // Log u fetch_runs
+  const finishedAt = new Date().toISOString();
+  try {
+    await sb.from('fetch_runs').insert({
+      started_at: startedAt,
+      finished_at: finishedAt,
+      regions: usedRegions,
+      playlists_count: upsertedCount,
+      api_calls: apiCallsToday,
+      quota_used: apiCallsToday * COST_PER_REQUEST_QUS,
+      cycle_day: cycleDay,
+      success: true,
+    });
+  } catch (e) {
+    console.error('[fetch] failed to log fetch_runs:', e.message);
+  }
+
+  console.log(`[fetch] total API calls: ${apiCallsToday} (${apiCallsToday * COST_PER_REQUEST_QUS} QUs) — left: ${quotaLeftQUs()} QUs`);
   console.log('[fetch] done ✅');
 }
