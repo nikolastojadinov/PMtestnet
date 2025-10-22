@@ -1,5 +1,5 @@
-// ✅ FULL REWRITE — Maksimalni dnevni fetch sa rotacijom ključeva i paginacijom
-// i automatskim prelaženjem na sledeći API ključ kad quota bude potrošena
+// ✅ FULL REWRITE — Maksimalni dnevni fetch sa rotacijom ključeva, paginacijom
+// i automatskim prelaženjem na sledeći API ključ kada quota bude potrošena
 
 import axios from 'axios';
 import { upsertPlaylists } from '../lib/db.js';
@@ -12,7 +12,12 @@ const API_KEYS = (process.env.YOUTUBE_API_KEYS || '')
 
 if (API_KEYS.length < 1) throw new Error('YOUTUBE_API_KEYS missing.');
 
-const nextKey = nextKeyFactory(API_KEYS); // 🔁 rotacija API ključeva
+let keyIndex = 0;
+const nextKey = () => {
+  const key = API_KEYS[keyIndex];
+  keyIndex = (keyIndex + 1) % API_KEYS.length;
+  return key;
+};
 
 async function searchPlaylistsForRegion(regionCode, q = 'music playlist') {
   let all = [];
@@ -58,12 +63,13 @@ async function searchPlaylistsForRegion(regionCode, q = 'music playlist') {
       await sleep(250); // mala pauza između stranica
 
     } catch (e) {
-      // Ako quota pređe limit, ide sledeći ključ
-      if (e.response?.status === 403 && e.response?.data?.error?.message?.includes('quota')) {
-        console.warn(`[quota] Key exhausted, rotating...`);
+      const msg = e.response?.data?.error?.message || e.message;
+      if (msg.includes('quota')) {
+        console.warn(`[quota] Key exhausted, rotating to next key...`);
+        keyIndex = (keyIndex + 1) % API_KEYS.length;
         continue;
       } else {
-        console.error(`[fetch:${regionCode}]`, e.response?.data || e.message);
+        console.error(`[fetch:${regionCode}]`, msg);
         break;
       }
     }
@@ -91,8 +97,7 @@ export async function runFetchPlaylists({ reason = 'manual' } = {}) {
       const rows = await searchPlaylistsForRegion(r);
       console.log(`[fetch] ${r}: +${rows.length}`);
       batch.push(...rows);
-
-      await sleep(500); // mala pauza između regiona
+      await sleep(500); // pauza između regiona
     } catch (e) {
       console.error(`[fetch:${r}]`, e.response?.data || e.message);
     }
