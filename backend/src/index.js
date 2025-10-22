@@ -1,5 +1,5 @@
 // ✅ FULL REWRITE — Express server + Dual Scheduler (Playlists + Tracks)
-// 50%–50% daily quota balance system
+// 50%–50% daily quota balance system + Render live endpoint
 
 import 'dotenv/config';
 import express from 'express';
@@ -11,7 +11,8 @@ import { runFetchTracks } from './jobs/fetchTracksFromPlaylist.js';
 const app = express();
 app.use(express.json());
 
-// 🩺 Health check endpoint
+/* 🩺 Health check endpoint
+   Vraća status Supabase konekcije i broj učitanih YouTube API ključeva */
 app.get('/health', async (_req, res) => {
   try {
     const ok = await initSupabase();
@@ -27,7 +28,13 @@ app.get('/health', async (_req, res) => {
   }
 });
 
-// ▶️ Manual trigger for playlist fetch
+/* 🌐 Root endpoint (Render proof-of-life)
+   Render koristi ovu rutu za proveru da li je backend “živ” */
+app.get('/', (_req, res) => {
+  res.send('Purple Music backend is running 🎵');
+});
+
+/* ▶️ Manual trigger za playlist fetch */
 app.post('/fetch', async (_req, res) => {
   try {
     console.log('[manual] Triggered playlist fetch...');
@@ -39,7 +46,7 @@ app.post('/fetch', async (_req, res) => {
   }
 });
 
-// 🎵 Manual trigger for track fetch
+/* 🎵 Manual trigger za track fetch */
 app.post('/fetch-tracks', async (_req, res) => {
   try {
     console.log('[manual] Triggered track fetch...');
@@ -53,6 +60,7 @@ app.post('/fetch-tracks', async (_req, res) => {
 
 const PORT = process.env.PORT || 8080;
 
+/* 🚀 Glavni pokretač backend-a */
 (async () => {
   console.log('──────────────────────────────────────────────');
   console.log('[backend:init] Starting Purple Music backend...');
@@ -66,7 +74,7 @@ const PORT = process.env.PORT || 8080;
     console.error('[backend:init] ❌ Failed to init Supabase:', e.message);
   }
 
-  // Pokreni automatske cron poslove
+  // 🕐 Pokreni automatske cron poslove (09:05 i 14:00)
   startDualJobs();
 
   app.listen(PORT, () => {
