@@ -1,51 +1,72 @@
-// ✅ FULL REWRITE — Stabilan fetch sa uklanjanjem duplikata i sigurnim upsertom
+// ✅ FULL REWRITE — Maksimalni dnevni fetch sa rotacijom ključeva i paginacijom
 
 import axios from 'axios';
 import { upsertPlaylists } from '../lib/db.js';
-import { pickTodayRegions, nextKeyFactory } from '../lib/utils.js';
+import { pickTodayRegions, nextKeyFactory, sleep } from '../lib/utils.js';
 
 const API_KEYS = (process.env.YOUTUBE_API_KEYS || '')
   .split(',')
   .map(s => s.trim())
   .filter(Boolean);
 
-const nextKey = nextKeyFactory(API_KEYS); // round-robin rotacija API ključeva
+if (API_KEYS.length < 1) {
+  throw new Error('YOUTUBE_API_KEYS missing — add at least one key.');
+}
 
+const nextKey = nextKeyFactory(API_KEYS); // 🔁 round-robin rotacija API ključeva
+
+/**
+ * Fetch playlists for a given region with pagination
+ * Maks. 4 stranice po regionu (≈100 rezultata)
+ */
 async function searchPlaylistsForRegion(regionCode, q = 'music playlist') {
-  const key = nextKey();
-  const url = 'https://www.googleapis.com/youtube/v3/search';
-  const params = {
-    key,
-    part: 'snippet',
-    maxResults: 25,
-    type: 'playlist',
-    q,
-    regionCode,
-  };
+  let all = [];
+  let pageToken = null;
+  let pages = 0;
 
-  const { data } = await axios.get(url, { params });
+  do {
+    const key = nextKey();
+    const url = 'https://www.googleapis.com/youtube/v3/search';
+    const params = {
+      key,
+      part: 'snippet',
+      maxResults: 25,
+      type: 'playlist',
+      q,
+      regionCode,
+      pageToken,
+    };
 
-  // 📦 Pripremi rezultate i filtriraj prazne ID-jeve
-  const raw = (data.items || []).map(it => ({
-    external_id: it.id?.playlistId,
-    title: it.snippet?.title ?? null,
-    description: it.snippet?.description ?? null,
-    cover_url:
-      it.snippet?.thumbnails?.high?.url ??
-      it.snippet?.thumbnails?.default?.url ??
-      null,
-    region: regionCode,
-    category: 'Music',
-    is_public: true,
-    fetched_on: new Date().toISOString(),
-    channel_title: it.snippet?.channelTitle ?? null,
-    language_guess: it.snippet?.defaultLanguage ?? null,
-    quality_score: 0.5,
-  })).filter(r => !!r.external_id);
+    const { data } = await axios.get(url, { params });
+    const items = (data.items || []).map(it => ({
+      external_id: it.id?.playlistId,
+      title: it.snippet?.title ?? null,
+      description: it.snippet?.description ?? null,
+      cover_url:
+        it.snippet?.thumbnails?.high?.url ??
+        it.snippet?.thumbnails?.default?.url ??
+        null,
+      region: regionCode,
+      category: 'Music',
+      is_public: true,
+      fetched_on: new Date().toISOString(),
+      channel_title: it.snippet?.channelTitle ?? null,
+      language_guess: it.snippet?.defaultLanguage ?? null,
+      quality_score: 0.5,
+    })).filter(r => !!r.external_id);
 
-  // 🧹 Ukloni duplikate po external_id unutar batch-a
+    all.push(...items);
+    pageToken = data.nextPageToken || null;
+    pages++;
+
+    // Kratka pauza između stranica da ne udariš limit
+    await sleep(250);
+
+  } while (pageToken && pages < 4); // ⏩ max 4 stranice po regionu
+
+  // 🧹 Ukloni duplikate unutar regiona
   const unique = Object.values(
-    raw.reduce((acc, p) => {
+    all.reduce((acc, p) => {
       if (!acc[p.external_id]) acc[p.external_id] = p;
       return acc;
     }, {})
@@ -55,9 +76,7 @@ async function searchPlaylistsForRegion(regionCode, q = 'music playlist') {
 }
 
 export async function runFetchPlaylists({ reason = 'manual' } = {}) {
-  if (API_KEYS.length < 1) throw new Error('YOUTUBE_API_KEYS missing.');
-
-  const regions = pickTodayRegions(10); // 8–10 regiona dnevno
+  const regions = pickTodayRegions(40); // 🌍 40 regiona dnevno
   console.log(`[fetch] start (${reason}) regions=${regions.join(',')}`);
 
   const batch = [];
@@ -67,7 +86,9 @@ export async function runFetchPlaylists({ reason = 'manual' } = {}) {
       const rows = await searchPlaylistsForRegion(r);
       console.log(`[fetch] ${r}: +${rows.length}`);
       batch.push(...rows);
-      await new Promise(res => setTimeout(res, 300)); // kratka pauza između API poziva
+
+      // Pauza između regiona da izbegneš 403 rate limit
+      await sleep(500);
     } catch (e) {
       console.error(`[fetch] ${r} error`, e.response?.data || e.message);
     }
@@ -82,9 +103,10 @@ export async function runFetchPlaylists({ reason = 'manual' } = {}) {
       }, {})
     );
 
-    // 💾 Siguran upsert kroz Supabase RPC (sprečava duplikate u bazi)
+    // 💾 Siguran upsert kroz Supabase RPC (sprečava duplikate)
     const { count, error } = await upsertPlaylists(uniqueBatch);
     if (error) throw error;
+
     console.log(`[fetch] upserted ${count} unique playlists`);
   } else {
     console.log('[fetch] nothing to upsert');
