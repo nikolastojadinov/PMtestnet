@@ -13,28 +13,28 @@ app.use(express.json());
 // 🩺 Health check
 app.get('/health', async (_req, res) => {
   try {
-    const ok = await initSupabase(); // idempotentno
-    res.json({ ok: true, db: ok, message: 'Backend is healthy and Supabase connected' });
+    const ok = await initSupabase();
+    res.json({ ok: true, db: ok, message: 'Backend is healthy' });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-// ▶️ Manual fetch playlists
+// ▶️ Manual playlist fetch
 app.post('/fetch', async (_req, res) => {
   try {
     await runFetchPlaylists({ reason: 'manual-endpoint' });
-    res.json({ ok: true, message: 'Manual playlist fetch started' });
+    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-// 🎵 Manual fetch tracks (songs)
+// 🎵 Manual track fetch
 app.post('/fetch-tracks', async (_req, res) => {
   try {
     await runFetchTracks({ reason: 'manual-endpoint' });
-    res.json({ ok: true, message: 'Manual track fetch started' });
+    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
@@ -42,11 +42,8 @@ app.post('/fetch-tracks', async (_req, res) => {
 
 const PORT = process.env.PORT || 8080;
 
-// 🚀 Startup
 (async () => {
-  await initSupabase(); // pokreni Supabase konekciju
-  startDualJobs();      // zakazuje 09:05 (playlists) + 14:00 (tracks)
-  app.listen(PORT, () => {
-    console.log(`[backend] listening on :${PORT}`);
-  });
+  await initSupabase();
+  startDualJobs(); // pokreće 2 dnevna joba
+  app.listen(PORT, () => console.log(`[backend] listening on :${PORT}`));
 })();
