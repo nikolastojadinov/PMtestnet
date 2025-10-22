@@ -1,17 +1,17 @@
-// ✅ FULL REWRITE — Jedan dnevni job u 12:00 lokalno (10:00 UTC na Renderu)
+// ✅ FULL REWRITE — Jedan dnevni job u 12:20 lokalno (10:20 UTC na Renderu)
 
 import cron from 'node-cron';
 import { runFetchPlaylists } from '../jobs/fetchPlaylists.js';
 import { runRefreshPlaylists } from '../jobs/refreshPlaylists.js';
 import { daysSince, parseYMD, todayLocalISO } from './utils.js';
 
-// 12:00 lokalno = 10:00 UTC
-const SCHEDULE = '0 10 * * *';
+// 12:20 lokalno = 10:20 UTC
+const SCHEDULE = '20 10 * * *';
 
 /**
  * Fazni sistem:
- *  - Day 1 .. 29  -> FETCH (svaki dan u 12:00)
- *  - Day >= 30    -> REFRESH (svaki dan u 12:00), meta-dan = (day - 29) u intervalu 1..29 u ciklusu
+ *  - Day 1 .. 29  -> FETCH (svaki dan u 12:20)
+ *  - Day >= 30    -> REFRESH (svaki dan u 12:20), meta-dan = (day - 29) u intervalu 1..29 u ciklusu
  * Env:
  *  - CYCLE_START_DATE = 'YYYY-MM-DD' (dan 1 počinje tada)
  *  - PHASE = 'fetch' | 'refresh' (opciono; automatski prelaz posle 29. dana je garantovan)
@@ -44,11 +44,11 @@ export function startDailyJob() {
     const info = getPhaseInfo(new Date());
     try {
       if (info.phase === 'fetch') {
-        console.log(`[scheduler] 12:00 → FETCH (day=${info.day})`);
-        await runFetchPlaylists({ reason: `daily-12:00-day${info.day}` });
+        console.log(`[scheduler] 12:20 → FETCH (day=${info.day})`);
+        await runFetchPlaylists({ reason: `daily-12:20-day${info.day}` });
       } else {
-        console.log(`[scheduler] 12:00 → REFRESH (day=${info.day}, targetDay=${info.targetDay})`);
-        await runRefreshPlaylists({ reason: `daily-12:00-day${info.day}`, targetDay: info.targetDay });
+        console.log(`[scheduler] 12:20 → REFRESH (day=${info.day}, targetDay=${info.targetDay})`);
+        await runRefreshPlaylists({ reason: `daily-12:20-day${info.day}`, targetDay: info.targetDay });
       }
     } catch (e) {
       console.error('[scheduler] job error:', e);
@@ -57,7 +57,7 @@ export function startDailyJob() {
 
   const info = getPhaseInfo(new Date());
   console.log(
-    `[scheduler] cron set @10:00 UTC (12:00 local); phase=${info.phase}, day=${info.day}${
+    `[scheduler] cron set @10:20 UTC (12:20 local); phase=${info.phase}, day=${info.day}${
       info.targetDay ? `, targetDay=${info.targetDay}` : ''
     }`
   );
