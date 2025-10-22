@@ -1,5 +1,4 @@
-// ✅ FULL REWRITE — Maksimalni dnevni fetch sa rotacijom ključeva, paginacijom
-// i automatskim prelaženjem na sledeći API ključ kada quota bude potrošena
+// ✅ FULL REWRITE — Maksimalni dnevni fetch sa rotacijom ključeva, paginacijom i quota guardom (60%)
 
 import axios from 'axios';
 import { upsertPlaylists } from '../lib/db.js';
@@ -12,12 +11,15 @@ const API_KEYS = (process.env.YOUTUBE_API_KEYS || '')
 
 if (API_KEYS.length < 1) throw new Error('YOUTUBE_API_KEYS missing.');
 
-let keyIndex = 0;
-const nextKey = () => {
-  const key = API_KEYS[keyIndex];
-  keyIndex = (keyIndex + 1) % API_KEYS.length;
-  return key;
-};
+const nextKey = nextKeyFactory(API_KEYS); // 🔁 rotacija API ključeva
+
+// 🎯 Konstante
+const MAX_REGIONS_PER_DAY = 30;   // koliko regiona dnevno
+const MAX_PAGES_PER_REGION = 3;   // max 3 stranice po regionu (≈75 playlisti po regionu)
+const MAX_QUOTA_CALLS = 18000;    // 60% od ukupnih 30.000 quota units
+const COST_PER_REQUEST = 100;     // 100 units po API pozivu (YouTube Search: 100 QUs)
+
+let apiCallsToday = 0; // brojač poziva
 
 async function searchPlaylistsForRegion(regionCode, q = 'music playlist') {
   let all = [];
@@ -25,6 +27,11 @@ async function searchPlaylistsForRegion(regionCode, q = 'music playlist') {
   let pages = 0;
 
   do {
+    if (apiCallsToday * COST_PER_REQUEST >= MAX_QUOTA_CALLS) {
+      console.warn(`[quota] limit reached (${apiCallsToday * COST_PER_REQUEST} QUs used) — stopping early`);
+      break;
+    }
+
     const key = nextKey();
     const url = 'https://www.googleapis.com/youtube/v3/search';
     const params = {
@@ -39,6 +46,8 @@ async function searchPlaylistsForRegion(regionCode, q = 'music playlist') {
 
     try {
       const { data } = await axios.get(url, { params });
+      apiCallsToday++;
+
       const items = (data.items || []).map(it => ({
         external_id: it.id?.playlistId,
         title: it.snippet?.title ?? null,
@@ -60,20 +69,17 @@ async function searchPlaylistsForRegion(regionCode, q = 'music playlist') {
       pageToken = data.nextPageToken || null;
       pages++;
 
-      await sleep(250); // mala pauza između stranica
-
+      await sleep(300); // mala pauza između stranica
     } catch (e) {
-      const msg = e.response?.data?.error?.message || e.message;
-      if (msg.includes('quota')) {
-        console.warn(`[quota] Key exhausted, rotating to next key...`);
-        keyIndex = (keyIndex + 1) % API_KEYS.length;
+      if (e.response?.status === 403 && e.response?.data?.error?.message?.includes('quota')) {
+        console.warn(`[quota] key exhausted — switching...`);
         continue;
       } else {
-        console.error(`[fetch:${regionCode}]`, msg);
+        console.error(`[fetch:${regionCode}]`, e.response?.data || e.message);
         break;
       }
     }
-  } while (pageToken && pages < 4);
+  } while (pageToken && pages < MAX_PAGES_PER_REGION);
 
   // 🧹 Ukloni duplikate unutar regiona
   const unique = Object.values(
@@ -87,17 +93,24 @@ async function searchPlaylistsForRegion(regionCode, q = 'music playlist') {
 }
 
 export async function runFetchPlaylists({ reason = 'manual' } = {}) {
-  const regions = pickTodayRegions(40); // 🌍 40 regiona dnevno
+  const regions = pickTodayRegions(MAX_REGIONS_PER_DAY);
   console.log(`[fetch] start (${reason}) regions=${regions.join(',')}`);
+  console.log(`[quota] daily limit set to ${MAX_QUOTA_CALLS} QUs (≈${MAX_QUOTA_CALLS / COST_PER_REQUEST} API calls)`);
 
   const batch = [];
 
   for (const r of regions) {
+    if (apiCallsToday * COST_PER_REQUEST >= MAX_QUOTA_CALLS) {
+      console.warn(`[quota] global limit reached (${apiCallsToday} calls) — ending fetch early.`);
+      break;
+    }
+
     try {
       const rows = await searchPlaylistsForRegion(r);
       console.log(`[fetch] ${r}: +${rows.length}`);
       batch.push(...rows);
-      await sleep(500); // pauza između regiona
+
+      await sleep(500); // mala pauza između regiona
     } catch (e) {
       console.error(`[fetch:${r}]`, e.response?.data || e.message);
     }
@@ -118,5 +131,6 @@ export async function runFetchPlaylists({ reason = 'manual' } = {}) {
     console.log('[fetch] nothing to upsert');
   }
 
+  console.log(`[fetch] total API calls: ${apiCallsToday} (${apiCallsToday * COST_PER_REQUEST} QUs)`);
   console.log('[fetch] done ✅');
 }
