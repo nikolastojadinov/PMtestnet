@@ -2,6 +2,7 @@
 // - koristi 6 API ključeva × 10k QUs (60k ukupno)
 // - koristi max 30.000 API poziva (50% ukupne dnevne kvote)
 // - automatski loguje rezultate u Supabase tabelu fetch_runs (job_type = 'tracks')
+// - sigurno upisuje sync_status (sprečava "tracks_sync_status_check" greške)
 
 import axios from 'axios';
 import { getSupabase } from '../lib/supabase.js';
@@ -53,14 +54,14 @@ async function fetchTracksForPlaylist(playlistId) {
         external_id: it.contentDetails?.videoId,
         title: it.snippet?.title ?? null,
         artist: it.snippet?.videoOwnerChannelTitle ?? null,
-        duration: null, // YouTube ne vraća trajanje ovde
+        duration: null,
         cover_url:
           it.snippet?.thumbnails?.high?.url ??
           it.snippet?.thumbnails?.default?.url ??
           null,
         source: 'youtube',
         created_at: new Date().toISOString(),
-        sync_status: 'fetched',
+        sync_status: 'FETCHED', // ✅ uppercase, validna vrednost
       }));
 
       all.push(...items);
@@ -94,7 +95,7 @@ export async function runFetchTracks({ reason = 'manual' } = {}) {
   const sb = getSupabase();
   console.log(`[tracks] start (${reason})`);
 
-  // 🎯 Uzmi samo plejlistе koje su fetch-ovane danas
+  // 🎯 Uzmi samo plejliste fetch-ovane danas
   const today = new Date().toISOString().split('T')[0];
   const { data: playlists, error } = await sb
     .from('playlists')
@@ -110,6 +111,9 @@ export async function runFetchTracks({ reason = 'manual' } = {}) {
   let totalInserted = 0;
   const processedPlaylists = [];
 
+  // ✅ Dozvoljene vrednosti sync_status kolone
+  const allowedStatuses = ['NEW', 'FETCHED', 'REFRESHED', 'FAILED', 'local'];
+
   for (const pl of playlists || []) {
     if (apiCallsToday >= MAX_API_CALLS_PER_DAY) {
       console.warn(`[quota-guard] Daily track limit reached (${apiCallsToday}). Ending early.`);
@@ -120,10 +124,18 @@ export async function runFetchTracks({ reason = 'manual' } = {}) {
       const tracks = await fetchTracksForPlaylist(pl.external_id);
       if (!tracks.length) continue;
 
+      // 🛡️ Osiguraj validan sync_status
+      const cleanedTracks = tracks.map(t => ({
+        ...t,
+        sync_status: allowedStatuses.includes(t.sync_status)
+          ? t.sync_status
+          : 'FETCHED',
+      }));
+
       // 💾 Upsert u `tracks`
       const { data: inserted, error: err1 } = await sb
         .from('tracks')
-        .upsert(tracks, { onConflict: 'external_id' })
+        .upsert(cleanedTracks, { onConflict: 'external_id' })
         .select('id, external_id');
 
       if (err1) throw err1;
