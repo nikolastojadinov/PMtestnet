@@ -2,7 +2,7 @@
 // - koristi 6 API ključeva × 10k QUs (60k ukupno)
 // - koristi ~9,500 QUs/dan za plejliste (50% dnevne kvote)
 // - uključuje GLOBAL + REGIONAL + DEFAULT query poolove
-// - automatska rotacija ključeva i dnevni log u Supabase (sa JSON sigurnim zapisom i job_type)
+// - automatska rotacija ključeva i dnevni log u Supabase (job_type: 'playlists')
 
 import axios from 'axios';
 import { upsertPlaylists } from '../lib/db.js';
@@ -62,7 +62,7 @@ const REGIONAL_QUERY_POOLS = {
 };
 
 // ───────────────────────────────────────────────────────────────────────────────
-// 🔁 QUERY ROTATOR
+// 🧠 HELPERI
 
 function nextQueryFactory(pool) {
   let i = -1;
@@ -83,9 +83,6 @@ function getRegionalQuery(region) {
   const fn = nextQueryFactory(pool);
   return fn();
 }
-
-// ───────────────────────────────────────────────────────────────────────────────
-// 🧮 STATE
 
 let apiCallsToday = 0;
 function quotaLeftQUs() {
@@ -108,8 +105,7 @@ async function callYouTubeSearch(params) {
       return data;
     } catch (e) {
       const msg = e?.response?.data?.error?.message || e.message;
-      const status = e?.response?.status;
-      if (status === 403 && /quota/i.test(msg)) {
+      if (/quota/i.test(msg)) {
         console.warn('[quota] key exhausted → rotating...');
         continue;
       }
@@ -126,19 +122,19 @@ async function fetchRegionPlaylists(regionCode, maxPages, query) {
   do {
     if (quotaExceeded()) break;
 
-    const baseParams = {
+    const params = {
+      key: nextKey(),
       part: 'snippet',
       maxResults: 25,
       type: 'playlist',
       q: query,
+      ...(regionCode !== 'GLOBAL' ? { regionCode } : {}),
+      pageToken
     };
 
-    const params = regionCode === 'GLOBAL'
-      ? { ...baseParams, pageToken }
-      : { ...baseParams, regionCode, pageToken };
-
     try {
-      const data = await callYouTubeSearch(params);
+      const { data } = await axios.get('https://www.googleapis.com/youtube/v3/search', { params });
+      apiCallsToday++;
       const items = (data.items || []).map(it => ({
         external_id: it.id?.playlistId,
         title: it.snippet?.title ?? null,
@@ -184,7 +180,6 @@ export async function runFetchPlaylists({ reason = 'manual' } = {}) {
   const cycleDay = startStr ? Math.max(1, daysSince(parseYMD(startStr), new Date()) + 1) : null;
 
   const plan = pickTodayPlan(new Date());
-
   console.log(`[fetch] start (${reason}) — ${plan.steps.length} regions`);
   console.log(`[quota] daily budget ${MAX_DAILY_QUOTA_QUS} QUs (~${MAX_DAILY_QUOTA_QUS / COST_PER_REQUEST_QUS} API calls)`);
 
@@ -195,6 +190,7 @@ export async function runFetchPlaylists({ reason = 'manual' } = {}) {
 
   for (const step of plan.steps) {
     if (quotaExceeded()) break;
+
     const query = step.region === 'GLOBAL' ? nextGlobalQuery() : getRegionalQuery(step.region);
     const rows = await fetchRegionPlaylists(step.region, step.pages, query);
     console.log(`[fetch] ${step.region}: +${rows.length} (${query})`);
@@ -204,12 +200,10 @@ export async function runFetchPlaylists({ reason = 'manual' } = {}) {
     if (quotaExceeded()) break;
   }
 
-  const uniqueBatch = Object.values(
-    batch.reduce((acc, row) => {
-      acc[row.external_id] = row;
-      return acc;
-    }, {})
-  );
+  const uniqueBatch = Object.values(batch.reduce((acc, row) => {
+    acc[row.external_id] = row;
+    return acc;
+  }, {}));
 
   let upsertedCount = 0;
   if (uniqueBatch.length) {
@@ -221,11 +215,11 @@ export async function runFetchPlaylists({ reason = 'manual' } = {}) {
     console.log('[fetch] nothing to upsert');
   }
 
-  // 🧾 Sigurnosno logovanje u fetch_runs
+  // 🧾 Log u fetch_runs
   const finishedAt = new Date().toISOString();
-
   try {
-    const { error } = await sb.from('fetch_runs').insert({
+    await sb.from('fetch_runs').insert({
+      job_type: 'playlists',
       started_at: startedAt,
       finished_at: finishedAt,
       regions: JSON.stringify(usedRegions),
@@ -233,15 +227,11 @@ export async function runFetchPlaylists({ reason = 'manual' } = {}) {
       api_calls: apiCallsToday,
       quota_used: apiCallsToday * COST_PER_REQUEST_QUS,
       cycle_day: cycleDay,
-      job_type: 'playlists',
       success: true,
     });
-
-    if (error) throw error;
     console.log(`[fetch_log] ✅ recorded fetch run (${upsertedCount} playlists)`);
   } catch (e) {
-    console.error('[fetch_log] ❌ failed to record fetch_runs:');
-    console.error(e);
+    console.error('[fetch_log] ❌ failed to insert log:', e.message);
   }
 
   console.log(`[fetch] total API calls: ${apiCallsToday} (${apiCallsToday * COST_PER_REQUEST_QUS} QUs used, left ${quotaLeftQUs()} QUs)`);
