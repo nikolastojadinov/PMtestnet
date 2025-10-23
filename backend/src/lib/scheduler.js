@@ -9,6 +9,7 @@ const PLAYLIST_SCHEDULE = '5 7 * * *';
 const TRACK_SCHEDULE = '0 11 * * *';
 
 export function startDualJobs() {
+  // 🎧 Playlists job
   cron.schedule(PLAYLIST_SCHEDULE, async () => {
     try {
       console.log('[scheduler] 09:05 → Fetch Playlists');
@@ -18,6 +19,7 @@ export function startDualJobs() {
     }
   }, { timezone: 'UTC' });
 
+  // 🎵 Tracks job
   cron.schedule(TRACK_SCHEDULE, async () => {
     try {
       console.log('[scheduler] 13:00 → Fetch Tracks');
@@ -26,6 +28,11 @@ export function startDualJobs() {
       console.error('[scheduler] tracks job error:', e);
     }
   }, { timezone: 'UTC' });
+
+  // 🟢 Startup auto-run fallback (bez čekanja crona)
+  runFetchPlaylists({ reason: 'startup-initial' })
+    .then(() => setTimeout(() => runFetchTracks({ reason: 'startup-followup' }), 5 * 60 * 1000))
+    .catch(err => console.error('[startup] initial fetch error:', err));
 
   console.log('[scheduler] cron set: playlists@07:05 UTC (09:05 local), tracks@11:00 UTC (13:00 local)');
 }
