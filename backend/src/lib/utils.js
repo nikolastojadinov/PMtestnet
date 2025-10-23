@@ -22,9 +22,10 @@ export function nextKeyFactory(keys) {
 
 /**
  * 🎯 Odaberi n regiona dnevno (deterministički po datumu)
+ * npr. ako je n = 10, svakog dana backend koristi sledećih 10 regiona u ciklusu.
  */
 export function pickTodayRegions(n = 10, now = new Date()) {
-  const dayIndex = Math.floor(now.getTime() / (24 * 3600 * 1000));
+  const dayIndex = Math.floor(now.getTime() / (24 * 3600 * 1000)); // broj dana od epoch
   const start = dayIndex % REGION_POOL.length;
   const out = [];
   for (let k = 0; k < n; k++) {
@@ -35,9 +36,9 @@ export function pickTodayRegions(n = 10, now = new Date()) {
 
 /**
  * 📅 Parsiranje i pomoćne funkcije za datume
+ * parseYMD('2025-10-23') → Date u 00:00 lokalno
  */
 export function parseYMD(s) {
-  // 'YYYY-MM-DD' → lokalni datum u 00:00
   const [y, m, d] = s.split('-').map(Number);
   const dt = new Date(y, m - 1, d, 0, 0, 0, 0);
   if (Number.isNaN(dt.getTime())) {
@@ -64,6 +65,7 @@ export function todayLocalISO(now = new Date()) {
 
 /**
  * ⏳ Prozor (from..to) za fetched_on koje pripada target “fetch day” u ciklusu (1..29)
+ * Na osnovu environment promenljive CYCLE_START_DATE.
  */
 export function dateWindowForCycleDay(day) {
   if (day < 1 || day > 29) throw new Error('day must be 1..29');
@@ -78,6 +80,6 @@ export function dateWindowForCycleDay(day) {
 
 /**
  * 💤 Sleep helper — asinhrona pauza u milisekundama
- * (koristi se za throttling između API poziva)
+ * Koristi se za throttling između API poziva (150–300 ms).
  */
 export const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
