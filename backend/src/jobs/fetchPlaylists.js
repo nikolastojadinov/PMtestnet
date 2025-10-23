@@ -222,7 +222,7 @@ export async function runFetchPlaylists({ reason = 'manual' } = {}) {
       job_type: 'playlists',
       started_at: startedAt,
       finished_at: finishedAt,
-      regions: JSON.stringify(usedRegions),
+      regions: usedRegions, // ✅ ispravno (jsonb, ne stringify)
       playlists_count: upsertedCount,
       api_calls: apiCallsToday,
       quota_used: apiCallsToday * COST_PER_REQUEST_QUS,
