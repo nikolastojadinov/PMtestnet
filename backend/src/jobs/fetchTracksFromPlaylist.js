@@ -1,14 +1,18 @@
 // ✅ FULL REWRITE — Stable YouTube track fetcher with quota guard (50% daily usage)
+// - koristi 6 API ključeva × 10k QUs (60k ukupno)
+// - koristi max 30.000 API poziva (50% ukupne dnevne kvote)
+// - automatski loguje rezultate u Supabase tabelu fetch_runs (job_type = 'tracks')
 
 import axios from 'axios';
 import { getSupabase } from '../lib/supabase.js';
 import { nextKeyFactory, sleep } from '../lib/utils.js';
 
-// 🔧 Konfiguracija kvote
+// 🔧 KONFIGURACIJA KVOTE
 const MAX_API_CALLS_PER_DAY = 30000; // koristi 50% od ukupne kvote (6×10k)
 const MAX_PAGES_PER_PLAYLIST = 3; // do 150 pesama po playlisti (3×50)
 const MAX_PLAYLISTS_PER_RUN = 60; // dnevno obradi max 60 playlisti
 
+// 🔐 API ključevi
 const API_KEYS = (process.env.YOUTUBE_API_KEYS || '')
   .split(',')
   .map(k => k.trim())
@@ -19,7 +23,7 @@ if (!API_KEYS.length) throw new Error('YOUTUBE_API_KEYS missing.');
 const nextKey = nextKeyFactory(API_KEYS);
 let apiCallsToday = 0;
 
-// 🎵 Fetch pesama iz jedne YouTube playliste
+// 🎵 Preuzimanje pesama iz jedne YouTube playliste
 async function fetchTracksForPlaylist(playlistId) {
   const all = [];
   let pageToken = null;
@@ -102,6 +106,10 @@ export async function runFetchTracks({ reason = 'manual' } = {}) {
   if (error) throw error;
   console.log(`[tracks] ${playlists?.length || 0} playlists to process`);
 
+  const startedAt = new Date().toISOString();
+  let totalInserted = 0;
+  const processedPlaylists = [];
+
   for (const pl of playlists || []) {
     if (apiCallsToday >= MAX_API_CALLS_PER_DAY) {
       console.warn(`[quota-guard] Daily track limit reached (${apiCallsToday}). Ending early.`);
@@ -133,11 +141,38 @@ export async function runFetchTracks({ reason = 'manual' } = {}) {
 
       if (err2) throw err2;
 
+      totalInserted += inserted.length;
+      processedPlaylists.push({ id: pl.id, title: pl.title, count: inserted.length });
+
       console.log(`[tracks] ${pl.title}: +${inserted.length} tracks`);
       await sleep(500);
     } catch (e) {
       console.error(`[tracks] error for playlist ${pl.external_id}`, e.message);
     }
+  }
+
+  const finishedAt = new Date().toISOString();
+
+  // 🧾 Loguj rezultat u fetch_runs
+  try {
+    const { error: logErr } = await sb
+      .from('fetch_runs')
+      .insert({
+        started_at: startedAt,
+        finished_at: finishedAt,
+        regions: JSON.stringify(processedPlaylists),
+        playlists_count: playlists?.length || 0,
+        api_calls: apiCallsToday,
+        quota_used: apiCallsToday * 100,
+        job_type: 'tracks',
+        success: true,
+      });
+
+    if (logErr) throw logErr;
+    console.log(`[tracks_log] ✅ recorded fetch run (${totalInserted} tracks total)`);
+  } catch (e) {
+    console.error('[tracks_log] ❌ failed to record fetch_runs:');
+    console.error(e);
   }
 
   console.log(`[tracks] done ✅ total API calls: ${apiCallsToday}`);
