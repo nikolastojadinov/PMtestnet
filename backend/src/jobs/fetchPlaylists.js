@@ -2,12 +2,12 @@
 // - koristi 6 API ključeva × 10k QUs (60k ukupno)
 // - koristi ~9,500 QUs/dan za plejliste (50% dnevne kvote)
 // - uključuje GLOBAL + REGIONAL + DEFAULT query poolove
-// - automatska rotacija ključeva i dnevni log u Supabase
+// - automatska rotacija ključeva i dnevni log u Supabase (sa JSON sigurnim zapisom i job_type)
 
 import axios from 'axios';
 import { upsertPlaylists } from '../lib/db.js';
 import { getSupabase } from '../lib/supabase.js';
-import { nextKeyFactory, sleep, todayLocalISO, parseYMD, daysSince } from '../lib/utils.js';
+import { nextKeyFactory, sleep, parseYMD, daysSince } from '../lib/utils.js';
 import { pickTodayPlan } from '../lib/monthlyCycle.js';
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -32,7 +32,6 @@ const MAX_REGION_PAGES_FALLBACK = 2;
 // ───────────────────────────────────────────────────────────────────────────────
 // 🎧 QUERY POOLS
 
-// GLOBAL – pretrage bez regionCode (najtraženiji worldwide)
 const GLOBAL_QUERY_POOL = [
   'top hits', 'global hits', 'best songs', 'viral hits', 'chart toppers',
   'billboard hot 100', 'global top 50', 'pop hits', 'hip hop hits',
@@ -40,14 +39,12 @@ const GLOBAL_QUERY_POOL = [
   'party mix', 'workout playlist', 'study music', 'chill mix'
 ];
 
-// DEFAULT – generički upiti koji rade svuda
 const DEFAULT_QUERY_POOL = [
   'music playlist', 'top hits', 'best songs', 'pop mix',
   'hip hop playlist', 'dance hits', 'rock classics',
   'edm mix', 'chill music', 'party playlist'
 ];
 
-// REGIONAL – lokalizovani termini za specifične regione
 const REGIONAL_QUERY_POOLS = {
   ES: ['reggaeton', 'musica top', 'exitos 2025', 'pop latino', 'bachata'],
   PT: ['sertanejo', 'funk carioca', 'pagode', 'samba', 'piseiro', 'forró'],
@@ -64,7 +61,9 @@ const REGIONAL_QUERY_POOLS = {
   NG: ['afrobeats', 'naija hits', 'afropop', 'lagos vibes']
 };
 
-// rotatori query-ja
+// ───────────────────────────────────────────────────────────────────────────────
+// 🔁 QUERY ROTATOR
+
 function nextQueryFactory(pool) {
   let i = -1;
   const p = pool.filter(Boolean);
@@ -160,7 +159,6 @@ async function fetchRegionPlaylists(regionCode, maxPages, query) {
       all.push(...items);
       pageToken = data.nextPageToken || null;
       pages++;
-
       await sleep(DELAY_BETWEEN_PAGES_MS);
     } catch (e) {
       console.error(`[fetch:${regionCode}]`, e.response?.data || e.message);
@@ -168,7 +166,6 @@ async function fetchRegionPlaylists(regionCode, maxPages, query) {
     }
   } while (pageToken && pages < (maxPages || MAX_REGION_PAGES_FALLBACK));
 
-  // dedupe
   const unique = Object.values(
     all.reduce((acc, p) => {
       if (!acc[p.external_id]) acc[p.external_id] = p;
@@ -186,7 +183,7 @@ export async function runFetchPlaylists({ reason = 'manual' } = {}) {
   const startStr = process.env.CYCLE_START_DATE;
   const cycleDay = startStr ? Math.max(1, daysSince(parseYMD(startStr), new Date()) + 1) : null;
 
-  const plan = pickTodayPlan(new Date()); // { steps: [{region, pages}] }
+  const plan = pickTodayPlan(new Date());
 
   console.log(`[fetch] start (${reason}) — ${plan.steps.length} regions`);
   console.log(`[quota] daily budget ${MAX_DAILY_QUOTA_QUS} QUs (~${MAX_DAILY_QUOTA_QUS / COST_PER_REQUEST_QUS} API calls)`);
@@ -198,17 +195,11 @@ export async function runFetchPlaylists({ reason = 'manual' } = {}) {
 
   for (const step of plan.steps) {
     if (quotaExceeded()) break;
-
-    // izaberi query po regionu
-    let query;
-    if (step.region === 'GLOBAL') query = nextGlobalQuery();
-    else query = getRegionalQuery(step.region);
-
+    const query = step.region === 'GLOBAL' ? nextGlobalQuery() : getRegionalQuery(step.region);
     const rows = await fetchRegionPlaylists(step.region, step.pages, query);
     console.log(`[fetch] ${step.region}: +${rows.length} (${query})`);
     batch.push(...rows);
     usedRegions.push({ region: step.region, pages: step.pages, query });
-
     await sleep(DELAY_BETWEEN_REGIONS_MS);
     if (quotaExceeded()) break;
   }
@@ -230,21 +221,27 @@ export async function runFetchPlaylists({ reason = 'manual' } = {}) {
     console.log('[fetch] nothing to upsert');
   }
 
-  // log u fetch_runs
+  // 🧾 Sigurnosno logovanje u fetch_runs
   const finishedAt = new Date().toISOString();
+
   try {
-    await sb.from('fetch_runs').insert({
+    const { error } = await sb.from('fetch_runs').insert({
       started_at: startedAt,
       finished_at: finishedAt,
-      regions: usedRegions,
+      regions: JSON.stringify(usedRegions),
       playlists_count: upsertedCount,
       api_calls: apiCallsToday,
       quota_used: apiCallsToday * COST_PER_REQUEST_QUS,
       cycle_day: cycleDay,
+      job_type: 'playlists',
       success: true,
     });
+
+    if (error) throw error;
+    console.log(`[fetch_log] ✅ recorded fetch run (${upsertedCount} playlists)`);
   } catch (e) {
-    console.error('[fetch] failed to log fetch_runs:', e.message);
+    console.error('[fetch_log] ❌ failed to record fetch_runs:');
+    console.error(e);
   }
 
   console.log(`[fetch] total API calls: ${apiCallsToday} (${apiCallsToday * COST_PER_REQUEST_QUS} QUs used, left ${quotaLeftQUs()} QUs)`);
