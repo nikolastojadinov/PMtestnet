@@ -1,9 +1,23 @@
 // ✅ FULL REWRITE — Utility funkcije (datumi, regioni, rotacija ključeva, pauze)
 
-// 🌍 Globalni region pool (rotira se dnevno)
+// 🌍 Globalni region pool v2.0 — 60 zemalja + global feed (rotira se dnevno)
 const REGION_POOL = [
-  'US','GB','DE','FR','ES','IT','NL','PL','HU','IN','VN','PH','KR','JP','RU',
-  'ID','TH','BR','TR','NG','PT','UA','CA','MX','AU','AR','MY','BD','PK','SE'
+  // 🌎 North America
+  'US','CA','MX',
+  // 🌎 South America
+  'BR','AR','CL','CO','PE','VE',
+  // 🌍 Europe
+  'GB','FR','DE','ES','IT','NL','PL','SE','NO','FI','PT','UA','CZ','HU','RO','GR',
+  // 🌍 Middle East & Africa
+  'TR','SA','AE','EG','NG','KE','ZA','DZ','MA',
+  // 🌏 Asia
+  'IN','PK','BD','VN','PH','TH','MY','ID','KR','JP','CN','HK','SG','TW',
+  // 🌏 Oceania
+  'AU','NZ',
+  // 🌍 Others / global blends
+  'RU','IL','IR','IQ','ET','TZ',
+  // 🌐 YouTube global feed
+  'GLOBAL'
 ];
 
 /**
@@ -23,6 +37,7 @@ export function nextKeyFactory(keys) {
 /**
  * 🎯 Odaberi n regiona dnevno (deterministički po datumu)
  * npr. ako je n = 10, svakog dana backend koristi sledećih 10 regiona u ciklusu.
+ * Kada stigne do kraja liste (60 regiona), rotacija se vraća na početak.
  */
 export function pickTodayRegions(n = 10, now = new Date()) {
   const dayIndex = Math.floor(now.getTime() / (24 * 3600 * 1000)); // broj dana od epoch
