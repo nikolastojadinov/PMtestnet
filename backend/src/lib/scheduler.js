@@ -1,4 +1,4 @@
-// ✅ FULL REWRITE — Dual scheduler: playlists @09:05, tracks @15:48 local
+// ✅ Dual scheduler: playlists @09:05 local, tracks @16:00 local
 
 import cron from 'node-cron';
 import { runFetchPlaylists } from '../jobs/fetchPlaylists.js';
@@ -6,8 +6,8 @@ import { runFetchTracks } from '../jobs/fetchTracksFromPlaylist.js';
 
 // 09:05 lokalno = 07:05 UTC
 const PLAYLIST_SCHEDULE = '5 7 * * *';
-// 15:48 lokalno = 13:48 UTC
-const TRACK_SCHEDULE = '48 13 * * *';
+// 16:00 lokalno = 14:00 UTC
+const TRACK_SCHEDULE = '0 14 * * *';
 
 export function startDualJobs() {
   // 🎧 Playlists
@@ -23,12 +23,12 @@ export function startDualJobs() {
   // 🎵 Tracks
   cron.schedule(TRACK_SCHEDULE, async () => {
     try {
-      console.log('[scheduler] 15:48 → Fetch Tracks');
+      console.log('[scheduler] 16:00 → Fetch Tracks');
       await runFetchTracks({ reason: 'daily-tracks' });
     } catch (e) {
       console.error('[scheduler] tracks job error:', e);
     }
   }, { timezone: 'UTC' });
 
-  console.log('[scheduler] cron set: playlists@07:05 UTC (09:05 local), tracks@13:48 UTC (15:48 local)');
+  console.log('[scheduler] cron set: playlists@07:05 UTC (09:05 local), tracks@14:00 UTC (16:00 local)');
 }
