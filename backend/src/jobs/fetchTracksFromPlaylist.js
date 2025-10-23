@@ -3,9 +3,9 @@ import axios from 'axios';
 import { getSupabase } from '../lib/supabase.js';
 import { nextKeyFactory, sleep } from '../lib/utils.js';
 
-const MAX_API_CALLS_PER_DAY = 60000; // all 6 keys
+const MAX_API_CALLS_PER_DAY = 60000; // 6 keys × 10 000 quota
 const MAX_PLAYLISTS_PER_RUN = 10000;
-const MAX_PAGES_PER_PLAYLIST = 2;    // ~100 tracks/list
+const MAX_PAGES_PER_PLAYLIST = 3;    // do 150 pesama po playlisti
 
 const API_KEYS = (process.env.YOUTUBE_API_KEYS || '')
   .split(',')
@@ -49,7 +49,7 @@ async function fetchTracksForPlaylist(playlistId) {
       all.push(...tracks);
       pageToken = data.nextPageToken || null;
       pages++;
-      await sleep(150);
+      await sleep(120 + Math.random() * 100);
     } catch (e) {
       console.error(`[tracks:${playlistId}]`, e.response?.data || e.message);
       break;
@@ -60,6 +60,7 @@ async function fetchTracksForPlaylist(playlistId) {
     if (!acc[t.external_id]) acc[t.external_id] = t;
     return acc;
   }, {}));
+
   return unique;
 }
 
@@ -80,6 +81,7 @@ export async function runFetchTracks({ reason = 'daily-tracks' } = {}) {
 
   for (const pl of playlists || []) {
     if (apiCallsToday >= MAX_API_CALLS_PER_DAY) break;
+
     try {
       const tracks = await fetchTracksForPlaylist(pl.external_id);
       if (!tracks.length) continue;
@@ -100,7 +102,7 @@ export async function runFetchTracks({ reason = 'daily-tracks' } = {}) {
       if (err2) throw err2;
 
       console.log(`[tracks] ${pl.title}: +${inserted.length} tracks`);
-      await sleep(150);
+      await sleep(120 + Math.random() * 100);
     } catch (e) {
       console.error(`[tracks] error for playlist ${pl.external_id}`, e.message);
     }
