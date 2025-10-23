@@ -1,5 +1,5 @@
 // ✅ FULL REWRITE — Express server + Dual Scheduler (Playlists + Tracks)
-// 50%–50% daily quota balance system + Render live endpoint
+// 50%–50% daily quota balance system + Render live endpoint + Auto-recovery system
 
 import 'dotenv/config';
 import express from 'express';
@@ -76,6 +76,22 @@ const PORT = process.env.PORT || 8080;
 
   // 🕐 Pokreni automatske cron poslove (09:05 i 14:00)
   startDualJobs();
+
+  // 🧠 Auto-recovery sistem — ako je backend redeployovan posle 13:00, pokreni tracks odmah
+  setTimeout(async () => {
+    const now = new Date();
+    const hour = now.getHours();
+    const minutes = now.getMinutes();
+    if (hour >= 13 && hour < 14) {
+      console.log(`[auto-recovery] Detected restart after ${hour}:${minutes} → running track fetch early...`);
+      try {
+        await runFetchTracks({ reason: 'auto-recovery-after-deploy' });
+        console.log('[auto-recovery] ✅ Track fetch completed automatically.');
+      } catch (e) {
+        console.error('[auto-recovery] ❌ Track fetch failed:', e.message);
+      }
+    }
+  }, 20000); // 20 sekundi posle starta
 
   app.listen(PORT, () => {
     console.log(`[backend] listening on port :${PORT}`);
