@@ -1,4 +1,4 @@
-// ✅ FULL REWRITE — Optimized YouTube playlists fetcher (10 000/day, paginated, no sync_status)
+// ✅ FULL REWRITE — Optimized YouTube playlists fetcher (10 000/day, paginated, valid playlist IDs)
 import axios from 'axios';
 import { getSupabase } from '../lib/supabase.js';
 import { nextKeyFactory, pickTodayRegions, sleep } from '../lib/utils.js';
@@ -6,7 +6,7 @@ import { nextKeyFactory, pickTodayRegions, sleep } from '../lib/utils.js';
 const MAX_API_CALLS_PER_DAY = 60000;       // 6 keys × 10 000 quota
 const MAX_PLAYLISTS_PER_RUN = 10000;       // target daily playlists
 const REGIONS_PER_DAY = 10;                // koliko regiona dnevno koristiš
-const MAX_PAGES_PER_REGION = 40;           // 40×50 = 2 000 video ID-eva po regionu
+const MAX_PAGES_PER_REGION = 40;           // paginacija: 40×50 = 2 000 plejlista po regionu
 
 // 🔐 API ključevi
 const API_KEYS = (process.env.YOUTUBE_API_KEYS || '')
@@ -43,22 +43,20 @@ export async function runFetchPlaylists({ reason = 'daily-playlists' } = {}) {
       const params = {
         key,
         part: 'snippet,contentDetails',
-        chart: 'mostPopular',
-        regionCode: region === 'GLOBAL' ? 'US' : region, // fallback za global feed
         maxResults: 50,
-        videoCategoryId: 10, // Music
-        pageToken,
+        regionCode: region === 'GLOBAL' ? 'US' : region, // fallback za GLOBAL feed
       };
+      if (pageToken) params.pageToken = pageToken;
 
       try {
-        const { data } = await axios.get('https://www.googleapis.com/youtube/v3/videos', { params });
+        const { data } = await axios.get('https://www.googleapis.com/youtube/v3/playlists', { params });
         apiCallsToday++;
 
-        const batch = (data.items || []).map(v => ({
-          external_id: v.id,
-          title: v.snippet?.title ?? null,
-          description: v.snippet?.description ?? null,
-          cover_url: v.snippet?.thumbnails?.high?.url ?? v.snippet?.thumbnails?.default?.url ?? null,
+        const batch = (data.items || []).map(p => ({
+          external_id: p.id,
+          title: p.snippet?.title ?? null,
+          description: p.snippet?.description ?? null,
+          cover_url: p.snippet?.thumbnails?.high?.url ?? p.snippet?.thumbnails?.default?.url ?? null,
           region,
           category: 'music',
           is_public: true,
@@ -80,7 +78,7 @@ export async function runFetchPlaylists({ reason = 'daily-playlists' } = {}) {
     } while (pageToken && pages < MAX_PAGES_PER_REGION && collected.length < MAX_PLAYLISTS_PER_RUN);
   }
 
-  // 🧹 Ukloni duplikate
+  // 🧹 Ukloni duplikate po external_id
   const unique = Object.values(
     collected.reduce((acc, p) => {
       if (!acc[p.external_id]) acc[p.external_id] = p;
