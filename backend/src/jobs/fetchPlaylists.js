@@ -1,14 +1,13 @@
-// ✅ FULL REWRITE — Optimized YouTube playlists fetcher (10 000/day, paginated)
+// ✅ FINAL FIX — Two-step YouTube playlist fetcher (search + details)
 import axios from 'axios';
 import { getSupabase } from '../lib/supabase.js';
 import { nextKeyFactory, pickTodayRegions, sleep } from '../lib/utils.js';
 
 const MAX_API_CALLS_PER_DAY = 60000;       // 6 keys × 10k quota
-const MAX_PLAYLISTS_PER_RUN = 10000;       // target dnevni limit
-const REGIONS_PER_DAY = 10;                // koliko regiona dnevno koristiš
-const MAX_PAGES_PER_REGION = 40;           // paginacija (40×50 = 2000/playlists per region)
+const MAX_PLAYLISTS_PER_RUN = 10000;
+const REGIONS_PER_DAY = 10;
+const MAX_PAGES_PER_REGION = 40;
 
-// 🔐 API ključevi
 const API_KEYS = (process.env.YOUTUBE_API_KEYS || '')
   .split(',')
   .map(k => k.trim())
@@ -17,6 +16,36 @@ if (!API_KEYS.length) throw new Error('YOUTUBE_API_KEYS missing.');
 
 const nextKey = nextKeyFactory(API_KEYS);
 let apiCallsToday = 0;
+
+async function fetchPlaylistDetails(ids) {
+  if (!ids.length) return [];
+  const key = nextKey();
+  const params = {
+    key,
+    part: 'snippet,contentDetails',
+    id: ids.join(','),
+    maxResults: 50,
+  };
+  try {
+    const { data } = await axios.get('https://www.googleapis.com/youtube/v3/playlists', { params });
+    apiCallsToday++;
+    return data.items.map(p => ({
+      external_id: p.id,
+      title: p.snippet?.title ?? null,
+      description: p.snippet?.description ?? null,
+      cover_url: p.snippet?.thumbnails?.high?.url ?? p.snippet?.thumbnails?.default?.url ?? null,
+      region: p.snippet?.country ?? null,
+      category: 'music',
+      is_public: true,
+      fetched_on: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      sync_status: 'fetched',
+    }));
+  } catch (e) {
+    console.error('[playlistDetails]', e.response?.data || e.message);
+    return [];
+  }
+}
 
 export async function runFetchPlaylists({ reason = 'daily-playlists' } = {}) {
   const sb = getSupabase();
@@ -37,31 +66,19 @@ export async function runFetchPlaylists({ reason = 'daily-playlists' } = {}) {
       const key = nextKey();
       const params = {
         key,
-        part: 'snippet,contentDetails',
-        maxResults: 50,
-        regionCode: region,
-        q: 'music',
+        part: 'snippet',
         type: 'playlist',
-        relevanceLanguage: 'en',
+        q: 'music',
+        regionCode: region,
+        maxResults: 50,
         pageToken,
       };
 
       try {
         const { data } = await axios.get('https://www.googleapis.com/youtube/v3/search', { params });
         apiCallsToday++;
-
-        const batch = (data.items || []).map(v => ({
-          external_id: v.id?.playlistId,
-          title: v.snippet?.title ?? null,
-          description: v.snippet?.description ?? null,
-          cover_url: v.snippet?.thumbnails?.high?.url ?? v.snippet?.thumbnails?.default?.url ?? null,
-          region,
-          category: 'music',
-          is_public: true,
-          fetched_on: new Date().toISOString(),
-          created_at: new Date().toISOString(),
-          sync_status: 'fetched',
-        })).filter(p => p.external_id);
+        const ids = (data.items || []).map(i => i.id?.playlistId).filter(Boolean);
+        const batch = await fetchPlaylistDetails(ids);
 
         collected.push(...batch);
         console.log(`[playlists] ${region}: +${batch.length} (page ${pages + 1})`);
@@ -77,12 +94,13 @@ export async function runFetchPlaylists({ reason = 'daily-playlists' } = {}) {
   }
 
   // 🧹 Ukloni duplikate
-  const unique = Object.values(collected.reduce((acc, p) => {
-    if (!acc[p.external_id]) acc[p.external_id] = p;
-    return acc;
-  }, {}));
+  const unique = Object.values(
+    collected.reduce((acc, p) => {
+      if (!acc[p.external_id]) acc[p.external_id] = p;
+      return acc;
+    }, {})
+  );
 
-  // 💾 Upsert u bazu
   const { error } = await sb.from('playlists').upsert(unique, { onConflict: 'external_id' });
   if (error) console.error('[playlists] upsert error:', error);
 
