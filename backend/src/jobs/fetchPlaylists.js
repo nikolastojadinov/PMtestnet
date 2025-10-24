@@ -1,4 +1,4 @@
-// ✅ FULL REWRITE — Optimized YouTube playlists fetcher (10 000/day, paginated)
+// ✅ FULL REWRITE — Optimized YouTube playlists fetcher (10 000/day, paginated, no sync_status)
 import axios from 'axios';
 import { getSupabase } from '../lib/supabase.js';
 import { nextKeyFactory, pickTodayRegions, sleep } from '../lib/utils.js';
@@ -6,7 +6,7 @@ import { nextKeyFactory, pickTodayRegions, sleep } from '../lib/utils.js';
 const MAX_API_CALLS_PER_DAY = 60000;       // 6 keys × 10 000 quota
 const MAX_PLAYLISTS_PER_RUN = 10000;       // target daily playlists
 const REGIONS_PER_DAY = 10;                // koliko regiona dnevno koristiš
-const MAX_PAGES_PER_REGION = 40;           // paginacija: 40×50 = 2 000 video-ID-eva po regionu
+const MAX_PAGES_PER_REGION = 40;           // 40×50 = 2 000 video ID-eva po regionu
 
 // 🔐 API ključevi
 const API_KEYS = (process.env.YOUTUBE_API_KEYS || '')
@@ -26,6 +26,11 @@ export async function runFetchPlaylists({ reason = 'daily-playlists' } = {}) {
   const collected = [];
 
   for (const region of regions) {
+    if (region === 'CN') {
+      console.warn('[playlists] skipping CN — unsupported regionCode');
+      continue;
+    }
+
     let pageToken = null;
     let pages = 0;
     console.log(`[playlists] region: ${region}`);
@@ -39,7 +44,7 @@ export async function runFetchPlaylists({ reason = 'daily-playlists' } = {}) {
         key,
         part: 'snippet,contentDetails',
         chart: 'mostPopular',
-        regionCode: region,
+        regionCode: region === 'GLOBAL' ? 'US' : region, // fallback za global feed
         maxResults: 50,
         videoCategoryId: 10, // Music
         pageToken,
@@ -59,7 +64,6 @@ export async function runFetchPlaylists({ reason = 'daily-playlists' } = {}) {
           is_public: true,
           fetched_on: new Date().toISOString(),
           created_at: new Date().toISOString(),
-          sync_status: 'fetched',
         }));
 
         collected.push(...batch);
@@ -68,7 +72,8 @@ export async function runFetchPlaylists({ reason = 'daily-playlists' } = {}) {
         pages++;
         await sleep(150 + Math.random() * 100);
       } catch (e) {
-        console.error(`[playlists:${region}]`, e.response?.data || e.message);
+        const msg = e.response?.data?.error?.message || e.message;
+        console.error(`[playlists:${region}] ${msg}`);
         await sleep(400);
         break;
       }
@@ -76,10 +81,12 @@ export async function runFetchPlaylists({ reason = 'daily-playlists' } = {}) {
   }
 
   // 🧹 Ukloni duplikate
-  const unique = Object.values(collected.reduce((acc, p) => {
-    if (!acc[p.external_id]) acc[p.external_id] = p;
-    return acc;
-  }, {}));
+  const unique = Object.values(
+    collected.reduce((acc, p) => {
+      if (!acc[p.external_id]) acc[p.external_id] = p;
+      return acc;
+    }, {})
+  );
 
   // 💾 Upsert u bazu
   const { error } = await sb.from('playlists').upsert(unique, { onConflict: 'external_id' });
