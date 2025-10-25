@@ -1,18 +1,18 @@
-// ✅ Dual scheduler: playlists @11:00, tracks @13:00 local
+// ✅ FULL REWRITE — Dual scheduler: playlists @09:05, tracks @13:00 local
 import cron from 'node-cron';
 import { runFetchPlaylists } from '../jobs/fetchPlaylists.js';
 import { runFetchTracks } from '../jobs/fetchTracksFromPlaylist.js';
 
-// 11:00 lokalno = 09:00 UTC
-const PLAYLIST_SCHEDULE = '0 9 * * *';
-// 13:00 lokalno = 11:00 UTC
+// 09:05 lokalno (UTC+2) = 07:05 UTC
+const PLAYLIST_SCHEDULE = '5 7 * * *';
+// 13:00 lokalno (UTC+2) = 11:00 UTC
 const TRACK_SCHEDULE = '0 11 * * *';
 
 export function startDualJobs() {
   // 🎧 Playlists job
   cron.schedule(PLAYLIST_SCHEDULE, async () => {
     try {
-      console.log('[scheduler] 11:00 → Fetch Playlists');
+      console.log('[scheduler] 09:05 → Fetch Playlists');
       await runFetchPlaylists({ reason: 'daily-playlists' });
     } catch (e) {
       console.error('[scheduler] playlists job error:', e);
@@ -29,10 +29,10 @@ export function startDualJobs() {
     }
   }, { timezone: 'UTC' });
 
-  // 🟢 Startup auto-run fallback
+  // 🟢 Startup auto-run fallback (pokreće odmah po startu)
   runFetchPlaylists({ reason: 'startup-initial' })
     .then(() => setTimeout(() => runFetchTracks({ reason: 'startup-followup' }), 5 * 60 * 1000))
     .catch(err => console.error('[startup] initial fetch error:', err));
 
-  console.log('[scheduler] cron set: playlists@09:00 UTC (11:00 local), tracks@11:00 UTC (13:00 local)');
+  console.log('[scheduler] cron set: playlists@07:05 UTC (09:05 local), tracks@11:00 UTC (13:00 local)');
 }
