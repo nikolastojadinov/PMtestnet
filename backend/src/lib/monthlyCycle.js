@@ -44,10 +44,10 @@ const VARIANTS_29 = [
   ['A','C']
 ];
 
-// 🧮 Odredi trenutni dan ciklusa (1-based)
+// 🧮 Odredi trenutni dan ciklusa (1-based) za 58-dnevni superciklus: 29 FETCH + 29 REFRESH
 function getCycleDay(now = new Date()) {
   const dayIndex = Math.floor(startOfDay(now).getTime() / (24 * 3600 * 1000));
-  return (dayIndex % 58) + 1; // 58 = 29 fetch + 29 refresh
+  return (dayIndex % 58) + 1; // 1..58
 }
 
 /**
@@ -70,6 +70,7 @@ export function pickTodayPlan(now = new Date()) {
     }
     return { mode: 'FETCH', currentDay, steps };
   } else {
+    // 30..58 → mapiraj na 1..29
     const targetDay = ((currentDay - 30) % 29) + 1;
     return { mode: 'REFRESH', currentDay, targetDay };
   }
