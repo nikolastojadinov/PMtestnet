@@ -26,12 +26,12 @@ export function startDualJobs() {
   cron.schedule(PLAYLIST_SCHEDULE, async () => {
     try {
       const { mode, currentDay, targetDay } = getMode();
-      console.log(`[scheduler] 09:05 → mode=${mode} currentDay=${currentDay}`);
+      console.log(`[scheduler] 09:05 → mode=${mode} currentDay=${currentDay}${mode === 'REFRESH' ? ` targetDay=${targetDay}` : ''}`);
 
       if (mode === 'FETCH') {
         await runFetchPlaylists({ reason: 'daily-fetch' });
       } else {
-        await runRefreshPlaylists({ reason: 'daily-refresh', currentDay });
+        await runRefreshPlaylists({ reason: 'daily-refresh', targetDay });
       }
     } catch (e) {
       console.error('[scheduler] playlists job error:', e);
@@ -42,7 +42,7 @@ export function startDualJobs() {
   cron.schedule(TRACK_SCHEDULE, async () => {
     try {
       const { mode, currentDay, targetDay } = getMode();
-      console.log(`[scheduler] 13:00 → mode=${mode} currentDay=${currentDay}`);
+      console.log(`[scheduler] 13:00 → mode=${mode} currentDay=${currentDay}${mode === 'REFRESH' ? ` targetDay=${targetDay}` : ''}`);
 
       if (mode === 'FETCH') {
         await runFetchTracks({ reason: 'daily-tracks' });
@@ -58,13 +58,13 @@ export function startDualJobs() {
   (async () => {
     try {
       const { mode, currentDay, targetDay } = getMode();
-      console.log(`[startup] immediate mode=${mode} currentDay=${currentDay}`);
+      console.log(`[startup] immediate mode=${mode} currentDay=${currentDay}${mode === 'REFRESH' ? ` targetDay=${targetDay}` : ''}`);
 
       if (mode === 'FETCH') {
         await runFetchPlaylists({ reason: 'startup-fetch' });
         setTimeout(() => runFetchTracks({ reason: 'startup-followup' }), 5 * 60 * 1000);
       } else {
-        await runRefreshPlaylists({ reason: 'startup-refresh', currentDay });
+        await runRefreshPlaylists({ reason: 'startup-refresh', targetDay });
         setTimeout(() => runRefreshTracks({ reason: 'startup-refresh-followup', targetDay }), 5 * 60 * 1000);
       }
     } catch (err) {
