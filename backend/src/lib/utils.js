@@ -20,6 +20,7 @@ const REGION_POOL = [
   'GLOBAL'
 ];
 
+// 🔁 Rotacija API ključeva (round-robin)
 export function nextKeyFactory(keys) {
   let i = -1;
   const safe = Array.isArray(keys) ? keys.filter(Boolean) : [];
@@ -30,6 +31,7 @@ export function nextKeyFactory(keys) {
   };
 }
 
+// 🎯 Odabir regiona za današnji dan (rotacija po REGION_POOL)
 export function pickTodayRegions(n = 10, now = new Date()) {
   const dayIndex = Math.floor(now.getTime() / (24 * 3600 * 1000));
   const start = dayIndex % REGION_POOL.length;
@@ -40,6 +42,7 @@ export function pickTodayRegions(n = 10, now = new Date()) {
   return out;
 }
 
+// 📅 Parsiranje YYYY-MM-DD formata
 export function parseYMD(s) {
   const [y, m, d] = s.split('-').map(Number);
   const dt = new Date(y, m - 1, d, 0, 0, 0, 0);
@@ -49,20 +52,42 @@ export function parseYMD(s) {
   return dt;
 }
 
+// 🕐 Početak dana (00:00 lokalno)
 export function startOfDay(d) {
   const t = new Date(d);
   t.setHours(0, 0, 0, 0);
   return t;
 }
 
+// 📊 Broj dana između dva datuma
 export function daysSince(start, now = new Date()) {
   const a = startOfDay(start).getTime();
   const b = startOfDay(now).getTime();
   return Math.floor((b - a) / (24 * 3600 * 1000));
 }
 
+// 📆 Danasnji datum u ISO formatu (UTC)
 export function todayLocalISO(now = new Date()) {
   return startOfDay(now).toISOString();
 }
 
+// ⏸️ Pauza (async sleep)
 export const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// 🧮 Utility: Izračunaj ISO vremenski prozor za određeni dan ciklusa (1–29)
+export function dateWindowForCycleDay(targetDay) {
+  if (!targetDay || targetDay < 1 || targetDay > 29) {
+    throw new Error('targetDay mora biti između 1 i 29');
+  }
+
+  // 📌 Početak ciklusa (možeš promeniti ako resetuješ ciklus u Supabase)
+  const cycleStart = new Date('2025-10-01T00:00:00Z');
+
+  const from = new Date(cycleStart.getTime() + (targetDay - 1) * 24 * 3600 * 1000);
+  const to = new Date(cycleStart.getTime() + targetDay * 24 * 3600 * 1000);
+
+  return {
+    from: from.toISOString(),
+    to: to.toISOString(),
+  };
+}
