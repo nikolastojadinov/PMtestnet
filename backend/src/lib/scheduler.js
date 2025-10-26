@@ -1,5 +1,5 @@
-// ✅ FULL REWRITE — Smart dual scheduler (auto FETCH/REFRESH by day cycle)
-// 📅 09:05 → playlists | 13:00 → tracks (local time, UTC+2)
+// ✅ Smart dual scheduler — FIXED local times only (no startup runs)
+// 🕘 09:05 → playlists | 🕐 13:00 → tracks (Europe/Belgrade)
 
 import cron from 'node-cron';
 import { pickTodayPlan } from '../lib/monthlyCycle.js';
@@ -8,12 +8,13 @@ import { runFetchTracks } from '../jobs/fetchTracksFromPlaylist.js';
 import { runRefreshPlaylists } from '../jobs/refreshPlaylists.js';
 import { runRefreshTracks } from '../jobs/refreshTracksFromPlaylist.js';
 
-// 09:05 lokalno (UTC+2) = 07:05 UTC
-const PLAYLIST_SCHEDULE = '5 7 * * *';
-// 13:00 lokalno (UTC+2) = 11:00 UTC
-const TRACK_SCHEDULE = '0 11 * * *';
+// Pokreći isključivo u lokalno vreme (sa DST): Europe/Belgrade
+const TZ = 'Europe/Belgrade';
 
-// 🧠 Pomoćna funkcija — bira mod dana automatski
+// Fiksni termini (bez konverzije u UTC)
+const PLAYLIST_SCHEDULE = '5 9 * * *';  // 09:05 local
+const TRACK_SCHEDULE    = '0 13 * * *'; // 13:00 local
+
 function getMode() {
   const plan = pickTodayPlan(new Date());
   return plan.mode === 'REFRESH'
@@ -22,12 +23,11 @@ function getMode() {
 }
 
 export function startDualJobs() {
-  // 🎧 Playlists job @09:05 local
+  // 🎧 Playlists @09:05 local — samo tada!
   cron.schedule(PLAYLIST_SCHEDULE, async () => {
     try {
       const { mode, currentDay, targetDay } = getMode();
-      console.log(`[scheduler] 09:05 → mode=${mode} currentDay=${currentDay}${mode === 'REFRESH' ? ` targetDay=${targetDay}` : ''}`);
-
+      console.log(`[scheduler] 09:05 (${TZ}) → mode=${mode} currentDay=${currentDay}`);
       if (mode === 'FETCH') {
         await runFetchPlaylists({ reason: 'daily-fetch' });
       } else {
@@ -36,14 +36,13 @@ export function startDualJobs() {
     } catch (e) {
       console.error('[scheduler] playlists job error:', e);
     }
-  }, { timezone: 'UTC' });
+  }, { timezone: TZ });
 
-  // 🎵 Tracks job @13:00 local
+  // 🎵 Tracks @13:00 local — samo tada!
   cron.schedule(TRACK_SCHEDULE, async () => {
     try {
       const { mode, currentDay, targetDay } = getMode();
-      console.log(`[scheduler] 13:00 → mode=${mode} currentDay=${currentDay}${mode === 'REFRESH' ? ` targetDay=${targetDay}` : ''}`);
-
+      console.log(`[scheduler] 13:00 (${TZ}) → mode=${mode} currentDay=${currentDay}`);
       if (mode === 'FETCH') {
         await runFetchTracks({ reason: 'daily-tracks' });
       } else {
@@ -52,25 +51,8 @@ export function startDualJobs() {
     } catch (e) {
       console.error('[scheduler] tracks job error:', e);
     }
-  }, { timezone: 'UTC' });
+  }, { timezone: TZ });
 
-  // 🟢 Startup auto-run fallback (pokreće odmah po startu)
-  (async () => {
-    try {
-      const { mode, currentDay, targetDay } = getMode();
-      console.log(`[startup] immediate mode=${mode} currentDay=${currentDay}${mode === 'REFRESH' ? ` targetDay=${targetDay}` : ''}`);
-
-      if (mode === 'FETCH') {
-        await runFetchPlaylists({ reason: 'startup-fetch' });
-        setTimeout(() => runFetchTracks({ reason: 'startup-followup' }), 5 * 60 * 1000);
-      } else {
-        await runRefreshPlaylists({ reason: 'startup-refresh', targetDay });
-        setTimeout(() => runRefreshTracks({ reason: 'startup-refresh-followup', targetDay }), 5 * 60 * 1000);
-      }
-    } catch (err) {
-      console.error('[startup] initial job error:', err);
-    }
-  })();
-
-  console.log('[scheduler] cron set: playlists@07:05 UTC (09:05 local), tracks@11:00 UTC (13:00 local)');
+  // ⚠️ NEMA više startup auto-run! Ništa se ne pokreće pri deploy-u.
+  console.log(`[scheduler] cron set: playlists@09:05 ${TZ}, tracks@13:00 ${TZ} (fixed times only)`);
 }
