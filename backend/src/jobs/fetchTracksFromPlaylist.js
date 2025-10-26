@@ -4,7 +4,7 @@ import { getSupabase } from '../lib/supabase.js';
 import { nextKeyFactory, sleep } from '../lib/utils.js';
 
 const MAX_API_CALLS_PER_DAY = 60000;
-const MAX_PLAYLISTS_PER_RUN = 10000;
+const MAX_PLAYLISTS_PER_RUN = 4000;   // ⬅️ povećano sa 10000 na realni dnevni limit
 const MAX_PAGES_PER_PLAYLIST = 3;
 
 const API_KEYS = (process.env.YOUTUBE_API_KEYS || '')
@@ -49,7 +49,7 @@ async function fetchTracksForPlaylist(playlistId) {
       all.push(...tracks);
       pageToken = data.nextPageToken || null;
       pages++;
-      await sleep(150);
+      await sleep(150 + Math.random() * 100);
     } catch (e) {
       console.error(`[tracks:${playlistId}]`, e.response?.data || e.message);
       break;
