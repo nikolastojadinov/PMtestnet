@@ -1,8 +1,10 @@
 // ✅ FULL REWRITE — 29-day FETCH + 29-day REFRESH ciklus
-// Globalna rotacija regiona + balansirano osvežavanje sadržaja
+// Globalna rotacija regiona + precizno računanje ciklusa na osnovu CYCLE_START_DATE
 
-import { startOfDay } from './utils.js';
+import { startOfDay, parseYMD } from './utils.js';
 
+// ───────────────────────────────────────────────────────────────
+// 🎯 DEFINICIJA TIER-OVA (regioni po prioritetu)
 export const TIER_CONFIG = {
   GLOBAL: { regions: ['GLOBAL'], pages: 4 },
   A: { regions: ['IN','US','BR','KR','JP','RU','ID','MX','VN'], pages: 3 },
@@ -11,6 +13,7 @@ export const TIER_CONFIG = {
   D: { regions: ['SE','NO','DK','FI','CN','HK','AE','EG','KE','ZA'], pages: 2 }
 };
 
+// ───────────────────────────────────────────────────────────────
 // 📅 29-dnevna FETCH faza (rotacija regiona)
 const VARIANTS_29 = [
   ['A','B','GLOBAL'],
@@ -44,21 +47,28 @@ const VARIANTS_29 = [
   ['A','C']
 ];
 
-// 🧮 Odredi trenutni dan ciklusa (1-based) za 58-dnevni superciklus: 29 FETCH + 29 REFRESH
+// ───────────────────────────────────────────────────────────────
+// 🧮 Računanje trenutnog dana ciklusa (1–58)
 function getCycleDay(now = new Date()) {
-  const dayIndex = Math.floor(startOfDay(now).getTime() / (24 * 3600 * 1000));
-  return (dayIndex % 58) + 1; // 1..58
+  // 📆 Uzimamo CYCLE_START_DATE iz Render environment varijable
+  const startEnv = process.env.CYCLE_START_DATE || '2025-10-25';
+  const cycleStart = parseYMD(startEnv);
+
+  const diffDays = Math.floor(
+    (startOfDay(now).getTime() - startOfDay(cycleStart).getTime()) / (24 * 3600 * 1000)
+  );
+
+  // 🔁 Vraća vrednost u opsegu 1–58 (29 fetch + 29 refresh)
+  return ((diffDays % 58) + 1);
 }
 
-/**
- * 📆 Vrati današnji plan:
- * - ako je 1–29: FETCH plan (preuzimanje novih)
- * - ako je 30–58: REFRESH plan (osvežavanje dana 1–29)
- */
+// ───────────────────────────────────────────────────────────────
+// 📆 Glavna logika — vraća FETCH ili REFRESH plan za današnji dan
 export function pickTodayPlan(now = new Date()) {
   const currentDay = getCycleDay(now);
 
   if (currentDay <= 29) {
+    // 🟣 FETCH faza
     const variant = VARIANTS_29[(currentDay - 1) % VARIANTS_29.length];
     const steps = [];
     for (const tier of variant) {
@@ -70,7 +80,7 @@ export function pickTodayPlan(now = new Date()) {
     }
     return { mode: 'FETCH', currentDay, steps };
   } else {
-    // 30..58 → mapiraj na 1..29
+    // 🟢 REFRESH faza (npr. day 30 = refresh day 1, day 31 = refresh day 2, itd.)
     const targetDay = ((currentDay - 30) % 29) + 1;
     return { mode: 'REFRESH', currentDay, targetDay };
   }
