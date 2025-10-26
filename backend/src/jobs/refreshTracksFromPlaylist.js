@@ -17,7 +17,7 @@ const nextKey = nextKeyFactory(API_KEYS);
 let apiCallsToday = 0;
 
 /**
- * 🎵 Preuzima sve pesme iz postojeće YouTube plejliste
+ * 🎵 Preuzmi (osveži) sve pesme iz postojeće YouTube plejliste
  */
 async function fetchPlaylistTracks(playlistId) {
   const collected = [];
@@ -52,7 +52,8 @@ async function fetchPlaylistTracks(playlistId) {
           it.snippet?.thumbnails?.default?.url ??
           null,
         source: 'youtube',
-        sync_status: 'fetched',
+        // ⬇️ bitno: ovo je refresh, ne novo preuzimanje
+        sync_status: 'refreshed',
         created_at: new Date().toISOString(),
       }));
 
@@ -78,7 +79,7 @@ async function fetchPlaylistTracks(playlistId) {
 }
 
 /**
- * 🔄 Glavna funkcija — REFRESH pesama za plejliste preuzete određenog dana ciklusa
+ * 🔄 Glavna funkcija — REFRESH pesama za plejliste preuzete određenog dana ciklusa (1–29)
  */
 export async function runRefreshTracks({ reason = 'manual', targetDay }) {
   if (!targetDay || targetDay < 1 || targetDay > 29) {
@@ -107,7 +108,7 @@ export async function runRefreshTracks({ reason = 'manual', targetDay }) {
       const tracks = await fetchPlaylistTracks(pl.external_id);
       if (!tracks.length) continue;
 
-      // 1️⃣ Upsert pesama u "tracks" tabelu
+      // 1️⃣ Upsert pesama u "tracks" tabelu (vrati ID-eve)
       const { data: inserted, error: err1 } = await sb
         .from('tracks')
         .upsert(tracks, { onConflict: 'external_id' })
@@ -125,7 +126,7 @@ export async function runRefreshTracks({ reason = 'manual', targetDay }) {
         .upsert(rels, { onConflict: 'playlist_id,track_id' });
       if (err2) throw err2;
 
-      // 3️⃣ Ažuriraj `last_refreshed_on` u tabeli playlists
+      // 3️⃣ Ažuriraj `last_refreshed_on` u "playlists"
       await sb
         .from('playlists')
         .update({ last_refreshed_on: new Date().toISOString() })
