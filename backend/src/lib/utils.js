@@ -82,11 +82,11 @@ export function dateWindowForCycleDay(targetDay) {
     throw new Error('targetDay mora biti između 1 i 29');
   }
 
-  // 📆 Početak ciklusa — prvi dan tekućeg meseca (UTC)
-  const now = new Date();
-  const cycleStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  // 📆 Početak ciklusa iz environment varijable (npr. 2025-10-25)
+  const startEnv = process.env.CYCLE_START_DATE || '2025-10-25';
+  const cycleStart = parseYMD(startEnv);
 
-  // 🧮 Izračunaj vremenski prozor (npr. day 5 → 5. dan meseca)
+  // 🧮 Izračunaj vremenski prozor (npr. day 5 → 5. dan od starta ciklusa)
   const from = new Date(cycleStart.getTime() + (targetDay - 1) * 24 * 3600 * 1000);
   const to = new Date(cycleStart.getTime() + targetDay * 24 * 3600 * 1000);
 
