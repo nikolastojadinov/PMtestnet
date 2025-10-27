@@ -1,10 +1,8 @@
-// ✅ FULL REWRITE — 29-day FETCH + 29-day REFRESH ciklus
-// Globalna rotacija regiona + precizno računanje ciklusa na osnovu CYCLE_START_DATE
+// ✅ FULL REWRITE v4.0 — Unified 29+29 day cycle for Purple Music
+// Kombinuje globalne regione, CYCLE_START_DATE i precizan dan ciklusa
 
 import { startOfDay, parseYMD } from './utils.js';
 
-// ───────────────────────────────────────────────────────────────
-// 🎯 DEFINICIJA TIER-OVA (regioni po prioritetu)
 export const TIER_CONFIG = {
   GLOBAL: { regions: ['GLOBAL'], pages: 4 },
   A: { regions: ['IN','US','BR','KR','JP','RU','ID','MX','VN'], pages: 3 },
@@ -13,8 +11,7 @@ export const TIER_CONFIG = {
   D: { regions: ['SE','NO','DK','FI','CN','HK','AE','EG','KE','ZA'], pages: 2 }
 };
 
-// ───────────────────────────────────────────────────────────────
-// 📅 29-dnevna FETCH faza (rotacija regiona)
+// 📅 29-dnevna FETCH faza — balansirana rotacija regiona (A–D + GLOBAL)
 const VARIANTS_29 = [
   ['A','B','GLOBAL'],
   ['A','C'],
@@ -22,19 +19,19 @@ const VARIANTS_29 = [
   ['A','B','C'],
   ['A','GLOBAL'],
   ['A','B'],
-  ['A','C','GLOBAL'], // Day 7
+  ['A','C','GLOBAL'],
   ['A','B','D'],
   ['A','B'],
   ['A','C'],
   ['A','GLOBAL'],
   ['A','B'],
-  ['A','C','D'],      // Day 13
+  ['A','C','D'],
   ['A','B','GLOBAL'],
   ['A','C'],
   ['A','B','C'],
   ['A','GLOBAL'],
   ['A','B'],
-  ['A','C','GLOBAL'], // Day 19
+  ['A','C','GLOBAL'],
   ['A','B','D'],
   ['A','C'],
   ['A','B'],
@@ -43,32 +40,23 @@ const VARIANTS_29 = [
   ['A','GLOBAL'],
   ['A','C','D'],
   ['A','B'],
-  ['A','B','GLOBAL'], // Day 28
+  ['A','B','GLOBAL'],
   ['A','C']
 ];
 
-// ───────────────────────────────────────────────────────────────
-// 🧮 Računanje trenutnog dana ciklusa (1–58)
+// 🔢 Računanje trenutnog dana ciklusa
 function getCycleDay(now = new Date()) {
-  // 📆 Uzimamo CYCLE_START_DATE iz Render environment varijable
-  const startEnv = process.env.CYCLE_START_DATE || '2025-10-25';
+  const startEnv = process.env.CYCLE_START_DATE || '2025-10-27';
   const cycleStart = parseYMD(startEnv);
-
-  const diffDays = Math.floor(
-    (startOfDay(now).getTime() - startOfDay(cycleStart).getTime()) / (24 * 3600 * 1000)
-  );
-
-  // 🔁 Vraća vrednost u opsegu 1–58 (29 fetch + 29 refresh)
-  return ((diffDays % 58) + 1);
+  const diffDays = Math.floor((startOfDay(now) - startOfDay(cycleStart)) / (24 * 3600 * 1000));
+  return ((diffDays % 58) + 1); // 1–58
 }
 
-// ───────────────────────────────────────────────────────────────
-// 📆 Glavna logika — vraća FETCH ili REFRESH plan za današnji dan
+// 🧮 Glavna logika — FETCH / REFRESH plan za današnji dan
 export function pickTodayPlan(now = new Date()) {
   const currentDay = getCycleDay(now);
 
   if (currentDay <= 29) {
-    // 🟣 FETCH faza
     const variant = VARIANTS_29[(currentDay - 1) % VARIANTS_29.length];
     const steps = [];
     for (const tier of variant) {
@@ -80,7 +68,6 @@ export function pickTodayPlan(now = new Date()) {
     }
     return { mode: 'FETCH', currentDay, steps };
   } else {
-    // 🟢 REFRESH faza (npr. day 30 = refresh day 1, day 31 = refresh day 2, itd.)
     const targetDay = ((currentDay - 30) % 29) + 1;
     return { mode: 'REFRESH', currentDay, targetDay };
   }
