@@ -1,45 +1,31 @@
-// ✅ FULL REWRITE — High-volume daily fetch (target 8000+ playlists/day)
-// Rotira 24 regiona dnevno i koristi prošireni globalni keyword set (v4.1)
+// ✅ FULL REWRITE v4.2 — Intelligent global playlist fetcher (target 8000+/day)
+// Poštuje 70 regiona (utils.js v3.1) + dnevne cikluse (monthlyCycle.js)
+// Automatski popunjava sve kolone u Supabase: region, keyword_used, tier, cycle_day itd.
 
 import axios from 'axios';
 import { getSupabase } from '../lib/supabase.js';
 import { nextKeyFactory, pickTodayRegions, sleep } from '../lib/utils.js';
+import { pickTodayPlan } from '../lib/monthlyCycle.js';
 
 const TARGET_PLAYLISTS_PER_DAY = 8000;
 const MAX_API_CALLS_PER_DAY    = 90000;
 const MAX_PAGES_PER_QUERY      = 12;
-const REGIONS_PER_BATCH        = 24;   // ⬆️ povećano sa 18 → 24
+const REGIONS_PER_BATCH        = 24;
 
-// 🎧 Globalni muzički keyword set (v4.1)
+// 🎧 Globalni muzički keyword set (v4.2)
 const KEYWORDS = [
-  // 🎵 Osnovni termini
   'music', 'best songs', 'playlist', 'top hits', 'mix', 'official', 'new songs', 'charts', 'latest songs',
-
-  // 🎤 Žanrovi
-  'pop', 'rock', 'hip hop', 'r&b', 'soul', 'funk', 'house', 'deep house',
-  'techno', 'trance', 'edm', 'indie', 'alternative', 'punk', 'metal',
-  'country', 'folk', 'blues', 'jazz', 'classical', 'orchestra', 'reggae',
-  'ska', 'latin', 'reggaeton', 'afrobeats', 'k-pop', 'j-pop', 'c-pop',
-  'turkish', 'hindi', 'bollywood', 'arabic', 'balkan', 'serbian', 'greek',
-
-  // 🌈 Mood i teme
-  'chill', 'relax', 'sleep', 'study', 'focus', 'background music', 'lofi', 'ambient', 'instrumental',
-  'romantic', 'love songs', 'sad songs', 'happy songs', 'motivational', 'inspirational',
-  'dance', 'party', 'workout', 'gym', 'running', 'driving', 'travel', 'road trip',
-  'coffee shop', 'meditation', 'yoga', 'vibes', 'deep focus',
-
-  // 🕰️ Retro i decenije
-  'throwback', 'oldies', '70s', '80s', '90s', '2000s', '2010s', '2020s',
-
-  // 🎬 Filmska i kulturna muzika
-  'movie soundtrack', 'anime songs', 'game soundtrack', 'tv series',
-  'hollywood songs', 'disney songs', 'film score', 'cinematic music',
-
-  // 🌍 Regionalne i nacionalne liste
-  'indian songs', 'korean hits', 'japanese songs', 'vietnamese music', 'filipino songs',
-  'nigerian hits', 'brazilian music', 'mexican songs', 'russian songs',
-  'french songs', 'spanish hits', 'italian hits', 'german music', 'thai songs',
-  'indonesian music', 'malay songs', 'vietnam hits', 'usa top songs'
+  'pop', 'rock', 'hip hop', 'r&b', 'soul', 'funk', 'house', 'deep house', 'techno', 'trance', 'edm', 'indie',
+  'alternative', 'punk', 'metal', 'country', 'folk', 'blues', 'jazz', 'classical', 'orchestra', 'reggae', 'ska',
+  'latin', 'reggaeton', 'afrobeats', 'k-pop', 'j-pop', 'c-pop', 'turkish', 'hindi', 'bollywood', 'arabic',
+  'balkan', 'serbian', 'greek', 'chill', 'relax', 'sleep', 'study', 'focus', 'background music', 'lofi',
+  'ambient', 'instrumental', 'romantic', 'love songs', 'sad songs', 'happy songs', 'motivational', 'dance',
+  'party', 'workout', 'gym', 'running', 'driving', 'travel', 'road trip', 'coffee shop', 'meditation', 'yoga',
+  'vibes', 'deep focus', 'throwback', 'oldies', '70s', '80s', '90s', '2000s', '2010s', '2020s', 'movie soundtrack',
+  'anime songs', 'game soundtrack', 'tv series', 'hollywood songs', 'disney songs', 'film score', 'cinematic music',
+  'indian songs', 'korean hits', 'japanese songs', 'vietnamese music', 'filipino songs', 'nigerian hits',
+  'brazilian music', 'mexican songs', 'russian songs', 'french songs', 'spanish hits', 'italian hits',
+  'german music', 'thai songs', 'indonesian music', 'malay songs', 'vietnam hits', 'usa top songs'
 ];
 
 const API_KEYS = (process.env.YOUTUBE_API_KEYS || '')
@@ -51,7 +37,19 @@ if (!API_KEYS.length) throw new Error('YOUTUBE_API_KEYS missing.');
 const nextKey = nextKeyFactory(API_KEYS);
 let apiCallsToday = 0;
 
-async function searchPlaylists({ region, q }) {
+/**
+ * 🎯 Brza heuristika kvaliteta
+ * (dužina naslova + opis → skala 0.1–1.0)
+ */
+function calcQualityScore(title, desc) {
+  const len = (title?.length || 0) + (desc?.length || 0);
+  return Math.min(1, Math.max(0.1, len / 300));
+}
+
+/**
+ * 🔍 Pretraga YouTube plejlista po regionu i ključnim rečima
+ */
+async function searchPlaylists({ region, q, tier, cycleDay }) {
   const out = [];
   let pageToken = null;
   let pages = 0;
@@ -59,6 +57,7 @@ async function searchPlaylists({ region, q }) {
   do {
     if (apiCallsToday >= MAX_API_CALLS_PER_DAY) break;
     const key = nextKey();
+
     const params = {
       key,
       part: 'snippet',
@@ -73,24 +72,38 @@ async function searchPlaylists({ region, q }) {
       const { data } = await axios.get('https://www.googleapis.com/youtube/v3/search', { params });
       apiCallsToday++;
 
-      const batch = (data.items || []).map(it => ({
-        external_id: it.id?.playlistId,
-        title: it.snippet?.title ?? null,
-        description: it.snippet?.description ?? null,
-        cover_url: it.snippet?.thumbnails?.high?.url ?? it.snippet?.thumbnails?.default?.url ?? null,
-        region,
-        category: 'music',
-        is_public: true,
-        fetched_on: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-        sync_status: 'fetched',
-      })).filter(r => r.external_id);
+      const batch = (data.items || []).map(it => {
+        const s = it.snippet || {};
+        const quality_score = calcQualityScore(s.title, s.description);
+
+        return {
+          external_id: it.id?.playlistId,
+          title: s.title ?? null,
+          description: s.description ?? null,
+          cover_url: s.thumbnails?.high?.url ?? s.thumbnails?.default?.url ?? null,
+          region,
+          country: region,
+          category: 'music',
+          genre: q,
+          keyword_used: q,
+          language_guess: s.defaultLanguage ?? null,
+          channel_title: s.channelTitle ?? null,
+          channel_id: s.channelId ?? null,
+          tier,
+          fetched_cycle_day: cycleDay,
+          quality_score,
+          is_public: true,
+          fetched_on: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+          sync_status: 'fetched'
+        };
+      }).filter(r => r.external_id);
 
       out.push(...batch);
       pageToken = data.nextPageToken || null;
       pages++;
 
-      await sleep(90 + Math.random() * 50); // ⏱️ još brže, ali bez rizika
+      await sleep(90 + Math.random() * 50);
     } catch (e) {
       console.error(`[fetchPlaylists:${region}]`, e.response?.data || e.message);
       break;
@@ -100,24 +113,36 @@ async function searchPlaylists({ region, q }) {
   return out;
 }
 
+/**
+ * 🚀 Glavna funkcija — pokreće dnevni ciklus
+ */
 export async function runFetchPlaylists({ reason = 'daily-fetch' } = {}) {
   const sb = getSupabase();
   console.log(`[playlists] start (${reason})`);
+
   const regions = pickTodayRegions(REGIONS_PER_BATCH);
+  const plan = pickTodayPlan(new Date());
+  const { currentDay, mode, steps } = plan;
+  const cycleDay = mode === 'FETCH' ? currentDay : plan.targetDay;
+
   const collected = [];
 
   regionLoop:
   for (const region of regions) {
+    const tier = steps?.find(s => s.region === region)?.tier || 'GLOBAL';
     for (const q of KEYWORDS) {
-      const batch = await searchPlaylists({ region, q });
+      const batch = await searchPlaylists({ region, q, tier, cycleDay });
       collected.push(...batch);
-      console.log(`[playlists] +${batch.length} (total=${collected.length})`);
+
+      console.log(`[playlists:${region}] +${batch.length} (total=${collected.length})`);
+
       if (collected.length >= TARGET_PLAYLISTS_PER_DAY) break regionLoop;
       if (apiCallsToday >= MAX_API_CALLS_PER_DAY) break regionLoop;
       await sleep(150);
     }
   }
 
+  // 🔄 Ukloni duplikate po external_id
   const unique = Object.values(collected.reduce((acc, p) => {
     if (p.external_id && !acc[p.external_id]) acc[p.external_id] = p;
     return acc;
