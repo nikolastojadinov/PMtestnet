@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
+import FallbackImage from '@/components/FallbackImage';
 import { supabase } from '@/lib/supabaseClient';
 import { usePlayer } from '@/context/PlayerContext';
 import dynamic from 'next/dynamic';
@@ -164,11 +165,16 @@ export default function PlaylistPage() {
         {!loading && rows.map((r) => (
           <motion.div key={String(r.track_id)} className="flex items-center gap-3 px-3 py-3" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <div className="h-12 w-12 rounded bg-[#1a0024] overflow-hidden relative">
-              {r.tracks?.cover_url ? (
-                <Image src={r.tracks.cover_url} alt={r.tracks.title || ''} fill sizes="48px" className="object-cover" />
-              ) : (
-                <div className="h-full w-full bg-purple-900/30" />)
-              }
+              <div className="relative w-full h-full">
+                <FallbackImage
+                  src={(r.tracks?.cover_url as string) || '/images/fallback-cover.jpg'}
+                  alt={r.tracks?.title || ''}
+                  fill
+                  sizes="48px"
+                  className="object-cover rounded"
+                  fallback="/images/fallback-cover.jpg"
+                />
+              </div>
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm text-gray-100 truncate">{r.tracks?.title || t('player.play')}</div>

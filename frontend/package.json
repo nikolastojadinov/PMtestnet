@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start"
   },
+  "lhci": "lhci autorun --upload.target=temporary-public-storage",
   "dependencies": {
     "@supabase/supabase-js": "^2.45.3",
     "framer-motion": "^11.3.17",
@@ -23,6 +24,7 @@
     "@types/react": "19.2.2",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.47",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "@lhci/cli": "^0.13.0"
   }
 }

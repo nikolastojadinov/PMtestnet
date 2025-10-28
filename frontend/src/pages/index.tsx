@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import FallbackImage from '@/components/FallbackImage';
 import SearchBar from '@/components/SearchBar';
 import { supabase } from '@/lib/supabaseClient';
 import { useTranslation } from 'react-i18next';
@@ -150,6 +151,8 @@ export default function IndexPage() {
 function PlaylistTile({ p, large = false }: { p: Playlist; large?: boolean }) {
   const { t } = useTranslation();
   const BLUR = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0nMScgaGVpZ2h0PScxJyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnPjxyZWN0IHdpZHRoPScxJyBoZWlnaHQ9JzEnIGZpbGw9JyMxNTAwMmUnLz48L3N2Zz4=';
+  const [src, setSrc] = React.useState<string | undefined>(p.cover_url || undefined);
+
   return (
     <Link
       href={`/playlist/${p.id}`}
@@ -158,11 +161,17 @@ function PlaylistTile({ p, large = false }: { p: Playlist; large?: boolean }) {
       }`}
     >
       <div className={`${large ? 'aspect-[16/9]' : 'aspect-square'} w-full overflow-hidden relative`}>
-        {p.cover_url ? (
-          <Image src={p.cover_url} alt={p.title} fill sizes={large ? '(max-width: 768px) 100vw, 50vw' : '180px'} className="object-cover transition-transform group-hover:scale-105" placeholder="blur" blurDataURL={BLUR} priority={large} />
-        ) : (
-          <div className="w-full h-full bg-purple-900/30" />
-        )}
+        <FallbackImage
+          src={src || '/images/fallback-cover.jpg'}
+          alt={p.title}
+          fill
+          sizes={large ? '(max-width: 768px) 100vw, 50vw' : '180px'}
+          className="object-cover transition-transform group-hover:scale-105 rounded-md"
+          placeholder="blur"
+          blurDataURL={BLUR}
+          priority={large}
+          fallback="/images/fallback-cover.jpg"
+        />
       </div>
       <div className="absolute inset-0 hidden group-hover:flex items-center justify-center bg-black/30">
         <button className="px-3 py-1.5 rounded bg-purple-700 text-white text-xs shadow-md">{t('player.play')}</button>

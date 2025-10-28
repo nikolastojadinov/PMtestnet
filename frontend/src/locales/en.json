@@ -22,7 +22,9 @@
     "trendingNow": "Trending Now",
     "best80s": "Best of 80s",
     "best90s": "Best of 90s",
-    "best2000": "Best of 2000"
+    "best2000": "Best of 2000",
+    "emptyRecent": "No public playlists available yet.",
+    "emptyCategory": "Nothing here yet — check back soon."
   },
   "premium": {
     "title": "Go Premium",
