@@ -1,8 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import SearchBar from '@/components/SearchBar';
 import { supabase } from '@/lib/supabaseClient';
 import { useTranslation } from 'react-i18next';
+import { motion } from 'framer-motion';
+import { PlaylistTileSkeleton } from '@/components/Skeleton';
 
 type Playlist = {
   id: string;
@@ -25,6 +28,8 @@ export default function IndexPage() {
   const { t } = useTranslation();
   const [recent, setRecent] = useState<Playlist[]>([]);
   const [byCategory, setByCategory] = useState<Record<string, Playlist[]>>({});
+  const [loadingRecent, setLoadingRecent] = useState(true);
+  const [loadingCats, setLoadingCats] = useState(true);
 
   useEffect(() => {
     // Recently played (Guest): newest playlists
@@ -37,9 +42,11 @@ export default function IndexPage() {
           .limit(8);
         if (error) throw error;
         setRecent((data || []) as Playlist[]);
+        setLoadingRecent(false);
       } catch (e) {
         console.warn('recently played fetch error', e);
         setRecent([]);
+        setLoadingRecent(false);
       }
     })();
 
@@ -61,9 +68,11 @@ export default function IndexPage() {
           }
         }
         setByCategory(results);
+        setLoadingCats(false);
       } catch (e) {
         console.warn('category sections error', e);
         setByCategory({});
+        setLoadingCats(false);
       }
     })();
   }, []);
@@ -75,30 +84,36 @@ export default function IndexPage() {
       </div>
 
       <section>
-        <h2 className="text-lg md:text-xl font-semibold mb-4 bg-gradient-to-r from-purple-400 via-fuchsia-300 to-yellow-300 bg-clip-text text-transparent">
+        <motion.h2 initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
+          className="text-lg md:text-xl font-semibold mb-4 bg-gradient-to-r from-purple-400 via-fuchsia-300 to-yellow-300 bg-clip-text text-transparent">
           {t('home.recentlyPlayed')}
-        </h2>
+        </motion.h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {recent.map((p) => (
-            <div key={p.id}>
-              <PlaylistTile p={p} large />
-            </div>
-          ))}
+          {loadingRecent
+            ? Array.from({ length: 4 }).map((_, i) => <PlaylistTileSkeleton key={i} large />)
+            : recent.map((p) => (
+              <motion.div key={p.id} initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.2 }}>
+                <PlaylistTile p={p} large />
+              </motion.div>
+            ))}
         </div>
       </section>
 
       {categoryDefs.map((def) => (
         <section key={def.key} className="space-y-3">
-          <h3 className="text-base md:text-lg font-semibold bg-gradient-to-r from-purple-400 via-fuchsia-300 to-yellow-300 bg-clip-text text-transparent">
+          <motion.h3 initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.3 }}
+            className="text-base md:text-lg font-semibold bg-gradient-to-r from-purple-400 via-fuchsia-300 to-yellow-300 bg-clip-text text-transparent">
             {t(`home.${def.key}`)}
-          </h3>
+          </motion.h3>
           <div className="overflow-x-auto">
             <div className="flex gap-4 pr-4">
-              {(byCategory[def.key] || []).map((p) => (
-                <div key={p.id}>
-                  <PlaylistTile p={p} />
-                </div>
-              ))}
+              {loadingCats
+                ? Array.from({ length: 8 }).map((_, i) => <PlaylistTileSkeleton key={i} />)
+                : (byCategory[def.key] || []).map((p) => (
+                  <motion.div key={p.id} initial={{ opacity: 0, scale: 0.98 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }} transition={{ duration: 0.2 }}>
+                    <PlaylistTile p={p} />
+                  </motion.div>
+                ))}
             </div>
           </div>
         </section>
@@ -109,6 +124,7 @@ export default function IndexPage() {
 
 function PlaylistTile({ p, large = false }: { p: Playlist; large?: boolean }) {
   const { t } = useTranslation();
+  const BLUR = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0nMScgaGVpZ2h0PScxJyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnPjxyZWN0IHdpZHRoPScxJyBoZWlnaHQ9JzEnIGZpbGw9JyMxNTAwMmUnLz48L3N2Zz4=';
   return (
     <Link
       href={`/playlist/${p.id}`}
@@ -116,9 +132,9 @@ function PlaylistTile({ p, large = false }: { p: Playlist; large?: boolean }) {
         large ? 'w-full' : 'min-w-[160px] w-[180px]'
       }`}
     >
-      <div className={`${large ? 'aspect-[16/9]' : 'aspect-square'} w-full overflow-hidden`}>
+      <div className={`${large ? 'aspect-[16/9]' : 'aspect-square'} w-full overflow-hidden relative`}>
         {p.cover_url ? (
-          <img src={p.cover_url} alt={p.title} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+          <Image src={p.cover_url} alt={p.title} fill sizes={large ? '(max-width: 768px) 100vw, 50vw' : '180px'} className="object-cover transition-transform group-hover:scale-105" placeholder="blur" blurDataURL={BLUR} priority={large} />
         ) : (
           <div className="w-full h-full bg-purple-900/30" />
         )}

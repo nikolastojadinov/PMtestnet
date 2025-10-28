@@ -10,6 +10,8 @@ import { SkipBack, Play as PlayIcon, Pause, SkipForward, Heart } from 'lucide-re
 import { supabase } from '@/lib/supabaseClient';
 import PremiumPopup from '@/components/PremiumPopup';
 import { useTranslation } from 'react-i18next';
+import Image from 'next/image';
+import { motion } from 'framer-motion';
 
 // Mini-player: always visible, fixed positioning, with transport controls
 export default function Player() {
@@ -95,9 +97,9 @@ export default function Player() {
     <div className="fixed bottom-16 left-4 right-4 md:right-4 md:left-auto md:w-[380px] z-40">
       <div className="rounded-xl bg-[#0b0010] border border-purple-800/60 shadow-xl overflow-hidden">
         <div className="flex items-center gap-3 p-3">
-          <div className="h-12 w-12 rounded bg-[#1a0024] overflow-hidden flex-shrink-0">
+          <div className="h-12 w-12 rounded bg-[#1a0024] overflow-hidden flex-shrink-0 relative">
             {current?.cover_url ? (
-              <img src={current.cover_url} alt={current.title || ''} className="h-full w-full object-cover" />
+              <Image src={current.cover_url} alt={current.title || ''} fill sizes="48px" className="object-cover" />
             ) : (
               <div className="h-full w-full bg-purple-900/30" />
             )}
@@ -107,10 +109,10 @@ export default function Player() {
             <div className="text-xs text-gray-400 truncate">{current?.artist || ''}</div>
           </div>
           <div className="flex items-center gap-1">
-            <button onClick={playPrev} className="p-2 rounded hover:bg-purple-900/30 text-gray-200" aria-label={t('player.prev')}>
+            <motion.button whileTap={{ scale: 0.95 }} onClick={playPrev} className="p-2 rounded hover:bg-purple-900/30 text-gray-200" aria-label={t('player.prev')}>
               <SkipBack size={18} />
-            </button>
-            <button
+            </motion.button>
+            <motion.button whileTap={{ scale: 0.95 }}
               onClick={() => {
                 if (!isPremium && !isPlaying) {
                   setShowPremium(true);
@@ -126,13 +128,13 @@ export default function Player() {
               className="p-2 rounded hover:bg-purple-900/30 text-gray-200" aria-label={isPlaying ? t('player.pause') : t('player.play')}
             >
               {isPlaying ? <Pause size={18} /> : <PlayIcon size={18} />}
-            </button>
-            <button onClick={playNext} className="p-2 rounded hover:bg-purple-900/30 text-gray-200" aria-label={t('player.next')}>
+            </motion.button>
+            <motion.button whileTap={{ scale: 0.95 }} onClick={playNext} className="p-2 rounded hover:bg-purple-900/30 text-gray-200" aria-label={t('player.next')}>
               <SkipForward size={18} />
-            </button>
-            <button onClick={toggleLike} className={`p-2 rounded hover:bg-purple-900/30 ${liked ? 'text-pink-400' : 'text-gray-200'}`} aria-label={t('player.like')}>
+            </motion.button>
+            <motion.button whileTap={{ scale: 0.95 }} onClick={toggleLike} className={`p-2 rounded hover:bg-purple-900/30 ${liked ? 'text-pink-400' : 'text-gray-200'}`} aria-label={t('player.like')}>
               <Heart size={18} />
-            </button>
+            </motion.button>
           </div>
         </div>
 

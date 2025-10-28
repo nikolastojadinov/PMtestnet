@@ -1,0 +1,10 @@
+# Netlify configuration for Purple Music frontend
+# Build the Next.js app from the frontend/ folder and publish with the Next.js runtime
+
+[build]
+  base = "frontend"
+  command = "npm run build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"

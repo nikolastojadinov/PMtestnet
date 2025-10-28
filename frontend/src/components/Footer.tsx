@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { Home as HomeIcon, Search, Heart, ListMusic } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { motion } from 'framer-motion';
 
 const tabs = [
   { href: '/', label: 'Home', icon: HomeIcon },
@@ -23,17 +24,19 @@ export default function Footer() {
           const active = pathname === href;
           return (
             <li key={href} className="flex justify-center">
-              <Link
+              <motion.a
                 href={href}
+                onClick={(e) => { e.preventDefault(); router.push(href); }}
                 className={`flex flex-col items-center gap-1 px-3 py-1 rounded-md transition-colors ${
                   active
                     ? 'text-purple-300 drop-shadow-[0_0_6px_rgba(168,85,247,0.8)]'
                     : 'text-gray-400 hover:text-gray-200'
                 }`}
+                whileTap={{ scale: 0.96 }}
               >
                 <Icon size={22} strokeWidth={1.75} />
                 <span>{t(`footer.${label.toLowerCase()}`)}</span>
-              </Link>
+              </motion.a>
             </li>
           );
         })}

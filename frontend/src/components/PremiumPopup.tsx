@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { supabase } from '@/lib/supabaseClient';
+import { motion, AnimatePresence } from 'framer-motion';
 
 declare global {
   interface Window {
@@ -31,7 +32,6 @@ async function updatePremium(plan: 'weekly' | 'monthly') {
 
 export default function PremiumPopup({ open, onClose }: Props) {
   const { t } = useTranslation();
-  if (!open) return null;
 
   const createPayment = (plan: 'weekly' | 'monthly') => {
     const amount = plan === 'weekly' ? 1 : 3.14;
@@ -69,32 +69,46 @@ export default function PremiumPopup({ open, onClose }: Props) {
   };
 
   return (
-    <div className="fixed inset-x-0 top-16 md:top-20 z-50 flex items-start justify-center px-4 pointer-events-none">
-      {/* Card */}
-      <div className="pointer-events-auto w-full max-w-md rounded-2xl border border-purple-800/50 bg-[#0b0010]/95 shadow-lg backdrop-blur p-5">
-        <div className="flex items-start justify-between gap-4">
-          <h3 className="text-lg font-semibold">{t('premium.title')}</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-200">✕</button>
-        </div>
-        <p className="mt-2 text-sm text-gray-300">{t('premium.description')}</p>
-        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <button
-            onClick={() => createPayment('weekly')}
-            className="px-4 py-2 rounded-md bg-gradient-to-r from-purple-600 via-fuchsia-500 to-amber-300 text-black font-medium shadow hover:brightness-110"
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-x-0 top-16 md:top-20 z-50 flex items-start justify-center px-4 pointer-events-none"
+        >
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.95, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+            className="pointer-events-auto w-full max-w-md rounded-2xl border border-purple-800/50 bg-[#0b0010]/95 shadow-lg backdrop-blur p-5"
           >
-            {t('premium.weekly')}
-          </button>
-          <button
-            onClick={() => createPayment('monthly')}
-            className="px-4 py-2 rounded-md bg-gradient-to-r from-purple-600 via-fuchsia-500 to-amber-300 text-black font-medium shadow hover:brightness-110"
-          >
-            {t('premium.monthly')}
-          </button>
-        </div>
-        <div className="mt-3">
-          <button onClick={onClose} className="px-3 py-2 text-sm text-gray-300 hover:text-gray-100">{t('premium.later')}</button>
-        </div>
-      </div>
-    </div>
+            <div className="flex items-start justify-between gap-4">
+              <h3 className="text-lg font-semibold">{t('premium.title')}</h3>
+              <button onClick={onClose} className="text-gray-400 hover:text-gray-200">✕</button>
+            </div>
+            <p className="mt-2 text-sm text-gray-300">{t('premium.description')}</p>
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <motion.button whileTap={{ scale: 0.97 }}
+                onClick={() => createPayment('weekly')}
+                className="px-4 py-2 rounded-md bg-gradient-to-r from-purple-600 via-fuchsia-500 to-amber-300 text-black font-medium shadow hover:brightness-110"
+              >
+                {t('premium.weekly')}
+              </motion.button>
+              <motion.button whileTap={{ scale: 0.97 }}
+                onClick={() => createPayment('monthly')}
+                className="px-4 py-2 rounded-md bg-gradient-to-r from-purple-600 via-fuchsia-500 to-amber-300 text-black font-medium shadow hover:brightness-110"
+              >
+                {t('premium.monthly')}
+              </motion.button>
+            </div>
+            <div className="mt-3">
+              <button onClick={onClose} className="px-3 py-2 text-sm text-gray-300 hover:text-gray-100">{t('premium.later')}</button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

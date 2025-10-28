@@ -2,10 +2,14 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '@/lib/supabaseClient';
 import { usePlayer } from '@/context/PlayerContext';
-import AddToPlaylistModal from '@/components/AddToPlaylistModal';
-import PremiumPopup from '@/components/PremiumPopup';
+import dynamic from 'next/dynamic';
+const AddToPlaylistModal = dynamic(() => import('@/components/AddToPlaylistModal'), { ssr: false });
+const PremiumPopup = dynamic(() => import('@/components/PremiumPopup'), { ssr: false });
 import { Heart, Play, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import Image from 'next/image';
+import { TrackRowSkeleton } from '@/components/Skeleton';
+import { motion } from 'framer-motion';
 
 // Local helper types
 interface TrackRow {
@@ -23,6 +27,7 @@ export default function PlaylistPage() {
   const [title, setTitle] = useState<string>(t('search.playlist'));
   const [cover, setCover] = useState<string | null>(null);
   const [rows, setRows] = useState<TrackRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [likes, setLikes] = useState<Record<string | number, boolean>>({});
   const [modal, setModal] = useState<{ open: boolean; trackId: string | number | null }>({ open: false, trackId: null });
   const [showPremium, setShowPremium] = useState(false);
@@ -58,6 +63,7 @@ export default function PlaylistPage() {
           .order('position');
         if (error) throw error;
         setRows((data || []) as TrackRow[]);
+        setLoading(false);
       } catch (e1) {
         try {
           const { data } = await supabase
@@ -66,8 +72,10 @@ export default function PlaylistPage() {
             .eq('playlist_id', id)
             .order('added_at');
           setRows((data || []) as TrackRow[]);
+          setLoading(false);
         } catch (e2) {
           setRows([]);
+          setLoading(false);
         }
       }
     })();
@@ -131,7 +139,9 @@ export default function PlaylistPage() {
       {/* Cover */}
       <div className="w-full overflow-hidden rounded-lg border border-purple-800/40 bg-[#120018]">
         {cover ? (
-          <img src={cover} alt={title} className="w-full h-auto object-cover max-h-[280px]" />
+          <div className="relative w-full max-h-[280px]">
+            <Image src={cover} alt={title} width={1280} height={720} className="w-full h-auto object-cover" />
+          </div>
         ) : (
           <div className="h-40 bg-purple-900/30" />
         )}
@@ -150,11 +160,12 @@ export default function PlaylistPage() {
 
       {/* Tracks */}
       <div className="divide-y divide-purple-800/40 rounded-md border border-purple-800/40 bg-[#0b0010]">
-        {rows.map((r) => (
-          <div key={String(r.track_id)} className="flex items-center gap-3 px-3 py-3">
-            <div className="h-12 w-12 rounded bg-[#1a0024] overflow-hidden">
+        {loading && Array.from({ length: 6 }).map((_, i) => <TrackRowSkeleton key={i} />)}
+        {!loading && rows.map((r) => (
+          <motion.div key={String(r.track_id)} className="flex items-center gap-3 px-3 py-3" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <div className="h-12 w-12 rounded bg-[#1a0024] overflow-hidden relative">
               {r.tracks?.cover_url ? (
-                <img src={r.tracks.cover_url} alt={r.tracks.title || ''} className="h-full w-full object-cover" />
+                <Image src={r.tracks.cover_url} alt={r.tracks.title || ''} fill sizes="48px" className="object-cover" />
               ) : (
                 <div className="h-full w-full bg-purple-900/30" />)
               }
@@ -205,7 +216,7 @@ export default function PlaylistPage() {
                 <Plus size={18} />
               </button>
             </div>
-          </div>
+          </motion.div>
         ))}
       </div>
 
