@@ -69,8 +69,8 @@ export default function Header() {
               <div className="my-2 h-px bg-purple-800/40" />
               <div className="px-3 py-2 text-purple-200">{t('header.goPremium')}</div>
               <div className="my-2 h-px bg-purple-800/40" />
-              <Link href="/privacy" className="block px-3 py-2 hover:bg-purple-900/30 rounded" role="menuitem">{t('header.privacy')}</Link>
-              <Link href="/terms" className="block px-3 py-2 hover:bg-purple-900/30 rounded" role="menuitem">{t('header.terms')}</Link>
+              <Link href="/privacy.html" className="block px-3 py-2 hover:bg-purple-900/30 rounded" role="menuitem">{t('header.privacy')}</Link>
+              <Link href="/terms.html" className="block px-3 py-2 hover:bg-purple-900/30 rounded" role="menuitem">{t('header.terms')}</Link>
             </div>
           )}
         </div>
