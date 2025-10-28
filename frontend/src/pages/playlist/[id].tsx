@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 import Image from 'next/image';
 import { TrackRowSkeleton } from '@/components/Skeleton';
 import { motion } from 'framer-motion';
+import { useGuestUser } from '@/hooks/useGuestUser';
 
 // Local helper types
 interface TrackRow {
@@ -34,6 +35,7 @@ export default function PlaylistPage() {
   const [showPremium, setShowPremium] = useState(false);
   const isPremium = false; // mock flag per instruction
   const premiumTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { guest } = useGuestUser();
 
   // Fetch playlist meta and tracks
   useEffect(() => {
@@ -119,14 +121,14 @@ export default function PlaylistPage() {
     try {
       if (next) {
         const { error } = await supabase.from('likes').upsert({
-          user_id: 'Guest',
+          user_id: guest.id,
           track_id: trackId,
           liked: true,
           created_at: new Date().toISOString(),
         });
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('likes').delete().match({ user_id: 'Guest', track_id: trackId });
+        const { error } = await supabase.from('likes').delete().match({ user_id: guest.id, track_id: trackId });
         if (error) throw error;
       }
     } catch (e) {

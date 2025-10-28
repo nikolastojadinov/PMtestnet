@@ -2,6 +2,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import i18n from '@/i18n/config';
 import { supabase } from '@/lib/supabaseClient';
+import { useGuestUser } from '@/hooks/useGuestUser';
 import { supportedLngs } from '@/i18n/config';
 
 type Lang = (typeof supportedLngs)[number] | string;
@@ -15,6 +16,7 @@ const Ctx = createContext<UserCtx | undefined>(undefined);
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguageState] = useState<Lang>('en');
+  const { guest, ready } = useGuestUser();
 
   const detectInitial = useCallback(async () => {
     // 1) localStorage
@@ -22,14 +24,17 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     if (ls) return ls;
     // 2) Supabase (mock user "Guest")
     try {
-      const { data } = await supabase.from('users').select('language').eq('user_id', 'Guest').maybeSingle();
-      if (data?.language) return data.language as string;
+      const uid = guest.id;
+      if (uid) {
+        const { data } = await supabase.from('users').select('language').eq('user_id', uid).maybeSingle();
+        if (data?.language) return data.language as string;
+      }
     } catch {}
     // 3) Pi Browser language or navigator.language
     const navLang = typeof navigator !== 'undefined' ? (navigator.language || 'en') : 'en';
     const short = navLang.split('-')[0];
     return supportedLngs.includes(short as any) ? short : 'en';
-  }, []);
+  }, [guest.id]);
 
   useEffect(() => {
     (async () => {
@@ -37,16 +42,19 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       setLanguageState(initial);
       i18n.changeLanguage(initial);
     })();
-  }, [detectInitial]);
+  }, [detectInitial, ready]);
 
   const setLanguage = useCallback(async (lang: Lang) => {
     setLanguageState(lang);
     i18n.changeLanguage(lang);
     if (typeof window !== 'undefined') localStorage.setItem('pm_lang', String(lang));
     try {
-      await supabase.from('users').upsert({ user_id: 'Guest', language: String(lang) }, { onConflict: 'user_id' });
+      const uid = guest.id;
+      if (uid) {
+        await supabase.from('users').upsert({ user_id: uid, language: String(lang), wallet: 'Guest' }, { onConflict: 'user_id' });
+      }
     } catch {}
-  }, []);
+  }, [guest.id]);
 
   const value = useMemo(() => ({ language, setLanguage }), [language, setLanguage]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

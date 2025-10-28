@@ -9,6 +9,7 @@ import { usePlayer } from '../context/PlayerContext';
 import { SkipBack, Play as PlayIcon, Pause, SkipForward, Heart } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import PremiumPopup from '@/components/PremiumPopup';
+import { useGuestUser } from '@/hooks/useGuestUser';
 import { useTranslation } from 'react-i18next';
 import Image from 'next/image';
 import { motion } from 'framer-motion';
@@ -34,6 +35,7 @@ export default function Player() {
   const [showPremium, setShowPremium] = useState(false);
   const isPremium = false; // mock flag per instruction
   const premiumTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { guest } = useGuestUser();
 
   // register iframe to context for JS API control
   useEffect(() => {
@@ -76,14 +78,14 @@ export default function Player() {
     try {
       if (next) {
         const { error } = await supabase.from('likes').upsert({
-          user_id: 'Guest',
+          user_id: guest.id,
           track_id: current.id,
           liked: true,
           created_at: new Date().toISOString(),
         });
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('likes').delete().match({ user_id: 'Guest', track_id: current.id });
+        const { error } = await supabase.from('likes').delete().match({ user_id: guest.id, track_id: current.id });
         if (error) throw error;
       }
     } catch (e) {

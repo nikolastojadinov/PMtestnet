@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { supabase } from '@/lib/supabaseClient';
+import { getOrCreateGuestId } from '@/lib/guestUser';
 import { motion, AnimatePresence } from 'framer-motion';
 
 declare global {
@@ -20,9 +21,10 @@ async function updatePremium(plan: 'weekly' | 'monthly') {
   const until = new Date(now);
   until.setDate(until.getDate() + (plan === 'weekly' ? 7 : 30));
   try {
+    const uid = getOrCreateGuestId();
     const { error } = await supabase
       .from('users')
-      .upsert({ user_id: 'Guest', premium_until: until.toISOString() }, { onConflict: 'user_id' });
+      .upsert({ user_id: uid, wallet: 'Guest', premium_until: until.toISOString() }, { onConflict: 'user_id' });
     if (error) throw error;
   } catch (e) {
     // non-fatal in UI

@@ -49,6 +49,7 @@ export default function Header() {
                 <span className="opacity-90">{t('header.signedInAs')}</span>
                 <span className="font-medium text-purple-300">{t('header.guest')}</span>
               </div>
+              <div className="px-3 text-xs text-gray-400">Guest User (temporary session)</div>
               <div className="my-2 h-px bg-purple-800/40" />
               <div className="px-3 py-2">
                 <label htmlFor="lang" className="block text-xs uppercase tracking-wider text-gray-400 mb-1">{t('header.language')}</label>
