@@ -33,9 +33,7 @@ export default function PlaylistPage() {
   const [loading, setLoading] = useState(true);
   const [likes, setLikes] = useState<Record<string | number, boolean>>({});
   const [modal, setModal] = useState<{ open: boolean; trackId: string | number | null }>({ open: false, trackId: null });
-  const [showPremium, setShowPremium] = useState(false);
-  const isPremium = false; // mock flag per instruction
-  const premiumTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  // TODO(v2.8): Re-enable Premium gating after Theme Settings (Prompt #19)
   const { guest } = useGuestUser();
 
   // Fetch playlist meta and tracks
@@ -107,17 +105,10 @@ export default function PlaylistPage() {
         pushRecent({ id, title, cover_url: cover, region: undefined, category: undefined });
       }
     };
-    if (!isPremium) {
-      setShowPremium(true);
-      if (premiumTimer.current) clearTimeout(premiumTimer.current);
-      premiumTimer.current = setTimeout(() => {
-        setShowPremium(false);
-        proceed();
-      }, 5000);
-    } else {
-      proceed();
-    }
-  }, [trackList, setQueue, playTrack, isPremium]);
+    // Premium gating disabled for testing
+    // TODO(v2.8): Re-enable Premium gating after Theme Settings (Prompt #19)
+    proceed();
+  }, [trackList, setQueue, playTrack, id, title, cover]);
 
   async function toggleLike(trackId: string | number) {
     const key = String(trackId);
@@ -197,27 +188,17 @@ export default function PlaylistPage() {
               </button>
               <button
                 onClick={() => {
-                  const run = () => {
-                    const idx = rows.findIndex((x) => x.track_id === r.track_id);
-                    const list = trackList as any[];
-                    const mappedIndex = Math.max(0, idx);
-                    setQueue(list as any);
-                    const t = list[mappedIndex];
-                    if (t) playTrack(t as any, mappedIndex);
-                    // Push to local Recently Played
-                    if (id) {
-                      pushRecent({ id, title, cover_url: cover, region: undefined, category: undefined });
-                    }
-                  };
-                  if (!isPremium) {
-                    setShowPremium(true);
-                    if (premiumTimer.current) clearTimeout(premiumTimer.current);
-                    premiumTimer.current = setTimeout(() => {
-                      setShowPremium(false);
-                      run();
-                    }, 5000);
-                  } else {
-                    run();
+                  // Premium gating disabled for testing
+                  // TODO(v2.8): Re-enable Premium gating after Theme Settings (Prompt #19)
+                  const idx = rows.findIndex((x) => x.track_id === r.track_id);
+                  const list = trackList as any[];
+                  const mappedIndex = Math.max(0, idx);
+                  setQueue(list as any);
+                  const t = list[mappedIndex];
+                  if (t) playTrack(t as any, mappedIndex);
+                  // Push to local Recently Played
+                  if (id) {
+                    pushRecent({ id, title, cover_url: cover, region: undefined, category: undefined });
                   }
                 }}
                 className="p-2 rounded hover:bg-purple-900/30 text-gray-300"
@@ -243,13 +224,9 @@ export default function PlaylistPage() {
         trackId={modal.trackId}
       />
 
-      <PremiumPopup
-        open={showPremium}
-        onClose={() => {
-          if (premiumTimer.current) clearTimeout(premiumTimer.current);
-          setShowPremium(false);
-        }}
-      />
+      {/* Premium popup disabled for testing */}
+      {/* TODO(v2.8): Re-enable Premium gating after Theme Settings (Prompt #19) */}
+      <PremiumPopup open={false} onClose={() => {}} />
     </div>
   );
 }

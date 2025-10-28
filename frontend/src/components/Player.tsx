@@ -32,9 +32,7 @@ export default function Player() {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [liked, setLiked] = useState(false);
   const wasPlaying = useRef(false);
-  const [showPremium, setShowPremium] = useState(false);
-  const isPremium = false; // mock flag per instruction
-  const premiumTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // TODO(v2.8): Re-enable Premium gating after Theme Settings (Prompt #19)
   const { guest } = useGuestUser();
 
   // register iframe to context for JS API control
@@ -116,16 +114,9 @@ export default function Player() {
             </motion.button>
             <motion.button whileTap={{ scale: 0.95 }}
               onClick={() => {
-                if (!isPremium && !isPlaying) {
-                  setShowPremium(true);
-                  if (premiumTimer.current) clearTimeout(premiumTimer.current);
-                  premiumTimer.current = setTimeout(() => {
-                    setShowPremium(false);
-                    togglePlay();
-                  }, 5000);
-                } else {
-                  togglePlay();
-                }
+                // Premium gating temporarily disabled for playback testing
+                // TODO(v2.8): Re-enable Premium gating after Theme Settings (Prompt #19)
+                togglePlay();
               }}
               className="p-2 rounded hover:bg-purple-900/30 text-gray-200" aria-label={isPlaying ? t('player.pause') : t('player.play')}
             >
@@ -158,14 +149,9 @@ export default function Player() {
         </div>
       </div>
 
-      {/* Premium popup: placed near top, does not overlay iframe at bottom */}
-      <PremiumPopup
-        open={showPremium}
-        onClose={() => {
-          if (premiumTimer.current) clearTimeout(premiumTimer.current);
-          setShowPremium(false);
-        }}
-      />
+      {/* Premium popup disabled for testing */}
+      {/* TODO(v2.8): Re-enable Premium gating after Theme Settings (Prompt #19) */}
+      <PremiumPopup open={false} onClose={() => {}} />
     </div>
   );
 }
