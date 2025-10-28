@@ -12,6 +12,7 @@ import Image from 'next/image';
 import { TrackRowSkeleton } from '@/components/Skeleton';
 import { motion } from 'framer-motion';
 import { useGuestUser } from '@/hooks/useGuestUser';
+import { pushRecent } from '@/lib/recent';
 
 // Local helper types
 interface TrackRow {
@@ -45,7 +46,7 @@ export default function PlaylistPage() {
         // playlist meta
         const { data: meta, error: mErr } = await supabase
           .from('playlists')
-          .select('title, cover_url')
+          .select('title, cover_url, region, category')
           .eq('id', id)
           .limit(1)
           .maybeSingle();
@@ -101,6 +102,10 @@ export default function PlaylistPage() {
     const proceed = () => {
       setQueue(trackList as any);
       playTrack(trackList[0] as any, 0);
+      // Push to local Recently Played
+      if (id) {
+        pushRecent({ id, title, cover_url: cover, region: undefined, category: undefined });
+      }
     };
     if (!isPremium) {
       setShowPremium(true);
@@ -199,6 +204,10 @@ export default function PlaylistPage() {
                     setQueue(list as any);
                     const t = list[mappedIndex];
                     if (t) playTrack(t as any, mappedIndex);
+                    // Push to local Recently Played
+                    if (id) {
+                      pushRecent({ id, title, cover_url: cover, region: undefined, category: undefined });
+                    }
                   };
                   if (!isPremium) {
                     setShowPremium(true);

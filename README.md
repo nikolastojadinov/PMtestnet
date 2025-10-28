@@ -6,6 +6,12 @@ A modern, multilingual music web app focused on curated YouTube music playlists 
 
 ---
 
+## What's New
+
+- v2.7: Home page polish — horizontal carousels with snap scrolling and hover buttons, plus local "Recently Played" sync (persists last 8 playlists in the browser; merged with newest public playlists as fallback).
+
+---
+
 ## Highlights
 
 - **Clean UI first**: Build the full player UI and screens before wiring the YouTube IFrame Player.

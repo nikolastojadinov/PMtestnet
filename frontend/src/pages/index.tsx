@@ -3,7 +3,9 @@ import Link from 'next/link';
 import Image from 'next/image';
 import FallbackImage from '@/components/FallbackImage';
 import SearchBar from '@/components/SearchBar';
+import ScrollableRow from '@/components/ScrollableRow';
 import { supabase } from '@/lib/supabaseClient';
+import { getRecent as getLocalRecent } from '@/lib/recent';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
 import { PlaylistTileSkeleton } from '@/components/Skeleton';
@@ -33,7 +35,21 @@ export default function IndexPage() {
   const [loadingCats, setLoadingCats] = useState(true);
 
   useEffect(() => {
-    // Recently played (Guest): newest public playlists
+    // 1) Load local Recently Played immediately
+    const local = getLocalRecent().map((r) => ({
+      id: r.id,
+      title: r.title,
+      cover_url: r.cover_url ?? null,
+      region: r.region ?? null,
+      category: r.category ?? null,
+      created_at: r.played_at,
+    }));
+    if (local.length) {
+      setRecent(local as Playlist[]);
+      setLoadingRecent(false);
+    }
+
+    // 2) Also fetch newest public playlists as fallback/filler and merge up to 8
     (async () => {
       try {
         const { data, error } = await supabase
@@ -41,14 +57,20 @@ export default function IndexPage() {
           .select('id, title, cover_url, region, category, created_at')
           .eq('is_public', true)
           .order('created_at', { ascending: false })
-          .limit(8);
+          .limit(12);
         if (error) throw error;
-        setRecent((data || []) as Playlist[]);
+        const remote = (data || []) as Playlist[];
+        // Merge: local first, then remote excluding duplicates, keep 8
+        const seen = new Set(local.map((x) => x.id));
+        const merged = [...local, ...remote.filter((r) => !seen.has(r.id))].slice(0, 8);
+        setRecent(merged);
         setLoadingRecent(false);
       } catch (e) {
-        console.warn('recently played fetch error', e);
-        setRecent([]);
-        setLoadingRecent(false);
+        if (!local.length) {
+          console.warn('recently played fetch error', e);
+          setRecent([]);
+          setLoadingRecent(false);
+        }
       }
     })();
 
@@ -110,38 +132,34 @@ export default function IndexPage() {
       </div>
 
       <section>
-        <motion.h2 initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
-          className="text-lg md:text-xl font-semibold mb-4 bg-gradient-to-r from-purple-400 via-fuchsia-300 to-yellow-300 bg-clip-text text-transparent">
-          {t('home.recentlyPlayed')}
-        </motion.h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <ScrollableRow title={t('home.recentlyPlayed')}>
           {loadingRecent
             ? Array.from({ length: 4 }).map((_, i) => <PlaylistTileSkeleton key={i} large />)
-            : recent.map((p) => (
-              <motion.div key={p.id} initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.2 }}>
-                <PlaylistTile p={p} large />
-              </motion.div>
-            ))}
-        </div>
+            : recent.length > 0
+              ? recent.map((p) => (
+                <motion.div key={p.id} initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.2 }}>
+                  <PlaylistTile p={p} large />
+                </motion.div>
+              ))
+              : <div className="text-sm text-gray-400 px-2 py-4">{t('home.emptyRecent')}</div>
+          }
+        </ScrollableRow>
       </section>
 
       {categoryDefs.map((def) => (
-        <section key={def.key} className="space-y-3">
-          <motion.h3 initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.3 }}
-            className="text-base md:text-lg font-semibold bg-gradient-to-r from-purple-400 via-fuchsia-300 to-yellow-300 bg-clip-text text-transparent">
-            {t(`home.${def.key}`)}
-          </motion.h3>
-          <div className="overflow-x-auto">
-            <div className="flex gap-4 pr-4">
-              {loadingCats
-                ? Array.from({ length: 8 }).map((_, i) => <PlaylistTileSkeleton key={i} />)
-                : (byCategory[def.key] || []).map((p) => (
+        <section key={def.key}>
+          <ScrollableRow title={t(`home.${def.key}`)}>
+            {loadingCats
+              ? Array.from({ length: 8 }).map((_, i) => <PlaylistTileSkeleton key={i} />)
+              : (byCategory[def.key] || []).length > 0
+                ? (byCategory[def.key] || []).map((p) => (
                   <motion.div key={p.id} initial={{ opacity: 0, scale: 0.98 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }} transition={{ duration: 0.2 }}>
                     <PlaylistTile p={p} />
                   </motion.div>
-                ))}
-            </div>
-          </div>
+                ))
+                : <div className="text-sm text-gray-400 px-2 py-4">{t('home.emptyCategory')}</div>
+            }
+          </ScrollableRow>
         </section>
       ))}
     </div>
