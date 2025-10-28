@@ -1,4 +1,10 @@
 "use client";
+/**
+ * This file is a modified version of a file from the OKV-Music project.
+ * Original project: https://github.com/onamkrverma/okv-music
+ * Licensed under the Mozilla Public License 2.0 (MPL-2.0).
+ * Modifications © 2025 Purple Music Team.
+ */
 import React, { createContext, useContext, useMemo, useState, useCallback } from 'react';
 
 export type PlayerState = {
