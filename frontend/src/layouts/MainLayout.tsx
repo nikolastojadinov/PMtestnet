@@ -10,9 +10,11 @@ import Footer from '../components/Footer';
 
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen bg-[#090010] text-gray-200">
       <Header />
-      <div className="flex-1">{children}</div>
+      <div className="pt-16 pb-20 max-w-6xl mx-auto px-4">
+        {children}
+      </div>
       <Footer />
     </div>
   );
