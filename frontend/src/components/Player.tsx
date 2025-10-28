@@ -9,9 +9,11 @@ import { usePlayer } from '../context/PlayerContext';
 import { SkipBack, Play as PlayIcon, Pause, SkipForward, Heart } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import PremiumPopup from '@/components/PremiumPopup';
+import { useTranslation } from 'react-i18next';
 
 // Mini-player: always visible, fixed positioning, with transport controls
 export default function Player() {
+  const { t } = useTranslation();
   const {
     videoId,
     queue,
@@ -101,11 +103,11 @@ export default function Player() {
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-sm text-gray-100 truncate">{current?.title || 'Nothing playing'}</div>
+            <div className="text-sm text-gray-100 truncate">{current?.title || t('player.nothing')}</div>
             <div className="text-xs text-gray-400 truncate">{current?.artist || ''}</div>
           </div>
           <div className="flex items-center gap-1">
-            <button onClick={playPrev} className="p-2 rounded hover:bg-purple-900/30 text-gray-200" aria-label="Previous">
+            <button onClick={playPrev} className="p-2 rounded hover:bg-purple-900/30 text-gray-200" aria-label={t('player.prev')}>
               <SkipBack size={18} />
             </button>
             <button
@@ -121,14 +123,14 @@ export default function Player() {
                   togglePlay();
                 }
               }}
-              className="p-2 rounded hover:bg-purple-900/30 text-gray-200" aria-label="Play/Pause"
+              className="p-2 rounded hover:bg-purple-900/30 text-gray-200" aria-label={isPlaying ? t('player.pause') : t('player.play')}
             >
               {isPlaying ? <Pause size={18} /> : <PlayIcon size={18} />}
             </button>
-            <button onClick={playNext} className="p-2 rounded hover:bg-purple-900/30 text-gray-200" aria-label="Next">
+            <button onClick={playNext} className="p-2 rounded hover:bg-purple-900/30 text-gray-200" aria-label={t('player.next')}>
               <SkipForward size={18} />
             </button>
-            <button onClick={toggleLike} className={`p-2 rounded hover:bg-purple-900/30 ${liked ? 'text-pink-400' : 'text-gray-200'}`} aria-label="Like">
+            <button onClick={toggleLike} className={`p-2 rounded hover:bg-purple-900/30 ${liked ? 'text-pink-400' : 'text-gray-200'}`} aria-label={t('player.like')}>
               <Heart size={18} />
             </button>
           </div>
@@ -141,7 +143,7 @@ export default function Player() {
               ref={iframeRef}
               className="w-full h-[200px]"
               src={`https://www.youtube.com/embed/${vid}?enablejsapi=1&rel=0&modestbranding=1&playsinline=1`}
-              title="YouTube player"
+              title={t('player.playerTitle')}
               frameBorder="0"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
               allowFullScreen

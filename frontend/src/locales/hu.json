@@ -14,6 +14,14 @@
     "liked": "Kedvencek",
     "playlists": "Lejátszási listák"
   },
+  "home": {
+    "recentlyPlayed": "Mostanában lejátszott",
+    "mostPopular": "Legnépszerűbb",
+    "trendingNow": "Felkapott most",
+    "best80s": "A 80-as évek legjobbjai",
+    "best90s": "A 90-es évek legjobbjai",
+    "best2000": "A 2000-es évek legjobbjai"
+  },
   "premium": {
     "title": "Prémium",
     "description": "Váltson Prémiumra korlátlan lejátszási listákért és exkluzív tartalomért.",
@@ -32,6 +40,12 @@
   "player": {
     "playAll": "Összes lejátszása",
     "play": "Lejátszás",
+    "pause": "Szünet",
+    "next": "Következő",
+    "prev": "Előző",
+    "like": "Tetszik",
+    "nothing": "Semmi sem szól",
+    "playerTitle": "YouTube lejátszó",
     "unknownArtist": "Ismeretlen előadó"
   }
 }

@@ -16,6 +16,14 @@
     "liked": "Liked",
     "playlists": "Playlists"
   },
+  "home": {
+    "recentlyPlayed": "Recently Played",
+    "mostPopular": "Most Popular",
+    "trendingNow": "Trending Now",
+    "best80s": "Best of 80s",
+    "best90s": "Best of 90s",
+    "best2000": "Best of 2000"
+  },
   "premium": {
     "title": "Go Premium",
     "description": "Go Premium to enjoy unlimited playlists and exclusive content.",
@@ -34,6 +42,12 @@
   "player": {
     "playAll": "Play All",
     "play": "Play",
+    "pause": "Pause",
+    "next": "Next",
+    "prev": "Previous",
+    "like": "Like",
+    "nothing": "Nothing playing",
+    "playerTitle": "YouTube player",
     "unknownArtist": "Unknown Artist"
   }
 }

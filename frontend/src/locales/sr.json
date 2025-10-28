@@ -14,6 +14,14 @@
     "liked": "Omiljene",
     "playlists": "Plejliste"
   },
+  "home": {
+    "recentlyPlayed": "Skoro puštano",
+    "mostPopular": "Najpopularnije",
+    "trendingNow": "U trendu",
+    "best80s": "Najbolje iz 80-ih",
+    "best90s": "Najbolje iz 90-ih",
+    "best2000": "Najbolje iz 2000-ih"
+  },
   "premium": {
     "title": "Premium",
     "description": "Nadogradite na Premium za neograničene plejliste i ekskluzivni sadržaj.",
@@ -32,6 +40,12 @@
   "player": {
     "playAll": "Pusti sve",
     "play": "Pusti",
+    "pause": "Pauza",
+    "next": "Sledeća",
+    "prev": "Prethodna",
+    "like": "Sviđa mi se",
+    "nothing": "Ništa ne svira",
+    "playerTitle": "YouTube plejer",
     "unknownArtist": "Nepoznat izvođač"
   }
 }
