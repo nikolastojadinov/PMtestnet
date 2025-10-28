@@ -20,7 +20,7 @@ interface TrackRow {
 export default function PlaylistPage() {
   const router = useRouter();
   const { id } = router.query as { id?: string };
-  const { setVideo, play } = usePlayer();
+  const { setQueue, playTrack } = usePlayer();
 
   const [title, setTitle] = useState<string>('Playlist');
   const [cover, setCover] = useState<string | null>(null);
@@ -72,16 +72,23 @@ export default function PlaylistPage() {
     })();
   }, [id]);
 
-  const allVideoIds = useMemo(() =>
-    rows.map(r => r.tracks?.external_id).filter(Boolean) as string[],
+  const trackList = useMemo(() =>
+    rows
+      .map((r) => ({
+        id: r.track_id,
+        title: r.tracks?.title ?? null,
+        artist: r.tracks?.artist ?? null,
+        external_id: r.tracks?.external_id ?? null,
+        cover_url: r.tracks?.cover_url ?? null,
+      }))
+      .filter((t) => t.external_id),
   [rows]);
 
   const playAll = useCallback(() => {
-    if (!allVideoIds.length) return;
-    // For now, set the first video; queue integration comes in next step
-    setVideo(allVideoIds[0]);
-    play();
-  }, [allVideoIds, setVideo, play]);
+    if (!trackList.length) return;
+    setQueue(trackList as any);
+    playTrack(trackList[0] as any, 0);
+  }, [trackList, setQueue, playTrack]);
 
   async function toggleLike(trackId: string | number) {
     const key = String(trackId);
@@ -153,8 +160,12 @@ export default function PlaylistPage() {
               </button>
               <button
                 onClick={() => {
-                  const vid = r.tracks?.external_id;
-                  if (vid) { setVideo(vid); play(); }
+                  const idx = rows.findIndex((x) => x.track_id === r.track_id);
+                  const list = trackList as any[];
+                  const mappedIndex = Math.max(0, idx);
+                  setQueue(list as any);
+                  const t = list[mappedIndex];
+                  if (t) playTrack(t as any, mappedIndex);
                 }}
                 className="p-2 rounded hover:bg-purple-900/30 text-gray-300"
                 aria-label="Play"
