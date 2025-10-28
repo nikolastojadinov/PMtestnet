@@ -17,11 +17,11 @@ type Playlist = {
 };
 
 const categoryDefs = [
-  { key: 'mostPopular', db: 'Most Popular' },
-  { key: 'trendingNow', db: 'Trending Now' },
-  { key: 'best80s', db: 'Best of 80s' },
-  { key: 'best90s', db: 'Best of 90s' },
-  { key: 'best2000', db: 'Best of 2000' },
+  { key: 'mostPopular' as const },
+  { key: 'trendingNow' as const },
+  { key: 'best80s' as const },
+  { key: 'best90s' as const },
+  { key: 'best2000' as const },
 ] as const;
 
 export default function IndexPage() {
@@ -32,12 +32,13 @@ export default function IndexPage() {
   const [loadingCats, setLoadingCats] = useState(true);
 
   useEffect(() => {
-    // Recently played (Guest): newest playlists
+    // Recently played (Guest): newest public playlists
     (async () => {
       try {
         const { data, error } = await supabase
           .from('playlists')
           .select('id, title, cover_url, region, category, created_at')
+          .eq('is_public', true)
           .order('created_at', { ascending: false })
           .limit(8);
         if (error) throw error;
@@ -50,21 +51,45 @@ export default function IndexPage() {
       }
     })();
 
-    // Sections by category
+    // Sections by category — use backend fields (quality_score, created_at, genre/keyword_used)
     (async () => {
       try {
         const results: Record<string, Playlist[]> = {};
         for (const def of categoryDefs) {
-          const { data, error } = await supabase
-            .from('playlists')
-            .select('id, title, cover_url, region, category')
-            .eq('category', def.db)
-            .limit(12);
-          if (error) {
-            console.warn('category fetch error', def.db, error);
-            results[def.key] = [];
-          } else {
+          try {
+            let query = supabase
+              .from('playlists')
+              .select('id, title, cover_url, region, category')
+              .eq('is_public', true)
+              .limit(12);
+
+            if (def.key === 'mostPopular') {
+              // Highest quality first
+              query = query.order('quality_score', { ascending: false }).order('created_at', { ascending: false });
+            } else if (def.key === 'trendingNow') {
+              // Newest first
+              query = query.order('created_at', { ascending: false });
+            } else if (def.key === 'best80s') {
+              // Match keyword or title hints
+              query = query
+                .or('genre.eq.80s,keyword_used.eq.80s,title.ilike.%80s%')
+                .order('quality_score', { ascending: false });
+            } else if (def.key === 'best90s') {
+              query = query
+                .or('genre.eq.90s,keyword_used.eq.90s,title.ilike.%90s%')
+                .order('quality_score', { ascending: false });
+            } else if (def.key === 'best2000') {
+              query = query
+                .or('genre.eq.2000s,keyword_used.eq.2000s,title.ilike.%2000%')
+                .order('quality_score', { ascending: false });
+            }
+
+            const { data, error } = await query;
+            if (error) throw error;
             results[def.key] = (data || []) as Playlist[];
+          } catch (err) {
+            console.warn('category fetch error', def.key, err);
+            results[def.key] = [];
           }
         }
         setByCategory(results);

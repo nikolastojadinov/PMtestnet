@@ -46,7 +46,9 @@ export default function SearchBar() {
         const { data, error } = await supabase
           .from('playlists')
           .select('id, title, cover_url, region, category')
+          .eq('is_public', true)
           .ilike('title', `%${query}%`)
+          .order('created_at', { ascending: false })
           .limit(10);
         if (error) throw error;
         setResults(data as SearchResult[]);
