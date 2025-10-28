@@ -8,6 +8,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { usePlayer } from '../context/PlayerContext';
 import { SkipBack, Play as PlayIcon, Pause, SkipForward, Heart } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
+import PremiumPopup from '@/components/PremiumPopup';
 
 // Mini-player: always visible, fixed positioning, with transport controls
 export default function Player() {
@@ -26,6 +27,9 @@ export default function Player() {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [liked, setLiked] = useState(false);
   const wasPlaying = useRef(false);
+  const [showPremium, setShowPremium] = useState(false);
+  const isPremium = false; // mock flag per instruction
+  const premiumTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // register iframe to context for JS API control
   useEffect(() => {
@@ -104,7 +108,21 @@ export default function Player() {
             <button onClick={playPrev} className="p-2 rounded hover:bg-purple-900/30 text-gray-200" aria-label="Previous">
               <SkipBack size={18} />
             </button>
-            <button onClick={togglePlay} className="p-2 rounded hover:bg-purple-900/30 text-gray-200" aria-label="Play/Pause">
+            <button
+              onClick={() => {
+                if (!isPremium && !isPlaying) {
+                  setShowPremium(true);
+                  if (premiumTimer.current) clearTimeout(premiumTimer.current);
+                  premiumTimer.current = setTimeout(() => {
+                    setShowPremium(false);
+                    togglePlay();
+                  }, 5000);
+                } else {
+                  togglePlay();
+                }
+              }}
+              className="p-2 rounded hover:bg-purple-900/30 text-gray-200" aria-label="Play/Pause"
+            >
               {isPlaying ? <Pause size={18} /> : <PlayIcon size={18} />}
             </button>
             <button onClick={playNext} className="p-2 rounded hover:bg-purple-900/30 text-gray-200" aria-label="Next">
@@ -133,6 +151,15 @@ export default function Player() {
           )}
         </div>
       </div>
+
+      {/* Premium popup: placed near top, does not overlay iframe at bottom */}
+      <PremiumPopup
+        open={showPremium}
+        onClose={() => {
+          if (premiumTimer.current) clearTimeout(premiumTimer.current);
+          setShowPremium(false);
+        }}
+      />
     </div>
   );
 }

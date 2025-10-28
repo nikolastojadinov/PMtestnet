@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import { supabase } from '@/lib/supabaseClient';
 import { usePlayer } from '@/context/PlayerContext';
 import AddToPlaylistModal from '@/components/AddToPlaylistModal';
+import PremiumPopup from '@/components/PremiumPopup';
 import { Heart, Play, Plus } from 'lucide-react';
 
 // Local helper types
@@ -27,6 +28,9 @@ export default function PlaylistPage() {
   const [rows, setRows] = useState<TrackRow[]>([]);
   const [likes, setLikes] = useState<Record<string | number, boolean>>({});
   const [modal, setModal] = useState<{ open: boolean; trackId: string | number | null }>({ open: false, trackId: null });
+  const [showPremium, setShowPremium] = useState(false);
+  const isPremium = false; // mock flag per instruction
+  const premiumTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Fetch playlist meta and tracks
   useEffect(() => {
@@ -86,9 +90,21 @@ export default function PlaylistPage() {
 
   const playAll = useCallback(() => {
     if (!trackList.length) return;
-    setQueue(trackList as any);
-    playTrack(trackList[0] as any, 0);
-  }, [trackList, setQueue, playTrack]);
+    const proceed = () => {
+      setQueue(trackList as any);
+      playTrack(trackList[0] as any, 0);
+    };
+    if (!isPremium) {
+      setShowPremium(true);
+      if (premiumTimer.current) clearTimeout(premiumTimer.current);
+      premiumTimer.current = setTimeout(() => {
+        setShowPremium(false);
+        proceed();
+      }, 5000);
+    } else {
+      proceed();
+    }
+  }, [trackList, setQueue, playTrack, isPremium]);
 
   async function toggleLike(trackId: string | number) {
     const key = String(trackId);
@@ -160,12 +176,24 @@ export default function PlaylistPage() {
               </button>
               <button
                 onClick={() => {
-                  const idx = rows.findIndex((x) => x.track_id === r.track_id);
-                  const list = trackList as any[];
-                  const mappedIndex = Math.max(0, idx);
-                  setQueue(list as any);
-                  const t = list[mappedIndex];
-                  if (t) playTrack(t as any, mappedIndex);
+                  const run = () => {
+                    const idx = rows.findIndex((x) => x.track_id === r.track_id);
+                    const list = trackList as any[];
+                    const mappedIndex = Math.max(0, idx);
+                    setQueue(list as any);
+                    const t = list[mappedIndex];
+                    if (t) playTrack(t as any, mappedIndex);
+                  };
+                  if (!isPremium) {
+                    setShowPremium(true);
+                    if (premiumTimer.current) clearTimeout(premiumTimer.current);
+                    premiumTimer.current = setTimeout(() => {
+                      setShowPremium(false);
+                      run();
+                    }, 5000);
+                  } else {
+                    run();
+                  }
                 }}
                 className="p-2 rounded hover:bg-purple-900/30 text-gray-300"
                 aria-label="Play"
@@ -188,6 +216,14 @@ export default function PlaylistPage() {
         open={modal.open}
         onClose={() => setModal({ open: false, trackId: null })}
         trackId={modal.trackId}
+      />
+
+      <PremiumPopup
+        open={showPremium}
+        onClose={() => {
+          if (premiumTimer.current) clearTimeout(premiumTimer.current);
+          setShowPremium(false);
+        }}
       />
     </div>
   );
