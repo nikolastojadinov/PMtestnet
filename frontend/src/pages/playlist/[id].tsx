@@ -5,25 +5,22 @@ import { usePlayer } from '@/context/PlayerContext';
 import AddToPlaylistModal from '@/components/AddToPlaylistModal';
 import PremiumPopup from '@/components/PremiumPopup';
 import { Heart, Play, Plus } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 // Local helper types
 interface TrackRow {
   track_id: number | string;
-  tracks: {
-    title: string | null;
-    artist: string | null;
-    duration?: number | null;
-    cover_url?: string | null;
-    external_id?: string | null; // YouTube video id
-  } | null;
+  // Supabase relationship typing can vary by schema introspection; accept any here
+  tracks: any;
 }
 
 export default function PlaylistPage() {
   const router = useRouter();
   const { id } = router.query as { id?: string };
   const { setQueue, playTrack } = usePlayer();
+  const { t } = useTranslation();
 
-  const [title, setTitle] = useState<string>('Playlist');
+  const [title, setTitle] = useState<string>(t('search.playlist'));
   const [cover, setCover] = useState<string | null>(null);
   const [rows, setRows] = useState<TrackRow[]>([]);
   const [likes, setLikes] = useState<Record<string | number, boolean>>({});
@@ -45,7 +42,7 @@ export default function PlaylistPage() {
           .limit(1)
           .maybeSingle();
         if (!mErr && meta) {
-          setTitle(meta.title || 'Playlist');
+          setTitle(meta.title || t('search.playlist'));
           setCover(meta.cover_url || null);
         }
       } catch (e) {
@@ -147,7 +144,7 @@ export default function PlaylistPage() {
           onClick={playAll}
           className="px-4 py-2 rounded-md bg-gradient-to-r from-purple-600 via-fuchsia-500 to-amber-300 text-black font-medium shadow-md hover:brightness-110"
         >
-          Play All
+          {t('player.playAll')}
         </button>
       </div>
 
@@ -163,14 +160,14 @@ export default function PlaylistPage() {
               }
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-sm text-gray-100 truncate">{r.tracks?.title || 'Untitled'}</div>
-              <div className="text-xs text-gray-400 truncate">{r.tracks?.artist || 'Unknown Artist'}</div>
+              <div className="text-sm text-gray-100 truncate">{r.tracks?.title || t('player.play')}</div>
+              <div className="text-xs text-gray-400 truncate">{r.tracks?.artist || t('player.unknownArtist')}</div>
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => toggleLike(r.track_id)}
                 className={`p-2 rounded hover:bg-purple-900/30 ${likes[String(r.track_id)] ? 'text-pink-400' : 'text-gray-300'}`}
-                aria-label="Like"
+                aria-label={t('liked')}
               >
                 <Heart size={18} />
               </button>
@@ -196,14 +193,14 @@ export default function PlaylistPage() {
                   }
                 }}
                 className="p-2 rounded hover:bg-purple-900/30 text-gray-300"
-                aria-label="Play"
+                aria-label={t('player.play')}
               >
                 <Play size={18} />
               </button>
               <button
                 onClick={() => setModal({ open: true, trackId: r.track_id })}
                 className="p-2 rounded hover:bg-purple-900/30 text-gray-300"
-                aria-label="Add to Playlist"
+                aria-label={t('playlists')}
               >
                 <Plus size={18} />
               </button>

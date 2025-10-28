@@ -1,0 +1,37 @@
+{
+  "app": { "title": "Purple Music" },
+  "header": {
+    "signedInAs": "Prijavljen kao",
+    "guest": "Gost",
+    "language": "Jezik",
+    "goPremium": "Premium",
+    "privacy": "Politika privatnosti",
+    "terms": "Uslovi korišćenja"
+  },
+  "footer": {
+    "home": "Početna",
+    "search": "Pretraga",
+    "liked": "Omiljene",
+    "playlists": "Plejliste"
+  },
+  "premium": {
+    "title": "Premium",
+    "description": "Nadogradite na Premium za neograničene plejliste i ekskluzivni sadržaj.",
+    "weekly": "1 π / nedelja",
+    "monthly": "3.14 π / mesec",
+    "later": "Možda kasnije"
+  },
+  "about": {
+    "title": "O projektu / Zasluge",
+    "licenseNote": "Za kompletan tekst licence pogledajte LICENSE na korenu projekta."
+  },
+  "search": {
+    "placeholder": "Pretraži plejliste...",
+    "playlist": "Plejlista"
+  },
+  "player": {
+    "playAll": "Pusti sve",
+    "play": "Pusti",
+    "unknownArtist": "Nepoznat izvođač"
+  }
+}

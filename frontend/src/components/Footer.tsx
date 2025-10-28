@@ -2,6 +2,7 @@ import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { Home as HomeIcon, Search, Heart, ListMusic } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const tabs = [
   { href: '/', label: 'Home', icon: HomeIcon },
@@ -13,6 +14,7 @@ const tabs = [
 export default function Footer() {
   const router = useRouter();
   const pathname = router.pathname;
+  const { t } = useTranslation();
 
   return (
     <nav className="fixed bottom-0 inset-x-0 z-50 bg-[#0b0010] border-t border-[#3b0066]/60 shadow-[0_-1px_0_#3b0066_inset]">
@@ -30,7 +32,7 @@ export default function Footer() {
                 }`}
               >
                 <Icon size={22} strokeWidth={1.75} />
-                <span>{label}</span>
+                <span>{t(`footer.${label.toLowerCase()}`)}</span>
               </Link>
             </li>
           );

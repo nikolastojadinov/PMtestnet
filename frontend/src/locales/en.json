@@ -1,0 +1,39 @@
+{
+  "app": {
+    "title": "Purple Music"
+  },
+  "header": {
+    "signedInAs": "Signed in as",
+    "guest": "Guest",
+    "language": "Language",
+    "goPremium": "Go Premium",
+    "privacy": "Privacy Policy",
+    "terms": "Terms of Service"
+  },
+  "footer": {
+    "home": "Home",
+    "search": "Search",
+    "liked": "Liked",
+    "playlists": "Playlists"
+  },
+  "premium": {
+    "title": "Go Premium",
+    "description": "Go Premium to enjoy unlimited playlists and exclusive content.",
+    "weekly": "1 π / week",
+    "monthly": "3.14 π / month",
+    "later": "Maybe later"
+  },
+  "about": {
+    "title": "About / Credits",
+    "licenseNote": "For full license text, see the LICENSE file at the project root."
+  },
+  "search": {
+    "placeholder": "Search playlists...",
+    "playlist": "Playlist"
+  },
+  "player": {
+    "playAll": "Play All",
+    "play": "Play",
+    "unknownArtist": "Unknown Artist"
+  }
+}

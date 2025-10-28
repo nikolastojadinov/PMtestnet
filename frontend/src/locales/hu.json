@@ -1,0 +1,37 @@
+{
+  "app": { "title": "Purple Music" },
+  "header": {
+    "signedInAs": "Bejelentkezve mint",
+    "guest": "Vendég",
+    "language": "Nyelv",
+    "goPremium": "Prémium",
+    "privacy": "Adatvédelmi irányelvek",
+    "terms": "Felhasználási feltételek"
+  },
+  "footer": {
+    "home": "Kezdőlap",
+    "search": "Keresés",
+    "liked": "Kedvencek",
+    "playlists": "Lejátszási listák"
+  },
+  "premium": {
+    "title": "Prémium",
+    "description": "Váltson Prémiumra korlátlan lejátszási listákért és exkluzív tartalomért.",
+    "weekly": "1 π / hét",
+    "monthly": "3.14 π / hónap",
+    "later": "Talán később"
+  },
+  "about": {
+    "title": "Névjegy / Köszönet",
+    "licenseNote": "A teljes licenc szöveg a projekt gyökerében található LICENSE fájlban."
+  },
+  "search": {
+    "placeholder": "Lejátszási listák keresése...",
+    "playlist": "Lejátszási lista"
+  },
+  "player": {
+    "playAll": "Összes lejátszása",
+    "play": "Lejátszás",
+    "unknownArtist": "Ismeretlen előadó"
+  }
+}
