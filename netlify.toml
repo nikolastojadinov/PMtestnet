@@ -2,9 +2,18 @@
 # Build the Next.js app from the frontend/ folder and publish with the Next.js runtime
 
 [build]
-  base = "frontend"
-  command = "npm run build"
+  base    = "frontend"
+  command = "npm ci && npm run build"
   publish = ".next"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
+
+# Security headers (no CSP yet to avoid blocking YouTube IFrame)
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options            = "SAMEORIGIN"
+    X-Content-Type-Options     = "nosniff"
+    Referrer-Policy            = "strict-origin-when-cross-origin"
+    Strict-Transport-Security  = "max-age=31536000; includeSubDomains; preload"
