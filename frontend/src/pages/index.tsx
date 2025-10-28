@@ -1,6 +1,132 @@
-import React from 'react';
-import Home from '@/components/Home';
+import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
+import SearchBar from '@/components/SearchBar';
+import { supabase } from '@/lib/supabaseClient';
+
+type Playlist = {
+  id: string;
+  title: string;
+  cover_url: string | null;
+  region: string | null;
+  category: string | null;
+  created_at?: string;
+};
+
+const categories = [
+  'Most Popular',
+  'Trending Now',
+  'Best of 80s',
+  'Best of 90s',
+  'Best of 2000',
+];
 
 export default function IndexPage() {
-  return <Home />;
+  const [recent, setRecent] = useState<Playlist[]>([]);
+  const [byCategory, setByCategory] = useState<Record<string, Playlist[]>>({});
+
+  useEffect(() => {
+    // Recently played (Guest): newest playlists
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('playlists')
+          .select('id, title, cover_url, region, category, created_at')
+          .order('created_at', { ascending: false })
+          .limit(8);
+        if (error) throw error;
+        setRecent((data || []) as Playlist[]);
+      } catch (e) {
+        console.warn('recently played fetch error', e);
+        setRecent([]);
+      }
+    })();
+
+    // Sections by category
+    (async () => {
+      try {
+        const results: Record<string, Playlist[]> = {};
+        for (const cat of categories) {
+          const { data, error } = await supabase
+            .from('playlists')
+            .select('id, title, cover_url, region, category')
+            .eq('category', cat)
+            .limit(12);
+          if (error) {
+            console.warn('category fetch error', cat, error);
+            results[cat] = [];
+          } else {
+            results[cat] = (data || []) as Playlist[];
+          }
+        }
+        setByCategory(results);
+      } catch (e) {
+        console.warn('category sections error', e);
+        setByCategory({});
+      }
+    })();
+  }, []);
+
+  return (
+    <div className="space-y-10 px-4 md:px-8">
+      <div className="pt-2">
+        <SearchBar />
+      </div>
+
+      <section>
+        <h2 className="text-lg md:text-xl font-semibold mb-4 bg-gradient-to-r from-purple-400 via-fuchsia-300 to-yellow-300 bg-clip-text text-transparent">
+          Recently Played
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {recent.map((p) => (
+            <div key={p.id}>
+              <PlaylistTile p={p} large />
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {categories.map((cat) => (
+        <section key={cat} className="space-y-3">
+          <h3 className="text-base md:text-lg font-semibold bg-gradient-to-r from-purple-400 via-fuchsia-300 to-yellow-300 bg-clip-text text-transparent">
+            {cat}
+          </h3>
+          <div className="overflow-x-auto">
+            <div className="flex gap-4 pr-4">
+              {(byCategory[cat] || []).map((p) => (
+                <div key={p.id}>
+                  <PlaylistTile p={p} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function PlaylistTile({ p, large = false }: { p: Playlist; large?: boolean }) {
+  return (
+    <Link
+      href={`/playlist/${p.id}`}
+      className={`group relative rounded-lg overflow-hidden bg-[#120018] border border-purple-800/40 hover:border-purple-600/60 transition ${
+        large ? 'w-full' : 'min-w-[160px] w-[180px]'
+      }`}
+    >
+      <div className={`${large ? 'aspect-[16/9]' : 'aspect-square'} w-full overflow-hidden`}>
+        {p.cover_url ? (
+          <img src={p.cover_url} alt={p.title} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+        ) : (
+          <div className="w-full h-full bg-purple-900/30" />
+        )}
+      </div>
+      <div className="absolute inset-0 hidden group-hover:flex items-center justify-center bg-black/30">
+        <button className="px-3 py-1.5 rounded bg-purple-700 text-white text-xs shadow-md">Play</button>
+      </div>
+      <div className="p-3">
+        <div className="text-sm font-medium truncate text-gray-100">{p.title}</div>
+        <div className="text-xs text-gray-400 truncate">{p.region || p.category || 'Playlist'}</div>
+      </div>
+    </Link>
+  );
 }
