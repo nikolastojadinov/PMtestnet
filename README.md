@@ -2,7 +2,7 @@
 
 A modern, multilingual music web app focused on curated YouTube music playlists with a sleek dark-purple UI. The app respects YouTube API/SDK rules by using the official YouTube IFrame Player **visibly and unmodified**, showing track title, artist, and a link to the original video. Backend runs on **Render**, frontend on **Netlify**, and **Supabase** is the central database.
 
-> Status: Clean start. This repository currently contains only this README. Implementation will be added step-by-step.
+> Status: Active development. Frontend and backend scaffolds are present; see `frontend/` and `backend/` folders.
 
 ---
 
@@ -124,6 +124,20 @@ Region coverage uses a JSON of ISO region codes, rotating 8–10 regions daily. 
 - **Frontend**: Netlify (set the 5 env vars only).  
 - **Backend**: Render (always-on Node, cron jobs, background workers, env management).  
 - **Database**: Supabase (SQL editor, storage, auth integration with Pi SDK where needed).
+
+### Netlify setup (frontend)
+
+This repo includes a `netlify.toml` configured for the Next.js app in `frontend/`:
+
+- Base directory: `frontend`
+- Build command: `npm run build`
+- Publish directory: `.next` (handled by the official Next.js Netlify plugin)
+
+Steps:
+- Create a new site from Git in Netlify and point it to this repository.
+- Netlify will detect `netlify.toml` and wire the Next.js plugin automatically.
+- Add the 5 required environment variables in Site settings ➜ Environment.
+- Trigger a deploy. The plugin will produce optimized output and serverless functions where needed.
 
 ---
 
