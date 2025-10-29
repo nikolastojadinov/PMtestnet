@@ -7,7 +7,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { usePlayer } from '@/context/PlayerContext';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ChevronDown, SkipBack, SkipForward, Pause, Play as PlayIcon, ExternalLink, Heart } from 'lucide-react';
+import { ChevronDown, SkipBack, SkipForward, Pause, Play as PlayIcon, ExternalLink } from 'lucide-react';
 import YouTube from 'react-youtube';
 import { useTranslation } from 'react-i18next';
 
@@ -24,6 +24,7 @@ export default function FullPlayer() {
     prev,
     closeFull,
     register,
+    syncFromPlayerState,
   } = usePlayer() as any;
 
   const current = useMemo(() => queue?.[index] || null, [queue, index]);
@@ -90,7 +91,7 @@ export default function FullPlayer() {
                     iframeClassName="w-full h-full"
                     onReady={(e) => { register('full', e.target); playerRef.current = e.target; setDuration(e.target.getDuration?.() || 0); }}
                     onStateChange={(e) => {
-                      // optional: could sync isPlaying if needed
+                      try { syncFromPlayerState(e.data); } catch {}
                     }}
                     opts={{
                       playerVars: {

@@ -18,7 +18,7 @@ export default function Player() {
     queue,
     index,
     isPlaying,
-    togglePlay,
+    toggleFromIframe,
     // next, prev, (omitted for compact layout)
     // openFull, (omitted - no expand interaction in compact spec)
     register,
@@ -33,7 +33,7 @@ export default function Player() {
   return (
     <AnimatePresence>
       <motion.div
-        className="fixed bottom-[60px] left-0 right-0 z-50"
+        className="fixed bottom-[64px] left-0 right-0 z-[9999] translate-y-0"
         initial={{ y: 8, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         exit={{ y: 8, opacity: 0 }}
@@ -69,7 +69,7 @@ export default function Player() {
               <motion.button
                 whileTap={{ scale: 0.96 }}
                 whileHover={{ scale: 1.04 }}
-                onClick={togglePlay}
+                onClick={toggleFromIframe}
                 aria-label={isPlaying ? t('player.pause') : t('player.play')}
                 className="w-[52px] h-[52px] flex items-center justify-center rounded-full text-white bg-[#260045] border border-purple-700/60 shadow-md shadow-purple-900/40 hover:bg-purple-700/60 hover:border-purple-400/40 transition-all duration-300"
               >

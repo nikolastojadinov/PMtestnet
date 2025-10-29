@@ -41,6 +41,9 @@ export type PlayerContextType = {
 
   // player wiring
   register: (surface: Surface, player: any | null) => void;
+  // state sync helpers
+  syncFromPlayerState: (ytState: number) => void;
+  toggleFromIframe: () => void;
 };
 
 const Ctx = createContext<PlayerContextType | undefined>(undefined);
@@ -137,6 +140,27 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isPlaying]);
 
+  const syncFromPlayerState = useCallback((ytState: number) => {
+    // YT.PlayerState: -1 unstarted, 0 ended, 1 playing, 2 paused, 3 buffering, 5 cued
+    if (ytState === 1) setIsPlaying(true);
+    else if (ytState === 2 || ytState === 0) setIsPlaying(false);
+  }, []);
+
+  const toggleFromIframe = useCallback(() => {
+    const p = getActive();
+    if (!p) return;
+    try {
+      const s = p.getPlayerState?.();
+      if (s === 1) {
+        p.pauseVideo?.();
+        setIsPlaying(false);
+      } else {
+        p.playVideo?.();
+        setIsPlaying(true);
+      }
+    } catch {}
+  }, [getActive]);
+
   const openFull = useCallback((tracks: Track[], startIndex: number) => {
     const list = tracks || [];
     const idx = Math.max(0, Math.min(startIndex || 0, Math.max(0, list.length - 1)));
@@ -156,6 +180,11 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     if (fp && typeof fp.getCurrentTime === 'function') {
       try { pendingSeekRef.current = fp.getCurrentTime(); } catch {}
     }
+    // Sync playing state from full before switching
+    try {
+      const st = fp?.getPlayerState?.();
+      if (typeof st === 'number') setIsPlaying(st === 1);
+    } catch {}
     setActiveSurface('mini');
     setIsFullOpen(false);
     // mini will seek on register if pendingSeek set
@@ -190,7 +219,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const value: PlayerContextType = useMemo(() => ({
     queue, index, videoId, isPlaying, isFullOpen, activeSurface, current,
     openFull, closeFull, play, pause, togglePlay, next, prev, seek, setVolume, clear, register,
-  }), [queue, index, videoId, isPlaying, isFullOpen, activeSurface, current, openFull, closeFull, play, pause, togglePlay, next, prev, seek, setVolume, clear, register]);
+    syncFromPlayerState, toggleFromIframe,
+  }), [queue, index, videoId, isPlaying, isFullOpen, activeSurface, current, openFull, closeFull, play, pause, togglePlay, next, prev, seek, setVolume, clear, register, syncFromPlayerState, toggleFromIframe]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
