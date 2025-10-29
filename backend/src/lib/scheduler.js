@@ -1,37 +1,33 @@
-// ✅ FULL REWRITE v3.9 — fixed job filenames + 16:35 cron Europe/Belgrade
+// ✅ Smart dual scheduler — fixed daily times (Europe/Belgrade)
+// 🕥 10:10 → playlists | 🕟 16:40 → tracks
+// ⚠️ No startup auto-run (deploy ne pokreće ništa!)
 
 import cron from 'node-cron';
-import { runFetchPlaylists } from './jobs/fetchPlaylists.js';
-import { runFetchTracks } from './jobs/fetchTracksFromPlaylist.js';
+import { runFetchPlaylists } from '../jobs/fetchPlaylists.js';
+import { runFetchTracks } from '../jobs/fetchTracksFromPlaylist.js';
 
-const TIMEZONE = 'Europe/Belgrade';
+const TZ = process.env.TZ || 'Europe/Belgrade';
+const PLAYLIST_SCHEDULE = '10 10 * * *';   // 10:10 lokalno
+const TRACK_SCHEDULE    = '40 16 * * *';   // 16:40 lokalno
 
-// 🕙 Svakog dana u 10:10 preuzima plejliste
-const PLAYLISTS_CRON = '10 10 * * *';
-
-// 🎵 Svakog dana u 16:35 preuzima pesme iz plejlista
-const TRACKS_CRON = '35 16 * * *';
-
-export function initScheduler() {
-  console.log(`[scheduler] cron set: playlists@10:10 ${TIMEZONE}, tracks@16:35 ${TIMEZONE} (jobs dir)`);
-
-  // 🎧 Preuzimanje plejlista
-  cron.schedule(PLAYLISTS_CRON, async () => {
-    console.log(`[cron] Starting playlist fetch... (${new Date().toISOString()})`);
+export function startDualJobs() {
+  cron.schedule(PLAYLIST_SCHEDULE, async () => {
     try {
-      await runFetchPlaylists({ reason: 'scheduled-playlists' });
+      console.log(`[scheduler] 10:10 (${TZ}) → Fetch Playlists`);
+      await runFetchPlaylists({ reason: 'daily-fetch' });
     } catch (e) {
-      console.error('[cron:playlists] error:', e);
+      console.error('[scheduler] playlists error:', e);
     }
-  }, { timezone: TIMEZONE });
+  }, { timezone: TZ });
 
-  // 🎶 Preuzimanje pesama
-  cron.schedule(TRACKS_CRON, async () => {
-    console.log(`[cron] Starting track fetch... (${new Date().toISOString()})`);
+  cron.schedule(TRACK_SCHEDULE, async () => {
     try {
-      await runFetchTracks({ reason: 'scheduled-tracks' });
+      console.log(`[scheduler] 16:40 (${TZ}) → Fetch Tracks`);
+      await runFetchTracks({ reason: 'daily-tracks' });
     } catch (e) {
-      console.error('[cron:tracks] error:', e);
+      console.error('[scheduler] tracks error:', e);
     }
-  }, { timezone: TIMEZONE });
+  }, { timezone: TZ });
+
+  console.log(`[scheduler] cron set: playlists@10:10 ${TZ}, tracks@16:40 ${TZ} (fixed only)`);
 }
