@@ -1,4 +1,4 @@
-// ✅ Full rewrite v2.0 — unified player state
+// ✅ Full rewrite v2.1 — unified player state + backward compatibility for openFull
 import React, { createContext, useContext, useState, useRef } from "react";
 
 interface Track {
@@ -18,6 +18,7 @@ interface PlayerContextType {
   openFullScreen: () => void;
   closeFullScreen: () => void;
   audioRef: React.RefObject<HTMLAudioElement>;
+  openFull?: () => void; // ✅ added alias for legacy pages
 }
 
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
@@ -63,6 +64,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         openFullScreen,
         closeFullScreen,
         audioRef,
+        // ✅ Added alias to prevent Netlify build error:
+        openFull: openFullScreen,
       }}
     >
       {children}
