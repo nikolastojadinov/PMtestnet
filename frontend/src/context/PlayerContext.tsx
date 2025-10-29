@@ -1,11 +1,11 @@
 "use client";
 /**
- * This file is a modified version of a file from the OKV-Music project.
+ * This file is a derived and adapted implementation based on the OKV-Music project.
  * Original project: https://github.com/onamkrverma/okv-music
- * Licensed under the Mozilla Public License 2.0 (MPL-2.0).
+ * License: Mozilla Public License 2.0 (MPL-2.0)
  * Modifications © 2025 Purple Music Team.
  */
-import React, { createContext, useContext, useMemo, useState, useCallback, useRef, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 export type Track = {
   id: string | number;
@@ -15,229 +15,182 @@ export type Track = {
   cover_url?: string | null;
 };
 
-export type PlayerState = {
-  // core state
+type Surface = 'mini' | 'full';
+
+export type PlayerContextType = {
+  // state
+  queue: Track[];
+  index: number;
   videoId: string | null;
   isPlaying: boolean;
-  queue: Track[];
-  currentIndex: number;
-  isFullPlayerOpen: boolean;
-  activeSurface: 'mini' | 'full';
-  currentTrack?: Track | null;
+  isFullOpen: boolean;
+  activeSurface: Surface;
+  current: Track | null;
 
-  // actions
-  setVideo: (id: string | null) => void;
-  playByVideoId: (id: string) => void;
+  // controls
+  openFull: (tracks: Track[], startIndex: number) => void;
+  closeFull: () => void;
   play: () => void;
   pause: () => void;
   togglePlay: () => void;
-  setQueue: (tracks: Track[]) => void;
-  playQueue: (tracks: Track[], startIndex: number) => void;
-  playTrack: (track: Track, index: number) => void;
-  playNext: () => void;
-  playPrev: () => void;
-  openFullPlayer: (tracks: Track[], index: number) => void;
-  closeFullPlayer: () => void;
-  toggleFullscreen: () => void;
+  next: () => void;
+  prev: () => void;
+  seek: (seconds: number) => void;
+  setVolume: (vol: number) => void;
+  clear: () => void;
 
   // player wiring
-  registerPlayer: (el: HTMLIFrameElement | null) => void; // backward compat maps to 'mini'
-  registerIframe: (kind: 'mini' | 'full', el: HTMLIFrameElement | null) => void;
-  clear: () => void;
+  register: (surface: Surface, player: any | null) => void;
 };
 
-const Ctx = createContext<PlayerState | undefined>(undefined);
+const Ctx = createContext<PlayerContextType | undefined>(undefined);
 
 export function PlayerProvider({ children }: { children: React.ReactNode }) {
+  const [queue, setQueue] = useState<Track[]>([]);
+  const [index, setIndex] = useState(0);
   const [videoId, setVideoId] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [queue, setQueueState] = useState<Track[]>([]);
-  const [currentIndex, setCurrentIndex] = useState<number>(0);
-  const [isFullPlayerOpen, setIsFullPlayerOpen] = useState<boolean>(false);
-  const miniIframeRef = useRef<HTMLIFrameElement | null>(null);
-  const fullIframeRef = useRef<HTMLIFrameElement | null>(null);
-  const [activeSurface, setActiveSurface] = useState<'mini' | 'full'>('mini');
+  const [isFullOpen, setIsFullOpen] = useState(false);
+  const [activeSurface, setActiveSurface] = useState<Surface>('mini');
+  const fullPlayerRef = useRef<any | null>(null);
+  const miniPlayerRef = useRef<any | null>(null);
 
-  const postCommand = useCallback((func: string, args: any[] = []) => {
-    const target = activeSurface === 'full' ? fullIframeRef.current : miniIframeRef.current;
-    const win = target?.contentWindow;
-    if (!win) return;
-    try {
-      win.postMessage(JSON.stringify({ event: 'command', func, args }), '*');
-    } catch {}
-  }, [activeSurface]);
+  // Handoff helpers when switching surfaces
+  const pendingSeekRef = useRef<number | null>(null);
 
-  const setVideo = useCallback((id: string | null) => {
-    setVideoId(id);
-    // do not flip playing automatically here
-  }, []);
+  const current = useMemo(() => queue[index] ?? null, [queue, index]);
 
-  const playByVideoId = useCallback((id: string) => {
-    setVideoId(id);
-    setTimeout(() => postCommand('playVideo'), 0);
-    setIsPlaying(true);
-  }, [postCommand]);
+  const getActive = useCallback(() => (activeSurface === 'full' ? fullPlayerRef.current : miniPlayerRef.current), [activeSurface]);
 
   const play = useCallback(() => {
-    postCommand('playVideo');
+    const p = getActive();
+    try { p?.playVideo?.(); } catch {}
     setIsPlaying(true);
-  }, [postCommand]);
+  }, [getActive]);
 
   const pause = useCallback(() => {
-    postCommand('pauseVideo');
+    const p = getActive();
+    try { p?.pauseVideo?.(); } catch {}
     setIsPlaying(false);
-  }, [postCommand]);
+  }, [getActive]);
 
   const togglePlay = useCallback(() => {
-    setIsPlaying((prev) => {
-      if (prev) {
-        postCommand('pauseVideo');
-        return false;
-      } else {
-        postCommand('playVideo');
-        return true;
-      }
+    setIsPlaying(prev => {
+      const p = getActive();
+      try {
+        if (prev) p?.pauseVideo?.(); else p?.playVideo?.();
+      } catch {}
+      return !prev;
     });
-  }, [postCommand]);
+  }, [getActive]);
 
-  const setQueue = useCallback((tracks: Track[]) => {
-    setQueueState(tracks || []);
-    setCurrentIndex(0);
-    // do not auto-start; caller decides via playTrack
-  }, []);
+  const loadByVideoId = useCallback((vid: string | null, autoplay = false) => {
+    setVideoId(vid);
+    const p = getActive();
+    if (!vid || !p) return;
+    try {
+      p.loadVideoById(vid);
+      if (autoplay) p.playVideo();
+    } catch {
+      // fallback: cue
+      try { p.cueVideoById?.(vid); } catch {}
+    }
+  }, [getActive]);
 
-  const playQueue = useCallback((tracks: Track[], startIndex: number) => {
+  const next = useCallback(() => {
+    if (!queue.length) return;
+    const ni = (index + 1) % queue.length;
+    setIndex(ni);
+    const t = queue[ni];
+    loadByVideoId(t?.external_id ?? null, true);
+    setIsPlaying(true);
+  }, [index, queue, loadByVideoId]);
+
+  const prev = useCallback(() => {
+    if (!queue.length) return;
+    const pi = (index - 1 + queue.length) % queue.length;
+    setIndex(pi);
+    const t = queue[pi];
+    loadByVideoId(t?.external_id ?? null, true);
+    setIsPlaying(true);
+  }, [index, queue, loadByVideoId]);
+
+  const seek = useCallback((seconds: number) => {
+    const p = getActive();
+    try { p?.seekTo?.(seconds, true); } catch {}
+  }, [getActive]);
+
+  const setVolume = useCallback((vol: number) => {
+    const p = getActive();
+    try { p?.setVolume?.(Math.max(0, Math.min(100, vol))); } catch {}
+  }, [getActive]);
+
+  const register = useCallback((surface: Surface, player: any | null) => {
+    if (surface === 'full') fullPlayerRef.current = player; else miniPlayerRef.current = player;
+    // If we have a pending seek after surface switch, apply it
+    if (player && pendingSeekRef.current != null) {
+      try {
+        player.seekTo?.(pendingSeekRef.current, true);
+        if (isPlaying) player.playVideo?.();
+      } catch {}
+      pendingSeekRef.current = null;
+    }
+  }, [isPlaying]);
+
+  const openFull = useCallback((tracks: Track[], startIndex: number) => {
     const list = tracks || [];
     const idx = Math.max(0, Math.min(startIndex || 0, Math.max(0, list.length - 1)));
-    setQueueState(list);
-    setCurrentIndex(idx);
-    const track = list[idx];
-    setVideoId(track?.external_id ?? null);
-    setTimeout(() => postCommand('playVideo'), 0);
-    setIsPlaying(true);
-  }, [postCommand]);
-
-  const playTrack = useCallback((track: Track, index: number) => {
-    setCurrentIndex(index);
-    setVideoId(track?.external_id ?? null);
-    // slight delay can help ensure src updates before play command
-    setTimeout(() => postCommand('playVideo'), 0);
-    setIsPlaying(true);
-  }, [postCommand]);
-
-  const playNext = useCallback(() => {
-    if (!queue.length) return;
-    const next = (currentIndex + 1) % queue.length;
-    const track = queue[next];
-    setCurrentIndex(next);
-    setVideoId(track?.external_id ?? null);
-    setTimeout(() => postCommand('playVideo'), 0);
-    setIsPlaying(true);
-  }, [currentIndex, queue, postCommand]);
-
-  const playPrev = useCallback(() => {
-    if (!queue.length) return;
-    const prev = (currentIndex - 1 + queue.length) % queue.length;
-    const track = queue[prev];
-    setCurrentIndex(prev);
-    setVideoId(track?.external_id ?? null);
-    setTimeout(() => postCommand('playVideo'), 0);
-    setIsPlaying(true);
-  }, [currentIndex, queue, postCommand]);
-
-  const registerPlayer = useCallback((el: HTMLIFrameElement | null) => {
-    // backward-compat: map to mini
-    miniIframeRef.current = el;
-    setTimeout(() => postCommand('mute'), 0);
-  }, [postCommand]);
-
-  const registerIframe = useCallback((kind: 'mini' | 'full', el: HTMLIFrameElement | null) => {
-    if (kind === 'mini') miniIframeRef.current = el;
-    else fullIframeRef.current = el;
-    setTimeout(() => postCommand('mute'), 0);
-  }, [postCommand]);
-
-  const openFullPlayer = useCallback((tracks: Track[], index: number) => {
-    const list = tracks || [];
-    setQueueState(list);
-    const idx = Math.max(0, Math.min(index || 0, Math.max(0, list.length - 1)));
-    setCurrentIndex(idx);
-    const track = list[idx];
-    setVideoId(track?.external_id ?? null);
-    // Open overlay and route commands to the full surface first
-    setIsFullPlayerOpen(true);
+    setQueue(list);
+    setIndex(idx);
+    const t = list[idx];
+    setVideoId(t?.external_id ?? null);
+    setIsFullOpen(true);
     setActiveSurface('full');
-    // Start playback on user gesture against the full iframe (slight delay to ensure mount)
-    setTimeout(() => postCommand('playVideo'), 50);
-    setIsPlaying(true);
-  }, [postCommand]);
+    // slight delay to ensure mount before issuing play
+    setTimeout(() => play(), 50);
+  }, [play]);
 
-  const closeFullPlayer = useCallback(() => {
-    // Switch routing to mini first, then close overlay
+  const closeFull = useCallback(() => {
+    // Capture current time from full, then handoff to mini
+    const fp = fullPlayerRef.current;
+    if (fp && typeof fp.getCurrentTime === 'function') {
+      try { pendingSeekRef.current = fp.getCurrentTime(); } catch {}
+    }
     setActiveSurface('mini');
-    setIsFullPlayerOpen(false);
-    // Continue playback on mini surface (user gesture: clicked minimize)
-    setTimeout(() => postCommand('playVideo'), 50);
-  }, [postCommand]);
-
-  const toggleFullscreen = useCallback(() => {
-    setIsFullPlayerOpen((prev) => {
-      const next = !prev;
-      setActiveSurface(next ? 'full' : 'mini');
-      return next;
-    });
-  }, []);
+    setIsFullOpen(false);
+    // mini will seek on register if pendingSeek set
+    setTimeout(() => { if (isPlaying) play(); }, 60);
+  }, [isPlaying, play]);
 
   const clear = useCallback(() => {
     setIsPlaying(false);
-    setQueueState([]);
-    setCurrentIndex(0);
+    try { fullPlayerRef.current?.stopVideo?.(); } catch {}
+    try { miniPlayerRef.current?.stopVideo?.(); } catch {}
+    setQueue([]);
+    setIndex(0);
     setVideoId(null);
+    setIsFullOpen(false);
   }, []);
 
   // Pause/resume on tab visibility
   useEffect(() => {
-    function onVis() {
+    const onVis = () => {
       if (document.hidden) {
-        postCommand('pauseVideo');
+        try { getActive()?.pauseVideo?.(); } catch {}
         setIsPlaying(false);
       } else if (videoId) {
-        postCommand('playVideo');
+        try { getActive()?.playVideo?.(); } catch {}
         setIsPlaying(true);
       }
-    }
+    };
     document.addEventListener('visibilitychange', onVis);
     return () => document.removeEventListener('visibilitychange', onVis);
-  }, [postCommand, videoId]);
+  }, [getActive, videoId]);
 
-  const value = useMemo(
-    () => ({
-      videoId,
-      isPlaying,
-      queue,
-      currentIndex,
-      isFullPlayerOpen,
-      activeSurface,
-      currentTrack: queue[currentIndex] || null,
-      setVideo,
-      playByVideoId,
-      play,
-      pause,
-      togglePlay,
-      setQueue,
-      playQueue,
-      playTrack,
-      playNext,
-      playPrev,
-      openFullPlayer,
-      closeFullPlayer,
-      toggleFullscreen,
-      registerPlayer,
-      registerIframe,
-      clear,
-    }),
-    [videoId, isPlaying, queue, currentIndex, isFullPlayerOpen, activeSurface, setVideo, playByVideoId, play, pause, togglePlay, setQueue, playQueue, playTrack, playNext, playPrev, openFullPlayer, closeFullPlayer, toggleFullscreen, registerPlayer, registerIframe, clear]
-  );
+  const value: PlayerContextType = useMemo(() => ({
+    queue, index, videoId, isPlaying, isFullOpen, activeSurface, current,
+    openFull, closeFull, play, pause, togglePlay, next, prev, seek, setVolume, clear, register,
+  }), [queue, index, videoId, isPlaying, isFullOpen, activeSurface, current, openFull, closeFull, play, pause, togglePlay, next, prev, seek, setVolume, clear, register]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

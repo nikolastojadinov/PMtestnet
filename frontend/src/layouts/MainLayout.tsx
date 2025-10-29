@@ -10,7 +10,7 @@ import Footer from '../components/Footer';
 import dynamic from 'next/dynamic';
 
 const FullPlayer = dynamic(() => import('@/components/FullPlayer'), { ssr: false });
-const MiniPlayer = dynamic(() => import('@/components/MiniPlayer'), { ssr: false });
+const MiniPlayer = dynamic(() => import('@/components/Player'), { ssr: false });
 
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -20,8 +20,8 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
         {children}
       </div>
   {/* Players */}
-      <FullPlayer />
-  <MiniPlayer />
+    <FullPlayer />
+    <MiniPlayer />
       <Footer />
     </div>
   );

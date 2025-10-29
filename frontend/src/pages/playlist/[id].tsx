@@ -24,7 +24,7 @@ interface TrackRow {
 export default function PlaylistPage() {
   const router = useRouter();
   const { id } = router.query as { id?: string };
-  const { setQueue, playTrack, openFullPlayer } = usePlayer();
+  const { openFull } = usePlayer();
   const { t } = useTranslation();
 
   const [title, setTitle] = useState<string>(t('search.playlist'));
@@ -99,7 +99,7 @@ export default function PlaylistPage() {
     if (!trackList.length) return;
     const proceed = () => {
       // Open fullscreen player with the entire list from the start
-      openFullPlayer(trackList as any, 0);
+  openFull(trackList as any, 0);
       // Push to local Recently Played
       if (id) {
         pushRecent({ id, title, cover_url: cover, region: undefined, category: undefined });
@@ -108,7 +108,7 @@ export default function PlaylistPage() {
     // Premium gating disabled for testing
     // TODO(v2.8): Re-enable Premium gating after Theme Settings (Prompt #19)
     proceed();
-  }, [trackList, openFullPlayer, id, title, cover]);
+  }, [trackList, openFull, id, title, cover]);
 
   async function toggleLike(trackId: string | number) {
     const key = String(trackId);
@@ -192,7 +192,7 @@ export default function PlaylistPage() {
                   const idx = rows.findIndex((x) => x.track_id === r.track_id);
                   const list = trackList as any[];
                   const mappedIndex = Math.max(0, idx);
-                  openFullPlayer(list as any, mappedIndex);
+                  openFull(list as any, mappedIndex);
                   // Push to local Recently Played
                   if (id) {
                     pushRecent({ id, title, cover_url: cover, region: undefined, category: undefined });
