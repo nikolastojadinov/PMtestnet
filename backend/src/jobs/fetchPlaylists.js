@@ -1,6 +1,6 @@
-// ✅ FULL REWRITE v4.2 — Intelligent global playlist fetcher (target 8000+/day)
-// Poštuje 70 regiona (utils.js v3.1) + dnevne cikluse (monthlyCycle.js)
-// Automatski popunjava sve kolone u Supabase: region, keyword_used, tier, cycle_day itd.
+// ✅ FULL REWRITE v4.3 — Intelligent global playlist fetcher (quality validated)
+// Dodato: automatski preskače nevalidne i prazne playliste (Mix, Private, For Kids, kratki naslovi)
+// Cilj: preuzimati samo realne muzičke playliste sa kvalitetnim metapodacima
 
 import axios from 'axios';
 import { getSupabase } from '../lib/supabase.js';
@@ -38,12 +38,38 @@ const nextKey = nextKeyFactory(API_KEYS);
 let apiCallsToday = 0;
 
 /**
- * 🎯 Brza heuristika kvaliteta
+ * 🎯 Heuristika kvaliteta
  * (dužina naslova + opis → skala 0.1–1.0)
  */
 function calcQualityScore(title, desc) {
   const len = (title?.length || 0) + (desc?.length || 0);
   return Math.min(1, Math.max(0.1, len / 300));
+}
+
+/**
+ * 🧠 Validacija kvaliteta plejlista
+ * - preskače “Mix”, “Shorts”, “Kids”, “Private”, i one sa prekratkim naslovom
+ */
+function isValidPlaylist(title = '', desc = '') {
+  const lower = (title + ' ' + desc).toLowerCase();
+
+  // ❌ Nevalidne reči u nazivu
+  if (
+    lower.includes('mix') ||
+    lower.includes('shorts') ||
+    lower.includes('kids') ||
+    lower.includes('nursery') ||
+    lower.includes('baby') ||
+    lower.includes('cartoon') ||
+    lower.includes('story for kids') ||
+    lower.includes('sleep music for kids')
+  ) return false;
+
+  // ❌ Naslov prekratak
+  if (title.length < 5) return false;
+
+  // ✅ Prolazi filter
+  return true;
 }
 
 /**
@@ -72,32 +98,33 @@ async function searchPlaylists({ region, q, tier, cycleDay }) {
       const { data } = await axios.get('https://www.googleapis.com/youtube/v3/search', { params });
       apiCallsToday++;
 
-      const batch = (data.items || []).map(it => {
-        const s = it.snippet || {};
-        const quality_score = calcQualityScore(s.title, s.description);
-
-        return {
-          external_id: it.id?.playlistId,
-          title: s.title ?? null,
-          description: s.description ?? null,
-          cover_url: s.thumbnails?.high?.url ?? s.thumbnails?.default?.url ?? null,
-          region,
-          country: region,
-          category: 'music',
-          genre: q,
-          keyword_used: q,
-          language_guess: s.defaultLanguage ?? null,
-          channel_title: s.channelTitle ?? null,
-          channel_id: s.channelId ?? null,
-          tier,
-          fetched_cycle_day: cycleDay,
-          quality_score,
-          is_public: true,
-          fetched_on: new Date().toISOString(),
-          created_at: new Date().toISOString(),
-          sync_status: 'fetched'
-        };
-      }).filter(r => r.external_id);
+      const batch = (data.items || [])
+        .map(it => {
+          const s = it.snippet || {};
+          const quality_score = calcQualityScore(s.title, s.description);
+          return {
+            external_id: it.id?.playlistId,
+            title: s.title ?? null,
+            description: s.description ?? null,
+            cover_url: s.thumbnails?.high?.url ?? s.thumbnails?.default?.url ?? null,
+            region,
+            country: region,
+            category: 'music',
+            genre: q,
+            keyword_used: q,
+            language_guess: s.defaultLanguage ?? null,
+            channel_title: s.channelTitle ?? null,
+            channel_id: s.channelId ?? null,
+            tier,
+            fetched_cycle_day: cycleDay,
+            quality_score,
+            is_public: true,
+            fetched_on: new Date().toISOString(),
+            created_at: new Date().toISOString(),
+            sync_status: 'fetched'
+          };
+        })
+        .filter(r => r.external_id && isValidPlaylist(r.title, r.description) && r.quality_score >= 0.4);
 
       out.push(...batch);
       pageToken = data.nextPageToken || null;
