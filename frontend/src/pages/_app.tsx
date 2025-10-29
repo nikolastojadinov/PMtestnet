@@ -1,5 +1,6 @@
 import type { AppProps } from 'next/app';
 import '@/styles/globals.css';
+import '@/styles/player.css';
 import { PlayerProvider } from '@/context/PlayerContext';
 import MainLayout from '@/layouts/MainLayout';
 import { I18nextProvider } from 'react-i18next';

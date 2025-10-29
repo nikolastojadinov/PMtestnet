@@ -46,7 +46,10 @@
     "like": "Tetszik",
     "nothing": "Semmi sem szól",
     "playerTitle": "YouTube lejátszó",
-    "unknownArtist": "Ismeretlen előadó"
+    "unknownArtist": "Ismeretlen előadó",
+    "minimize": "Kisebbítés",
+    "watchOnYouTube": "Megtekintés YouTube-on",
+    "close": "Bezárás"
   }
   ,
   "theme": {

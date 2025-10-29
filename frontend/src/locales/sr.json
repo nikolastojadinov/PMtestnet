@@ -46,7 +46,10 @@
     "like": "Sviđa mi se",
     "nothing": "Ništa ne svira",
     "playerTitle": "YouTube plejer",
-    "unknownArtist": "Nepoznat izvođač"
+    "unknownArtist": "Nepoznat izvođač",
+    "minimize": "Minimizuj",
+    "watchOnYouTube": "Pogledaj na YouTube",
+    "close": "Zatvori"
   }
   ,
   "theme": {

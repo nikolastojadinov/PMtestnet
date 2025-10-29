@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { usePlayer } from '@/context/PlayerContext';
 import { AnimatePresence, motion } from 'framer-motion';
-import { X, SkipBack, SkipForward, Pause, Play as PlayIcon, ExternalLink } from 'lucide-react';
+import { ChevronDown, SkipBack, SkipForward, Pause, Play as PlayIcon, ExternalLink } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 export default function FullPlayer() {
@@ -36,8 +36,8 @@ export default function FullPlayer() {
                 <div className="text-lg font-semibold truncate">{current?.title || t('player.nothing')}</div>
                 <div className="text-sm text-gray-300 truncate">{current?.artist || ''}</div>
               </div>
-              <button onClick={closeFullPlayer} aria-label="Close player" className="p-2 rounded hover:bg-purple-900/40">
-                <X size={20} />
+              <button onClick={closeFullPlayer} aria-label={t('player.minimize')} className="p-2 rounded hover:bg-purple-900/40">
+                <ChevronDown size={22} />
               </button>
             </div>
 
@@ -78,7 +78,7 @@ export default function FullPlayer() {
                   target="_blank" rel="noopener noreferrer"
                 >
                   <ExternalLink size={16} />
-                  <span>Watch on YouTube</span>
+                  <span>{t('player.watchOnYouTube')}</span>
                 </a>
               )}
             </div>

@@ -50,7 +50,10 @@
     "like": "Like",
     "nothing": "Nothing playing",
     "playerTitle": "YouTube player",
-    "unknownArtist": "Unknown Artist"
+    "unknownArtist": "Unknown Artist",
+    "minimize": "Minimize",
+    "watchOnYouTube": "Watch on YouTube",
+    "close": "Close"
   }
   ,
   "theme": {

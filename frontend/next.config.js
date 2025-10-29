@@ -9,7 +9,8 @@ const nextConfig = {
   images: {
     domains: [
       'i.ytimg.com',                     // YouTube thumbnails
-      'ofkfygqrfenctzitigae.supabase.co' // Supabase Storage
+      'ofkfygqrfenctzitigae.supabase.co', // Supabase Storage
+      'yt3.ggpht.com'
     ],
     formats: ['image/avif', 'image/webp']
   }

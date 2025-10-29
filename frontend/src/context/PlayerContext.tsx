@@ -5,7 +5,7 @@
  * Licensed under the Mozilla Public License 2.0 (MPL-2.0).
  * Modifications © 2025 Purple Music Team.
  */
-import React, { createContext, useContext, useMemo, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useMemo, useState, useCallback, useRef, useEffect } from 'react';
 
 export type Track = {
   id: string | number;
@@ -22,21 +22,28 @@ export type PlayerState = {
   queue: Track[];
   currentIndex: number;
   isFullPlayerOpen: boolean;
+  activeSurface: 'mini' | 'full';
+  currentTrack?: Track | null;
 
   // actions
   setVideo: (id: string | null) => void;
+  playByVideoId: (id: string) => void;
   play: () => void;
   pause: () => void;
   togglePlay: () => void;
   setQueue: (tracks: Track[]) => void;
+  playQueue: (tracks: Track[], startIndex: number) => void;
   playTrack: (track: Track, index: number) => void;
   playNext: () => void;
   playPrev: () => void;
   openFullPlayer: (tracks: Track[], index: number) => void;
   closeFullPlayer: () => void;
+  toggleFullscreen: () => void;
 
   // player wiring
-  registerPlayer: (el: HTMLIFrameElement | null) => void;
+  registerPlayer: (el: HTMLIFrameElement | null) => void; // backward compat maps to 'mini'
+  registerIframe: (kind: 'mini' | 'full', el: HTMLIFrameElement | null) => void;
+  clear: () => void;
 };
 
 const Ctx = createContext<PlayerState | undefined>(undefined);
@@ -47,20 +54,29 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [queue, setQueueState] = useState<Track[]>([]);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [isFullPlayerOpen, setIsFullPlayerOpen] = useState<boolean>(false);
-  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const miniIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const fullIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const [activeSurface, setActiveSurface] = useState<'mini' | 'full'>('mini');
 
   const postCommand = useCallback((func: string, args: any[] = []) => {
-    const win = iframeRef.current?.contentWindow;
+    const target = activeSurface === 'full' ? fullIframeRef.current : miniIframeRef.current;
+    const win = target?.contentWindow;
     if (!win) return;
     try {
       win.postMessage(JSON.stringify({ event: 'command', func, args }), '*');
     } catch {}
-  }, []);
+  }, [activeSurface]);
 
   const setVideo = useCallback((id: string | null) => {
     setVideoId(id);
     // do not flip playing automatically here
   }, []);
+
+  const playByVideoId = useCallback((id: string) => {
+    setVideoId(id);
+    setTimeout(() => postCommand('playVideo'), 0);
+    setIsPlaying(true);
+  }, [postCommand]);
 
   const play = useCallback(() => {
     postCommand('playVideo');
@@ -89,6 +105,17 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     setCurrentIndex(0);
     // do not auto-start; caller decides via playTrack
   }, []);
+
+  const playQueue = useCallback((tracks: Track[], startIndex: number) => {
+    const list = tracks || [];
+    const idx = Math.max(0, Math.min(startIndex || 0, Math.max(0, list.length - 1)));
+    setQueueState(list);
+    setCurrentIndex(idx);
+    const track = list[idx];
+    setVideoId(track?.external_id ?? null);
+    setTimeout(() => postCommand('playVideo'), 0);
+    setIsPlaying(true);
+  }, [postCommand]);
 
   const playTrack = useCallback((track: Track, index: number) => {
     setCurrentIndex(index);
@@ -119,8 +146,14 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   }, [currentIndex, queue, postCommand]);
 
   const registerPlayer = useCallback((el: HTMLIFrameElement | null) => {
-    iframeRef.current = el;
-    // mute player once available
+    // backward-compat: map to mini
+    miniIframeRef.current = el;
+    setTimeout(() => postCommand('mute'), 0);
+  }, [postCommand]);
+
+  const registerIframe = useCallback((kind: 'mini' | 'full', el: HTMLIFrameElement | null) => {
+    if (kind === 'mini') miniIframeRef.current = el;
+    else fullIframeRef.current = el;
     setTimeout(() => postCommand('mute'), 0);
   }, [postCommand]);
 
@@ -135,11 +168,43 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     setTimeout(() => postCommand('playVideo'), 0);
     setIsPlaying(true);
     setIsFullPlayerOpen(true);
+    setActiveSurface('full');
   }, [postCommand]);
 
   const closeFullPlayer = useCallback(() => {
     setIsFullPlayerOpen(false);
+    setActiveSurface('mini');
   }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    setIsFullPlayerOpen((prev) => {
+      const next = !prev;
+      setActiveSurface(next ? 'full' : 'mini');
+      return next;
+    });
+  }, []);
+
+  const clear = useCallback(() => {
+    setIsPlaying(false);
+    setQueueState([]);
+    setCurrentIndex(0);
+    setVideoId(null);
+  }, []);
+
+  // Pause/resume on tab visibility
+  useEffect(() => {
+    function onVis() {
+      if (document.hidden) {
+        postCommand('pauseVideo');
+        setIsPlaying(false);
+      } else if (videoId) {
+        postCommand('playVideo');
+        setIsPlaying(true);
+      }
+    }
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [postCommand, videoId]);
 
   const value = useMemo(
     () => ({
@@ -148,19 +213,26 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       queue,
       currentIndex,
       isFullPlayerOpen,
+      activeSurface,
+      currentTrack: queue[currentIndex] || null,
       setVideo,
+      playByVideoId,
       play,
       pause,
       togglePlay,
       setQueue,
+      playQueue,
       playTrack,
       playNext,
       playPrev,
       openFullPlayer,
       closeFullPlayer,
+      toggleFullscreen,
       registerPlayer,
+      registerIframe,
+      clear,
     }),
-    [videoId, isPlaying, queue, currentIndex, isFullPlayerOpen, setVideo, play, pause, togglePlay, setQueue, playTrack, playNext, playPrev, openFullPlayer, closeFullPlayer, registerPlayer]
+    [videoId, isPlaying, queue, currentIndex, isFullPlayerOpen, activeSurface, setVideo, playByVideoId, play, pause, togglePlay, setQueue, playQueue, playTrack, playNext, playPrev, openFullPlayer, closeFullPlayer, toggleFullscreen, registerPlayer, registerIframe, clear]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

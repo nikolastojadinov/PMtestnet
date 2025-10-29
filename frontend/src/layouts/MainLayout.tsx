@@ -10,6 +10,7 @@ import Footer from '../components/Footer';
 import dynamic from 'next/dynamic';
 
 const FullPlayer = dynamic(() => import('@/components/FullPlayer'), { ssr: false });
+const MiniPlayer = dynamic(() => import('@/components/MiniPlayer'), { ssr: false });
 
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -18,8 +19,9 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
       <div className="pt-16 pb-20 max-w-6xl mx-auto px-4">
         {children}
       </div>
-      {/* Fullscreen Player Overlay */}
+  {/* Players */}
       <FullPlayer />
+  <MiniPlayer />
       <Footer />
     </div>
   );
