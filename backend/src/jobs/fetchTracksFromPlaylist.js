@@ -1,16 +1,15 @@
-// ✅ FULL REWRITE v4.4 — Safe YouTube track fetcher (clean + filtered)
-// - Skips deleted/private/unavailable videos
-// - Increases playlist page depth (10 → up to 500 tracks)
-// - Updates item_count in playlists table
-// - Stable API key rotation and delay management
+// ✅ FULL REWRITE v4.5 — Unlimited YouTube track fetcher (safe + clean)
+// - Removes per-playlist page limit (fetches all available tracks)
+// - Keeps API key rotation, delay, and cleanup
+// - Updates item_count correctly in playlists table
 
 import axios from 'axios';
 import { getSupabase } from '../lib/supabase.js';
 import { nextKeyFactory, sleep } from '../lib/utils.js';
 
-const MAX_API_CALLS_PER_DAY = 60000;
-const MAX_PLAYLISTS_PER_RUN = 4000;
-const MAX_PAGES_PER_PLAYLIST = 10;
+// 🔓 No artificial limits (only real YouTube quota applies)
+const MAX_API_CALLS_PER_DAY = 100000;      // optional safety cap
+const MAX_PLAYLISTS_PER_RUN = 4000;        // can stay as is
 const PAGE_SIZE = 50;
 
 const API_KEYS = (process.env.YOUTUBE_API_KEYS || '')
@@ -23,13 +22,12 @@ const nextKey = nextKeyFactory(API_KEYS);
 let apiCallsToday = 0;
 
 // ───────────────────────────────────────────────
-// 🎵 Fetchuje sve pesme iz jedne YouTube playliste
+// 🎵 Fetchuje sve pesme iz jedne YouTube playliste (bez limita)
 async function fetchTracksForPlaylist(playlistId) {
   const all = [];
   let pageToken = null;
-  let pages = 0;
 
-  do {
+  while (true) {
     if (apiCallsToday >= MAX_API_CALLS_PER_DAY) break;
     const key = nextKey();
     const params = {
@@ -80,11 +78,13 @@ async function fetchTracksForPlaylist(playlistId) {
             created_at: new Date().toISOString(),
           };
         })
-        .filter(Boolean); // ukloni null vrednosti
+        .filter(Boolean);
 
       all.push(...tracks);
+
+      // ↪️ Pređi na sledeću stranicu ako postoji
       pageToken = data.nextPageToken || null;
-      pages++;
+      if (!pageToken) break;
 
       await sleep(120 + Math.random() * 80);
     } catch (e) {
@@ -96,7 +96,7 @@ async function fetchTracksForPlaylist(playlistId) {
       console.error(`[tracks:${playlistId}] ${msg}`);
       break;
     }
-  } while (pageToken && pages < MAX_PAGES_PER_PLAYLIST);
+  }
 
   // ✅ Ukloni duplikate
   const unique = Object.values(
