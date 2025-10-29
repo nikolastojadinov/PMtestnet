@@ -1,5 +1,5 @@
-// ✅ FULL REWRITE v4.0 — Unified 29+29 day cycle for Purple Music
-// Kombinuje globalne regione, CYCLE_START_DATE i precizan dan ciklusa
+// ✅ FULL REWRITE v4.1 — Unified 29+29 day cycle (auto-refreshing CYCLE_START_DATE)
+// Svaki cron ciklus sada u realnom vremenu čita environment, bez keširanja vrednosti
 
 import { startOfDay, parseYMD } from './utils.js';
 
@@ -44,12 +44,22 @@ const VARIANTS_29 = [
   ['A','C']
 ];
 
-// 🔢 Računanje trenutnog dana ciklusa
+// 🔢 Računanje trenutnog dana ciklusa — sada uvek čita svež env
 function getCycleDay(now = new Date()) {
-  const startEnv = process.env.CYCLE_START_DATE || '2025-10-27';
+  // ♻️ Dinamičko učitavanje CYCLE_START_DATE (bez keširanja)
+  const envValue = process.env.CYCLE_START_DATE?.trim();
+  const startEnv =
+    envValue && /^\d{4}-\d{2}-\d{2}$/.test(envValue)
+      ? envValue
+      : '2025-10-27'; // fallback
+  
   const cycleStart = parseYMD(startEnv);
-  const diffDays = Math.floor((startOfDay(now) - startOfDay(cycleStart)) / (24 * 3600 * 1000));
-  return ((diffDays % 58) + 1); // 1–58
+  const diffDays = Math.floor(
+    (startOfDay(now) - startOfDay(cycleStart)) / (24 * 3600 * 1000)
+  );
+
+  // 🔁 vraća 1–58 (29 FETCH + 29 REFRESH)
+  return ((diffDays % 58) + 1);
 }
 
 // 🧮 Glavna logika — FETCH / REFRESH plan za današnji dan
@@ -57,6 +67,7 @@ export function pickTodayPlan(now = new Date()) {
   const currentDay = getCycleDay(now);
 
   if (currentDay <= 29) {
+    // 🟣 FETCH faza
     const variant = VARIANTS_29[(currentDay - 1) % VARIANTS_29.length];
     const steps = [];
     for (const tier of variant) {
@@ -68,6 +79,7 @@ export function pickTodayPlan(now = new Date()) {
     }
     return { mode: 'FETCH', currentDay, steps };
   } else {
+    // 🟢 REFRESH faza
     const targetDay = ((currentDay - 30) % 29) + 1;
     return { mode: 'REFRESH', currentDay, targetDay };
   }
