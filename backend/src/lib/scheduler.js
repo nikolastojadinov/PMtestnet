@@ -1,5 +1,5 @@
 // ✅ Smart dual scheduler — fixed daily times (Europe/Belgrade)
-// 🕥 10:10 → playlists | 🕑 14:00 → tracks
+// 🕥 10:10 → playlists | 🕒 15:00 → tracks
 // ⚠️ No startup auto-run (deploy ne pokreće ništa!)
 
 import cron from 'node-cron';
@@ -8,7 +8,7 @@ import { runFetchTracks } from '../jobs/fetchTracksFromPlaylist.js';
 
 const TZ = process.env.TZ || 'Europe/Belgrade';
 const PLAYLIST_SCHEDULE = '10 10 * * *';  // 10:10 lokalno
-const TRACK_SCHEDULE    = '0 14 * * *';   // 14:00 lokalno ✅ promenjeno
+const TRACK_SCHEDULE    = '0 15 * * *';   // 15:00 lokalno ✅ promenjeno
 
 export function startDualJobs() {
   cron.schedule(PLAYLIST_SCHEDULE, async () => {
@@ -22,12 +22,12 @@ export function startDualJobs() {
 
   cron.schedule(TRACK_SCHEDULE, async () => {
     try {
-      console.log(`[scheduler] 14:00 (${TZ}) → Fetch Tracks`);
+      console.log(`[scheduler] 15:00 (${TZ}) → Fetch Tracks`);
       await runFetchTracks({ reason: 'daily-tracks' });
     } catch (e) {
       console.error('[scheduler] tracks error:', e);
     }
   }, { timezone: TZ });
 
-  console.log(`[scheduler] cron set: playlists@10:10 ${TZ}, tracks@14:00 ${TZ} (fixed only)`);
+  console.log(`[scheduler] cron set: playlists@10:10 ${TZ}, tracks@15:00 ${TZ} (fixed only)`);
 }
