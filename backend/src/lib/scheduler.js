@@ -1,6 +1,4 @@
-// ✅ FULL REWRITE v3.5 — Cron scheduler (Europe/Belgrade precision)
-// Pokreće preuzimanje plejlista i pesama u tačno definisano lokalno vreme
-// Vreme sada: playlists@10:10, tracks@16:30 (Europe/Belgrade)
+// ✅ FULL REWRITE v3.6 — Fixed import paths + cron 16:30 Europe/Belgrade
 
 import cron from 'node-cron';
 import { runFetchPlaylists } from './fetch/fetchPlaylists.js';
@@ -8,16 +6,16 @@ import { runFetchTracks } from './fetch/fetchTracks.js';
 
 const TIMEZONE = 'Europe/Belgrade';
 
-// 🕙 Svakog dana u 10:10 preuzima nove plejliste
+// 🕙 Preuzimanje plejlista u 10:10 lokalno
 const PLAYLISTS_CRON = '10 10 * * *';
 
-// 🎵 Svakog dana u 16:30 preuzima pesme (tracks)
+// 🎵 Preuzimanje pesama u 16:30 lokalno
 const TRACKS_CRON = '30 16 * * *';
 
 export function initScheduler() {
   console.log(`[scheduler] cron set: playlists@10:10 ${TIMEZONE}, tracks@16:30 ${TIMEZONE} (fixed only)`);
 
-  // 🟣 Job 1: Preuzimanje plejlista
+  // 🎧 Fetch playlists
   cron.schedule(PLAYLISTS_CRON, async () => {
     console.log(`[cron] Starting playlist fetch... (${new Date().toISOString()})`);
     try {
@@ -27,7 +25,7 @@ export function initScheduler() {
     }
   }, { timezone: TIMEZONE });
 
-  // 🟣 Job 2: Preuzimanje pesama
+  // 🎶 Fetch tracks
   cron.schedule(TRACKS_CRON, async () => {
     console.log(`[cron] Starting track fetch... (${new Date().toISOString()})`);
     try {
