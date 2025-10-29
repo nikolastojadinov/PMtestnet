@@ -164,17 +164,21 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     setCurrentIndex(idx);
     const track = list[idx];
     setVideoId(track?.external_id ?? null);
-    // Start playback on user gesture
-    setTimeout(() => postCommand('playVideo'), 0);
-    setIsPlaying(true);
+    // Open overlay and route commands to the full surface first
     setIsFullPlayerOpen(true);
     setActiveSurface('full');
+    // Start playback on user gesture against the full iframe (slight delay to ensure mount)
+    setTimeout(() => postCommand('playVideo'), 50);
+    setIsPlaying(true);
   }, [postCommand]);
 
   const closeFullPlayer = useCallback(() => {
-    setIsFullPlayerOpen(false);
+    // Switch routing to mini first, then close overlay
     setActiveSurface('mini');
-  }, []);
+    setIsFullPlayerOpen(false);
+    // Continue playback on mini surface (user gesture: clicked minimize)
+    setTimeout(() => postCommand('playVideo'), 50);
+  }, [postCommand]);
 
   const toggleFullscreen = useCallback(() => {
     setIsFullPlayerOpen((prev) => {

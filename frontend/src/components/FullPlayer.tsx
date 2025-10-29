@@ -7,14 +7,20 @@ import { useTranslation } from 'react-i18next';
 
 export default function FullPlayer() {
   const { t } = useTranslation();
-  const { isFullPlayerOpen, videoId, queue, currentIndex, togglePlay, isPlaying, playNext, playPrev, closeFullPlayer, registerPlayer } = usePlayer();
+  const { isFullPlayerOpen, videoId, queue, currentIndex, togglePlay, isPlaying, playNext, playPrev, closeFullPlayer, registerIframe } = usePlayer();
   const current = useMemo(() => queue[currentIndex] || null, [queue, currentIndex]);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   useEffect(() => {
-    if (!isFullPlayerOpen) return;
-    if (iframeRef.current) registerPlayer(iframeRef.current);
-  }, [isFullPlayerOpen, registerPlayer]);
+    if (isFullPlayerOpen && iframeRef.current) {
+      // Attach this iframe as the 'full' surface for command routing
+      registerIframe('full', iframeRef.current);
+    }
+    return () => {
+      // Detach on unmount/close
+      registerIframe('full', null);
+    };
+  }, [isFullPlayerOpen, registerIframe]);
 
   const originParam = typeof window !== 'undefined' ? (process.env.NEXT_PUBLIC_FRONTEND_URL || window.location.origin) : '';
   const vid = videoId || current?.external_id || '';
