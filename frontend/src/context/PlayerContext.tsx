@@ -1,4 +1,4 @@
-// ✅ Full rewrite v2.1 — unified player state + backward compatibility for openFull
+// ✅ Full rewrite v2.2 — openFull now accepts (list, startIndex)
 import React, { createContext, useContext, useState, useRef } from "react";
 
 interface Track {
@@ -11,27 +11,30 @@ interface Track {
 
 interface PlayerContextType {
   currentTrack: Track | null;
+  queue: Track[];
+  currentIndex: number;
   isPlaying: boolean;
-  isFullScreen: boolean;
+  isFullOpen: boolean;
   playTrack: (track: Track) => void;
   togglePlay: () => void;
-  openFullScreen: () => void;
-  closeFullScreen: () => void;
+  openFull: (list?: Track[], startIndex?: number) => void; // ✅ now supports args
+  closeFull: () => void;
   audioRef: React.RefObject<HTMLAudioElement>;
-  openFull?: () => void; // ✅ added alias for legacy pages
 }
 
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
 
 export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [queue, setQueue] = useState<Track[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isFullScreen, setIsFullScreen] = useState(false);
+  const [isFullOpen, setIsFullOpen] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   const playTrack = (track: Track) => {
     setCurrentTrack(track);
-    setIsFullScreen(true);
+    setIsFullOpen(true);
     setIsPlaying(true);
     if (audioRef.current) {
       audioRef.current.src = track.audio_url || "";
@@ -50,22 +53,37 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
-  const openFullScreen = () => setIsFullScreen(true);
-  const closeFullScreen = () => setIsFullScreen(false);
+  // ✅ Fixed: openFull accepts optional list and index
+  const openFull = (list?: Track[], startIndex?: number) => {
+    if (list && list.length > 0) {
+      setQueue(list);
+      const idx = typeof startIndex === "number" ? startIndex : 0;
+      setCurrentIndex(idx);
+      setCurrentTrack(list[idx]);
+    }
+    setIsFullOpen(true);
+    setIsPlaying(true);
+    if (audioRef.current && list && list[startIndex ?? 0]) {
+      audioRef.current.src = list[startIndex ?? 0].audio_url || "";
+      audioRef.current.play().catch(console.error);
+    }
+  };
+
+  const closeFull = () => setIsFullOpen(false);
 
   return (
     <PlayerContext.Provider
       value={{
         currentTrack,
+        queue,
+        currentIndex,
         isPlaying,
-        isFullScreen,
+        isFullOpen,
         playTrack,
         togglePlay,
-        openFullScreen,
-        closeFullScreen,
+        openFull,
+        closeFull,
         audioRef,
-        // ✅ Added alias to prevent Netlify build error:
-        openFull: openFullScreen,
       }}
     >
       {children}
