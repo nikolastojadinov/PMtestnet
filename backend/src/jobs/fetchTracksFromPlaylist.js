@@ -1,15 +1,14 @@
-// ✅ FULL REWRITE v4.5 — Unlimited YouTube track fetcher (safe + clean)
-// - Removes per-playlist page limit (fetches all available tracks)
-// - Keeps API key rotation, delay, and cleanup
-// - Updates item_count correctly in playlists table
+// ✅ FULL REWRITE v5.0 — Unlimited YouTube track fetcher (no limits)
+// - Fetches *all* available tracks from every playlist
+// - No daily cap, no per-playlist cap
+// - Safe key rotation and retry logic
+// - Updates item_count accurately in Supabase
 
 import axios from 'axios';
 import { getSupabase } from '../lib/supabase.js';
 import { nextKeyFactory, sleep } from '../lib/utils.js';
 
-// 🔓 No artificial limits (only real YouTube quota applies)
-const MAX_API_CALLS_PER_DAY = 100000;      // optional safety cap
-const MAX_PLAYLISTS_PER_RUN = 4000;        // can stay as is
+// 🚫 Uklonjeni svi limiti i kvote
 const PAGE_SIZE = 50;
 
 const API_KEYS = (process.env.YOUTUBE_API_KEYS || '')
@@ -19,16 +18,14 @@ const API_KEYS = (process.env.YOUTUBE_API_KEYS || '')
 if (!API_KEYS.length) throw new Error('YOUTUBE_API_KEYS missing.');
 
 const nextKey = nextKeyFactory(API_KEYS);
-let apiCallsToday = 0;
 
 // ───────────────────────────────────────────────
-// 🎵 Fetchuje sve pesme iz jedne YouTube playliste (bez limita)
+// 🎵 Fetchuje sve pesme iz jedne YouTube playliste — bez ikakvog ograničenja
 async function fetchTracksForPlaylist(playlistId) {
   const all = [];
   let pageToken = null;
 
   while (true) {
-    if (apiCallsToday >= MAX_API_CALLS_PER_DAY) break;
     const key = nextKey();
     const params = {
       key,
@@ -40,7 +37,6 @@ async function fetchTracksForPlaylist(playlistId) {
 
     try {
       const { data } = await axios.get('https://www.googleapis.com/youtube/v3/playlistItems', { params });
-      apiCallsToday++;
 
       if (!data.items?.length) break;
 
@@ -82,11 +78,11 @@ async function fetchTracksForPlaylist(playlistId) {
 
       all.push(...tracks);
 
-      // ↪️ Pređi na sledeću stranicu ako postoji
+      // ↪️ Idi na sledeću stranicu dok YouTube vraća nextPageToken
       pageToken = data.nextPageToken || null;
       if (!pageToken) break;
 
-      await sleep(120 + Math.random() * 80);
+      await sleep(100 + Math.random() * 60);
     } catch (e) {
       const msg = e.response?.data?.error?.message || e.message;
       if (msg.includes('playlistNotFound') || msg.includes('Invalid id')) {
@@ -110,7 +106,7 @@ async function fetchTracksForPlaylist(playlistId) {
 }
 
 // ───────────────────────────────────────────────
-// 🚀 Glavna funkcija — preuzima pesme za sve playliste dana
+// 🚀 Glavna funkcija — preuzima pesme za sve playliste dana (bez limita)
 export async function runFetchTracks({ reason = 'daily-tracks' } = {}) {
   const sb = getSupabase();
   console.log(`[tracks] start (${reason})`);
@@ -121,15 +117,12 @@ export async function runFetchTracks({ reason = 'daily-tracks' } = {}) {
     .select('id, external_id, title')
     .gte('fetched_on', `${today}T00:00:00Z`)
     .lt('fetched_on', `${today}T23:59:59Z`)
-    .eq('is_public', true)
-    .limit(MAX_PLAYLISTS_PER_RUN);
+    .eq('is_public', true);
 
   if (error) throw error;
   console.log(`[tracks] ${playlists?.length || 0} playlists to process`);
 
   for (const pl of playlists || []) {
-    if (apiCallsToday >= MAX_API_CALLS_PER_DAY) break;
-
     try {
       const tracks = await fetchTracksForPlaylist(pl.external_id);
       if (!tracks.length) {
@@ -166,6 +159,5 @@ export async function runFetchTracks({ reason = 'daily-tracks' } = {}) {
     }
   }
 
-  console.log(`[quota] ${apiCallsToday}/${MAX_API_CALLS_PER_DAY} used`);
-  console.log('[tracks] done ✅');
+  console.log('[tracks] done ✅ (no limits applied)');
 }
