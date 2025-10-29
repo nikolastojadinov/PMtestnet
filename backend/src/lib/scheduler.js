@@ -1,4 +1,4 @@
-// ✅ FULL REWRITE v3.8 — Correct import paths (src/jobs) + start at 16:35 Europe/Belgrade
+// ✅ FULL REWRITE v3.9 — fixed job filenames + 16:35 cron Europe/Belgrade
 
 import cron from 'node-cron';
 import { runFetchPlaylists } from './jobs/fetchPlaylists.js';
@@ -6,14 +6,14 @@ import { runFetchTracks } from './jobs/fetchTracksFromPlaylist.js';
 
 const TIMEZONE = 'Europe/Belgrade';
 
-// 🕙 Preuzimanje plejlista svakog dana u 10:10
+// 🕙 Svakog dana u 10:10 preuzima plejliste
 const PLAYLISTS_CRON = '10 10 * * *';
 
-// 🎵 Preuzimanje pesama svakog dana u 16:35
+// 🎵 Svakog dana u 16:35 preuzima pesme iz plejlista
 const TRACKS_CRON = '35 16 * * *';
 
 export function initScheduler() {
-  console.log(`[scheduler] cron set: playlists@10:10 ${TIMEZONE}, tracks@16:35 ${TIMEZONE} (fixed only)`);
+  console.log(`[scheduler] cron set: playlists@10:10 ${TIMEZONE}, tracks@16:35 ${TIMEZONE} (jobs dir)`);
 
   // 🎧 Preuzimanje plejlista
   cron.schedule(PLAYLISTS_CRON, async () => {
