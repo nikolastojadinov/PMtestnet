@@ -52,4 +52,11 @@
     "playerTitle": "YouTube player",
     "unknownArtist": "Unknown Artist"
   }
+  ,
+  "theme": {
+    "title": "Theme",
+    "system": "System Default",
+    "dark": "Dark Mode",
+    "light": "Light Mode"
+  }
 }

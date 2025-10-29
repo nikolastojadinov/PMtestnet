@@ -48,4 +48,11 @@
     "playerTitle": "YouTube lejátszó",
     "unknownArtist": "Ismeretlen előadó"
   }
+  ,
+  "theme": {
+    "title": "Téma",
+    "system": "Rendszer alapértelmezett",
+    "dark": "Sötét mód",
+    "light": "Világos mód"
+  }
 }

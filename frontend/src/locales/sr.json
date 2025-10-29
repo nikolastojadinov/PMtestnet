@@ -48,4 +48,11 @@
     "playerTitle": "YouTube plejer",
     "unknownArtist": "Nepoznat izvođač"
   }
+  ,
+  "theme": {
+    "title": "Tema",
+    "system": "Sistemski podrazumevano",
+    "dark": "Tamni režim",
+    "light": "Svetli režim"
+  }
 }

@@ -10,7 +10,7 @@ import Footer from '../components/Footer';
 
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-[#090010] text-gray-200">
+    <div className="min-h-screen transition-colors duration-300 bg-[#fafafa] text-[#111111] dark:bg-[#090010] dark:text-gray-200">
       <Header />
       <div className="pt-16 pb-20 max-w-6xl mx-auto px-4">
         {children}
