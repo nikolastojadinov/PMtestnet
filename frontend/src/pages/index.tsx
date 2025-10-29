@@ -172,9 +172,10 @@ function PlaylistTile({ p, large = false }: { p: Playlist; large?: boolean }) {
   const [src, setSrc] = React.useState<string | undefined>(p.cover_url || undefined);
 
   return (
+    <motion.div whileHover={{ y: -3 }} whileTap={{ scale: 0.98 }}>
     <Link
       href={`/playlist/${p.id}`}
-      className={`group relative rounded-lg overflow-hidden bg-[#120018] border border-purple-800/40 hover:border-purple-600/60 transition ${
+      className={`group relative rounded-lg overflow-hidden transition-colors bg-white border border-purple-200 hover:border-purple-400 dark:bg-[#120018] dark:border-purple-800/40 dark:hover:border-purple-600/60 transition ${
         large ? 'w-full' : 'min-w-[160px] w-[180px]'
       }`}
     >
@@ -191,13 +192,14 @@ function PlaylistTile({ p, large = false }: { p: Playlist; large?: boolean }) {
           fallback="/images/fallback-cover.jpg"
         />
       </div>
-      <div className="absolute inset-0 hidden group-hover:flex items-center justify-center bg-black/30">
+      <div className="absolute inset-0 hidden group-hover:flex items-center justify-center bg-black/10 dark:bg-black/30">
         <button className="px-3 py-1.5 rounded bg-purple-700 text-white text-xs shadow-md">{t('player.play')}</button>
       </div>
       <div className="p-3">
-        <div className="text-sm font-medium truncate text-gray-100">{p.title}</div>
-        <div className="text-xs text-gray-400 truncate">{p.region || p.category || t('search.playlist')}</div>
+        <div className="text-sm font-medium truncate text-[#111111] dark:text-gray-100">{p.title}</div>
+        <div className="text-xs text-gray-600 dark:text-gray-400 truncate">{p.region || p.category || t('search.playlist')}</div>
       </div>
     </Link>
+    </motion.div>
   );
 }

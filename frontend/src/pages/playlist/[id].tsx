@@ -136,13 +136,13 @@ export default function PlaylistPage() {
   return (
     <div className="space-y-6">
       {/* Cover */}
-      <div className="w-full overflow-hidden rounded-lg border border-purple-800/40 bg-[#120018]">
+      <div className="w-full overflow-hidden rounded-lg transition-colors border border-purple-200 bg-white dark:border-purple-800/40 dark:bg-[#120018]">
         {cover ? (
           <div className="relative w-full max-h-[280px]">
             <Image src={cover} alt={title} width={1280} height={720} className="w-full h-auto object-cover" />
           </div>
         ) : (
-          <div className="h-40 bg-purple-900/30" />
+          <div className="h-40 bg-purple-100 dark:bg-purple-900/30" />
         )}
       </div>
 
@@ -158,11 +158,11 @@ export default function PlaylistPage() {
       </div>
 
       {/* Tracks */}
-      <div className="divide-y divide-purple-800/40 rounded-md border border-purple-800/40 bg-[#0b0010]">
+      <div className="divide-y transition-colors divide-purple-200 dark:divide-purple-800/40 rounded-md border border-purple-200 dark:border-purple-800/40 bg-white dark:bg-[#0b0010]">
         {loading && Array.from({ length: 6 }).map((_, i) => <TrackRowSkeleton key={i} />)}
         {!loading && rows.map((r) => (
           <motion.div key={String(r.track_id)} className="flex items-center gap-3 px-3 py-3" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <div className="h-12 w-12 rounded bg-[#1a0024] overflow-hidden relative">
+            <div className="h-12 w-12 rounded bg-purple-100 dark:bg-[#1a0024] overflow-hidden relative">
               <div className="relative w-full h-full">
                 <FallbackImage
                   src={(r.tracks?.cover_url as string) || '/images/fallback-cover.jpg'}
@@ -175,13 +175,13 @@ export default function PlaylistPage() {
               </div>
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-sm text-gray-100 truncate">{r.tracks?.title || t('player.play')}</div>
-              <div className="text-xs text-gray-400 truncate">{r.tracks?.artist || t('player.unknownArtist')}</div>
+              <div className="text-sm text-[#111111] dark:text-gray-100 truncate">{r.tracks?.title || t('player.play')}</div>
+              <div className="text-xs text-gray-600 dark:text-gray-400 truncate">{r.tracks?.artist || t('player.unknownArtist')}</div>
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => toggleLike(r.track_id)}
-                className={`p-2 rounded hover:bg-purple-900/30 ${likes[String(r.track_id)] ? 'text-pink-400' : 'text-gray-300'}`}
+                className={`p-2 rounded transition-colors hover:bg-purple-100 dark:hover:bg-purple-900/30 ${likes[String(r.track_id)] ? 'text-pink-500 dark:text-pink-400' : 'text-[#111111] dark:text-gray-300'}`}
                 aria-label={t('liked')}
               >
                 <Heart size={18} />
@@ -201,14 +201,14 @@ export default function PlaylistPage() {
                     pushRecent({ id, title, cover_url: cover, region: undefined, category: undefined });
                   }
                 }}
-                className="p-2 rounded hover:bg-purple-900/30 text-gray-300"
+                className="p-2 rounded transition-colors hover:bg-purple-100 dark:hover:bg-purple-900/30 text-[#111111] dark:text-gray-300"
                 aria-label={t('player.play')}
               >
                 <Play size={18} />
               </button>
               <button
                 onClick={() => setModal({ open: true, trackId: r.track_id })}
-                className="p-2 rounded hover:bg-purple-900/30 text-gray-300"
+                className="p-2 rounded transition-colors hover:bg-purple-100 dark:hover:bg-purple-900/30 text-[#111111] dark:text-gray-300"
                 aria-label={t('playlists')}
               >
                 <Plus size={18} />

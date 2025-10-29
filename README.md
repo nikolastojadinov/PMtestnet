@@ -23,6 +23,18 @@ A modern, multilingual music web app focused on curated YouTube music playlists 
 
 ---
 
+## What's New
+
+- v2.9 – Theme polish and final pre-premium UI
+	- Theme-aware Header, Footer, Player, and tiles with smooth transitions
+	- Animated dropdown in Header; polished mini-player interactions
+	- Premium popup remains disabled pending v3.0 reactivation
+- v2.8 – Theme Settings
+	- Dark / Light / System modes with localStorage persistence and system sync
+	- Tailwind dark mode via class toggle on <html>
+- v2.7 – Playlist UX Polish
+	- Horizontal carousels and local “Recently Played” with merge from public
+
 ## Tech Stack
 
 - **Frontend**: Next.js/React, Tailwind, shadcn/ui, lucide-react.

@@ -5,6 +5,7 @@ import { useUser } from '@/context/UserContext';
 import { supportedLngs } from '@/i18n/config';
 import { useTheme } from '@/context/ThemeContext';
 import { Monitor, Moon, Sun } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function Header() {
   const [open, setOpen] = useState(false);
@@ -20,7 +21,7 @@ export default function Header() {
   };
 
   return (
-    <header className="fixed top-0 inset-x-0 z-50 w-full transition-colors duration-300 bg-[#fafafa] text-[#111111] border-b border-purple-200 dark:bg-[#0b0010] dark:text-gray-200 dark:border-[#3b0066]/60 shadow-[0_1px_0_#e9e9e9_inset] dark:shadow-[0_1px_0_#3b0066_inset]">
+  <header className="fixed top-0 inset-x-0 z-50 w-full transition-colors duration-300 bg-white/80 backdrop-blur-md text-[#111111] border-b border-purple-200 dark:bg-[#0b0010]/70 dark:text-gray-200 dark:border-[#3b0066]/60 shadow-[0_1px_0_#e9e9e9_inset] dark:shadow-[0_1px_0_#3b0066_inset]">
       <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="h-8 w-8 rounded-md bg-gradient-to-br from-purple-600 via-fuchsia-500 to-amber-300 shadow-md" aria-hidden />
@@ -42,9 +43,14 @@ export default function Header() {
             <div className="h-3 w-3 rounded-full bg-purple-300" />
           </button>
 
+          <AnimatePresence>
           {open && (
-            <div
+            <motion.div
               role="menu"
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18 }}
               className="absolute right-0 mt-2 w-72 rounded-md transition-colors duration-300 bg-white text-[#111111] border border-purple-200 shadow-xl p-2 text-sm dark:bg-[#0b0010] dark:text-gray-200 dark:border-purple-800/50"
             >
               <div className="px-3 py-2 rounded items-center flex justify-between">
@@ -75,8 +81,9 @@ export default function Header() {
               <div className="my-2 h-px bg-purple-800/40" />
               <Link href="/privacy.html" className="block px-3 py-2 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded" role="menuitem">{t('header.privacy')}</Link>
               <Link href="/terms.html" className="block px-3 py-2 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded" role="menuitem">{t('header.terms')}</Link>
-            </div>
+            </motion.div>
           )}
+          </AnimatePresence>
         </div>
       </div>
     </header>
@@ -87,7 +94,7 @@ function ThemeSelector() {
   const { t } = useTranslation();
   const { theme, setTheme } = useTheme();
   return (
-    <div className="px-3 py-2">
+    <div className="px-3 py-2" aria-label={t('theme.title')}>
       <div className="block text-xs uppercase tracking-wider text-gray-400 mb-2">{t('theme.title')}</div>
       <div className="grid grid-cols-3 gap-2">
         <button
