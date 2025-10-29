@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "lhci": "lhci autorun --upload.target=temporary-public-storage"
   },
-  "lhci": "lhci autorun --upload.target=temporary-public-storage",
   "dependencies": {
     "@supabase/supabase-js": "^2.45.3",
     "framer-motion": "^11.3.17",

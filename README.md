@@ -35,6 +35,16 @@ A modern, multilingual music web app focused on curated YouTube music playlists 
 - v2.7 – Playlist UX Polish
 	- Horizontal carousels and local “Recently Played” with merge from public
 
+### v3.0 – Production Release Candidate (RC)
+
+- Dark/Light mode with system sync and persistent preference
+- Local “Recently Played” playlists (merged with newest public lists)
+- Guest UUID persistence for likes and language
+- Static Privacy Policy and Terms pages (linked in header menu)
+- YouTube IFrame compliance (visible, ≥200px height, enablejsapi=1)
+- Supabase RLS compatibility (public read; guest UUID writes where applicable)
+- Global meta tags + PWA manifest for better SEO and installability
+
 ## Tech Stack
 
 - **Frontend**: Next.js/React, Tailwind, shadcn/ui, lucide-react.
