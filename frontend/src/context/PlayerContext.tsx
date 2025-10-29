@@ -21,6 +21,7 @@ export type PlayerState = {
   isPlaying: boolean;
   queue: Track[];
   currentIndex: number;
+  isFullPlayerOpen: boolean;
 
   // actions
   setVideo: (id: string | null) => void;
@@ -31,6 +32,8 @@ export type PlayerState = {
   playTrack: (track: Track, index: number) => void;
   playNext: () => void;
   playPrev: () => void;
+  openFullPlayer: (tracks: Track[], index: number) => void;
+  closeFullPlayer: () => void;
 
   // player wiring
   registerPlayer: (el: HTMLIFrameElement | null) => void;
@@ -43,6 +46,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [queue, setQueueState] = useState<Track[]>([]);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
+  const [isFullPlayerOpen, setIsFullPlayerOpen] = useState<boolean>(false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   const postCommand = useCallback((func: string, args: any[] = []) => {
@@ -120,12 +124,30 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     setTimeout(() => postCommand('mute'), 0);
   }, [postCommand]);
 
+  const openFullPlayer = useCallback((tracks: Track[], index: number) => {
+    const list = tracks || [];
+    setQueueState(list);
+    const idx = Math.max(0, Math.min(index || 0, Math.max(0, list.length - 1)));
+    setCurrentIndex(idx);
+    const track = list[idx];
+    setVideoId(track?.external_id ?? null);
+    // Start playback on user gesture
+    setTimeout(() => postCommand('playVideo'), 0);
+    setIsPlaying(true);
+    setIsFullPlayerOpen(true);
+  }, [postCommand]);
+
+  const closeFullPlayer = useCallback(() => {
+    setIsFullPlayerOpen(false);
+  }, []);
+
   const value = useMemo(
     () => ({
       videoId,
       isPlaying,
       queue,
       currentIndex,
+      isFullPlayerOpen,
       setVideo,
       play,
       pause,
@@ -134,9 +156,11 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       playTrack,
       playNext,
       playPrev,
+      openFullPlayer,
+      closeFullPlayer,
       registerPlayer,
     }),
-    [videoId, isPlaying, queue, currentIndex, setVideo, play, pause, togglePlay, setQueue, playTrack, playNext, playPrev, registerPlayer]
+    [videoId, isPlaying, queue, currentIndex, isFullPlayerOpen, setVideo, play, pause, togglePlay, setQueue, playTrack, playNext, playPrev, openFullPlayer, closeFullPlayer, registerPlayer]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

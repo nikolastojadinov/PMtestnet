@@ -24,7 +24,7 @@ interface TrackRow {
 export default function PlaylistPage() {
   const router = useRouter();
   const { id } = router.query as { id?: string };
-  const { setQueue, playTrack } = usePlayer();
+  const { setQueue, playTrack, openFullPlayer } = usePlayer();
   const { t } = useTranslation();
 
   const [title, setTitle] = useState<string>(t('search.playlist'));
@@ -98,8 +98,8 @@ export default function PlaylistPage() {
   const playAll = useCallback(() => {
     if (!trackList.length) return;
     const proceed = () => {
-      setQueue(trackList as any);
-      playTrack(trackList[0] as any, 0);
+      // Open fullscreen player with the entire list from the start
+      openFullPlayer(trackList as any, 0);
       // Push to local Recently Played
       if (id) {
         pushRecent({ id, title, cover_url: cover, region: undefined, category: undefined });
@@ -108,7 +108,7 @@ export default function PlaylistPage() {
     // Premium gating disabled for testing
     // TODO(v2.8): Re-enable Premium gating after Theme Settings (Prompt #19)
     proceed();
-  }, [trackList, setQueue, playTrack, id, title, cover]);
+  }, [trackList, openFullPlayer, id, title, cover]);
 
   async function toggleLike(trackId: string | number) {
     const key = String(trackId);
@@ -188,14 +188,11 @@ export default function PlaylistPage() {
               </button>
               <button
                 onClick={() => {
-                  // Premium gating disabled for testing
-                  // TODO(v2.8): Re-enable Premium gating after Theme Settings (Prompt #19)
+                  // Open fullscreen on specific track index within the full list
                   const idx = rows.findIndex((x) => x.track_id === r.track_id);
                   const list = trackList as any[];
                   const mappedIndex = Math.max(0, idx);
-                  setQueue(list as any);
-                  const t = list[mappedIndex];
-                  if (t) playTrack(t as any, mappedIndex);
+                  openFullPlayer(list as any, mappedIndex);
                   // Push to local Recently Played
                   if (id) {
                     pushRecent({ id, title, cover_url: cover, region: undefined, category: undefined });

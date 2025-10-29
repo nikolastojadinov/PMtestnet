@@ -26,6 +26,7 @@ export default function Player() {
     playNext,
     playPrev,
     registerPlayer,
+    isFullPlayerOpen,
   } = usePlayer();
 
   const current = useMemo(() => queue[currentIndex] || null, [queue, currentIndex]);
@@ -138,15 +139,19 @@ export default function Player() {
         {/* Visible player */}
         <div className="w-full">
           {vid ? (
-            <iframe
-              ref={iframeRef}
-              className="w-full h-[200px]"
-              src={`https://www.youtube.com/embed/${vid}?enablejsapi=1&rel=0&modestbranding=1&playsinline=1`}
-              title={t('player.playerTitle')}
-              frameBorder="0"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowFullScreen
-            />
+            isFullPlayerOpen ? (
+              <div className="w-full h-[200px] bg-transparent" />
+            ) : (
+              <iframe
+                ref={iframeRef}
+                className="w-full h-[200px]"
+                src={`https://www.youtube.com/embed/${vid}?enablejsapi=1&rel=0&modestbranding=1&playsinline=1&origin=${encodeURIComponent(typeof window !== 'undefined' ? (process.env.NEXT_PUBLIC_FRONTEND_URL || window.location.origin) : '')}`}
+                title={t('player.playerTitle')}
+                frameBorder="0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+              />
+            )
           ) : (
             <div className="w-full h-[200px] transition-colors bg-purple-50 dark:bg-[#120018]" />
           )}
