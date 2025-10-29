@@ -1,25 +1,29 @@
-// ✅ Full rewrite v2.2 — openFull now accepts (list, startIndex)
-import React, { createContext, useContext, useState, useRef } from "react";
+// ✅ Full rewrite — fixes openFull logic (auto open + play)
+import React, { createContext, useContext, useState, useEffect } from "react";
 
-interface Track {
+export interface Track {
   id: string;
   title: string;
   artist: string;
-  cover_url?: string;
-  audio_url?: string;
+  cover_url: string;
+  external_id?: string; // YouTube video ID
 }
 
-interface PlayerContextType {
-  currentTrack: Track | null;
+export interface PlayerContextType {
   queue: Track[];
   currentIndex: number;
+  isFull: boolean;
   isPlaying: boolean;
-  isFullOpen: boolean;
-  playTrack: (track: Track) => void;
-  togglePlay: () => void;
-  openFull: (list?: Track[], startIndex?: number) => void; // ✅ now supports args
+  currentTrack: Track | null;
+  openFull: (tracks: Track[], startIndex?: number) => void;
   closeFull: () => void;
-  audioRef: React.RefObject<HTMLAudioElement>;
+  play: () => void;
+  pause: () => void;
+  togglePlay: () => void;
+  next: () => void;
+  prev: () => void;
+  setQueue: (tracks: Track[]) => void;
+  setCurrentIndex: (index: number) => void;
 }
 
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
@@ -27,73 +31,67 @@ const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
 export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [queue, setQueue] = useState<Track[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
+  const [isFull, setIsFull] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isFullOpen, setIsFullOpen] = useState(false);
-  const audioRef = useRef<HTMLAudioElement>(null);
 
-  const playTrack = (track: Track) => {
-    setCurrentTrack(track);
-    setIsFullOpen(true);
-    setIsPlaying(true);
-    if (audioRef.current) {
-      audioRef.current.src = track.audio_url || "";
-      audioRef.current.play().catch(console.error);
+  const currentTrack = queue[currentIndex] || null;
+
+  // ✅ Automatically play when track changes
+  useEffect(() => {
+    if (currentTrack && isFull) setIsPlaying(true);
+  }, [currentTrack, isFull]);
+
+  const openFull = (tracks: Track[], startIndex = 0) => {
+    if (tracks?.length) {
+      setQueue(tracks);
+      setCurrentIndex(startIndex);
+      setIsFull(true);
+      setIsPlaying(true); // ✅ start playing automatically
     }
   };
 
-  const togglePlay = () => {
-    if (!audioRef.current) return;
-    if (isPlaying) {
-      audioRef.current.pause();
-      setIsPlaying(false);
-    } else {
-      audioRef.current.play().catch(console.error);
-      setIsPlaying(true);
-    }
+  const closeFull = () => {
+    setIsFull(false);
   };
 
-  // ✅ Fixed: openFull accepts optional list and index
-  const openFull = (list?: Track[], startIndex?: number) => {
-    if (list && list.length > 0) {
-      setQueue(list);
-      const idx = typeof startIndex === "number" ? startIndex : 0;
-      setCurrentIndex(idx);
-      setCurrentTrack(list[idx]);
-    }
-    setIsFullOpen(true);
-    setIsPlaying(true);
-    if (audioRef.current && list && list[startIndex ?? 0]) {
-      audioRef.current.src = list[startIndex ?? 0].audio_url || "";
-      audioRef.current.play().catch(console.error);
-    }
+  const play = () => setIsPlaying(true);
+  const pause = () => setIsPlaying(false);
+  const togglePlay = () => setIsPlaying((prev) => !prev);
+
+  const next = () => {
+    if (currentIndex < queue.length - 1) setCurrentIndex((i) => i + 1);
   };
 
-  const closeFull = () => setIsFullOpen(false);
+  const prev = () => {
+    if (currentIndex > 0) setCurrentIndex((i) => i - 1);
+  };
 
   return (
     <PlayerContext.Provider
       value={{
-        currentTrack,
         queue,
         currentIndex,
+        isFull,
         isPlaying,
-        isFullOpen,
-        playTrack,
-        togglePlay,
+        currentTrack,
         openFull,
         closeFull,
-        audioRef,
+        play,
+        pause,
+        togglePlay,
+        next,
+        prev,
+        setQueue,
+        setCurrentIndex,
       }}
     >
       {children}
-      <audio ref={audioRef} hidden />
     </PlayerContext.Provider>
   );
 };
 
 export const usePlayer = () => {
-  const context = useContext(PlayerContext);
-  if (!context) throw new Error("usePlayer must be used within PlayerProvider");
-  return context;
+  const ctx = useContext(PlayerContext);
+  if (!ctx) throw new Error("usePlayer must be used within a PlayerProvider");
+  return ctx;
 };
