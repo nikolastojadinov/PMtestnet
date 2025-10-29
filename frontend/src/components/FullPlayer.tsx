@@ -4,7 +4,7 @@
  * Original project: https://github.com/onamkrverma/okv-music (MPL-2.0)
  * Modifications © 2025 Purple Music Team.
  */
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { usePlayer } from '@/context/PlayerContext';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronDown, SkipBack, SkipForward, Pause, Play as PlayIcon, ExternalLink, Heart } from 'lucide-react';
@@ -27,41 +27,70 @@ export default function FullPlayer() {
   } = usePlayer() as any;
 
   const current = useMemo(() => queue?.[index] || null, [queue, index]);
+  const playerRef = useRef<any | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const [duration, setDuration] = useState(0);
   const originParam = typeof window !== 'undefined' ? (process.env.NEXT_PUBLIC_FRONTEND_URL || window.location.origin) : '';
+
+  useEffect(() => {
+    let id: any;
+    if (playerRef.current) {
+      const tick = () => {
+        try {
+          const t = playerRef.current?.getCurrentTime?.() || 0;
+          const d = playerRef.current?.getDuration?.() || 0;
+          setElapsed(t);
+          setDuration(d);
+        } catch {}
+      };
+      id = setInterval(tick, 500);
+    }
+    return () => { if (id) clearInterval(id); };
+  }, [isFullOpen]);
+
+  const fmt = (s: number) => {
+    if (!isFinite(s) || s <= 0) return '0:00';
+    const m = Math.floor(s / 60);
+    const ss = Math.floor(s % 60);
+    return `${m}:${ss.toString().padStart(2, '0')}`;
+  };
 
   return (
     <AnimatePresence>
       {isFullOpen && (
-        <motion.div className="fixed inset-0 z-[70]"
-          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-          {/* Backdrop */}
-          <div className="absolute inset-0 bg-gradient-to-b from-[#120018ee] to-[#000000cc] backdrop-blur-md" />
+        <motion.div className="fixed inset-0 z-[9999]"
+          initial={{ opacity: 0, y: 10, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 10, scale: 0.98 }}
+          transition={{ duration: 0.35, ease: 'easeInOut' }}>
+          {/* Backdrop gradient and radial glow */}
+          <div className="absolute inset-0 bg-gradient-to-b from-[#0e001a] to-[#230037]" />
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(147,51,234,0.35)_0%,transparent_60%)]" />
 
           {/* Panel */}
-          <motion.div className="absolute inset-0 flex flex-col items-center px-4 py-4"
-            initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }} transition={{ duration: 0.2 }}>
-            <div className="w-full max-w-[880px]">
+          <motion.div className="absolute inset-0 flex flex-col items-center justify-center px-4 py-6">
+            <div className="w-full max-w-[800px]">
               {/* Header */}
               <div className="flex items-center justify-between mb-4 text-gray-100">
-                <button onClick={closeFull} aria-label={t('player.minimize')} className="p-2 rounded hover:bg-purple-900/30">
+                <button onClick={closeFull} aria-label={t('player.minimize')} className="p-2 rounded-full backdrop-blur bg-transparent hover:bg-purple-700/30 border border-white/20">
                   <ChevronDown size={22} />
                 </button>
                 <div className="min-w-0 text-right">
-                  <div className="text-lg font-semibold truncate">{current?.title || t('player.nothing')}</div>
-                  <div className="text-sm text-gray-300 truncate">{current?.artist || ''}</div>
+                  <div className="text-2xl md:text-3xl font-semibold truncate">{current?.title || t('player.nothing')}</div>
+                  <div className="text-sm md:text-base text-gray-300 truncate">{current?.artist || ''}</div>
                 </div>
               </div>
 
               {/* Video */}
-              <div className="w-full aspect-video min-h-[320px] md:min-h-[420px] rounded-xl overflow-hidden border border-purple-700/40 bg-black shadow-[0_0_60px_-20px_rgba(168,85,247,0.6)]">
+              <div className="w-full aspect-video min-h-[320px] md:min-h-[480px] rounded-xl overflow-hidden border border-gray-700/50 bg-black shadow-[0_0_80px_-20px_rgba(88,28,135,0.6)]">
                 {videoId ? (
                   <YouTube
                     videoId={videoId}
                     className="w-full h-full"
                     iframeClassName="w-full h-full"
-                    onReady={(e) => register('full', e.target)}
+                    onReady={(e) => { register('full', e.target); playerRef.current = e.target; setDuration(e.target.getDuration?.() || 0); }}
                     onStateChange={(e) => {
-                      // keep minimal handling; context drives state
+                      // optional: could sync isPlaying if needed
                     }}
                     opts={{
                       playerVars: {
@@ -78,28 +107,41 @@ export default function FullPlayer() {
                 )}
               </div>
 
-              {/* Controls */}
-              <div className="mt-4 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <button onClick={prev} className="px-3 py-2 rounded bg-purple-900/40 text-gray-100 hover:bg-purple-800/50">
-                    <SkipBack size={18} />
-                  </button>
-                  <button onClick={togglePlay} className="px-3 py-2 rounded bg-purple-900/40 text-gray-100 hover:bg-purple-800/50">
-                    {isPlaying ? <Pause size={18} /> : <PlayIcon size={18} />}
-                  </button>
-                  <button onClick={next} className="px-3 py-2 rounded bg-purple-900/40 text-gray-100 hover:bg-purple-800/50">
-                    <SkipForward size={18} />
-                  </button>
+              {/* Progress bar */}
+              <div className="mt-5">
+                <div className="h-1.5 w-full bg-gray-700/60 rounded-full overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-fuchsia-400 to-purple-400" style={{ width: duration ? `${Math.min(100, (elapsed / duration) * 100)}%` : '0%' }} />
                 </div>
-                {videoId && (
-                  <a className="inline-flex items-center gap-2 px-3 py-2 rounded bg-white text-[#111111] hover:bg-gray-100"
+                <div className="mt-1.5 flex items-center justify-between text-xs text-gray-300">
+                  <span>{fmt(elapsed)}</span>
+                  <span>{fmt(duration)}</span>
+                </div>
+              </div>
+
+              {/* Controls */}
+              <div className="mt-4 flex items-center justify-center gap-4 text-white">
+                <button onClick={prev} className="p-3 rounded-full border border-gray-600/40 bg-[#140022]/60 hover:bg-purple-600/40 hover:border-purple-400/50 transition-colors">
+                  <SkipBack size={18} />
+                </button>
+                <button onClick={togglePlay} className="p-3 rounded-full border border-gray-600/40 bg-[#140022]/60 hover:bg-purple-600/40 hover:border-purple-400/50 transition-colors">
+                  {isPlaying ? <Pause size={18} /> : <PlayIcon size={18} />}
+                </button>
+                <button onClick={next} className="p-3 rounded-full border border-gray-600/40 bg-[#140022]/60 hover:bg-purple-600/40 hover:border-purple-400/50 transition-colors">
+                  <SkipForward size={18} />
+                </button>
+              </div>
+
+              {/* Watch on YouTube */}
+              {videoId && (
+                <div className="mt-3 flex justify-center">
+                  <a className="inline-flex items-center gap-2 px-3 py-1.5 rounded border border-white/70 text-white hover:underline"
                     href={`https://www.youtube.com/watch?v=${videoId}`}
                     target="_blank" rel="noopener noreferrer">
                     <ExternalLink size={16} />
-                    <span>{t('player.watchOnYouTube')}</span>
+                    <span className="text-sm">{t('player.watchOnYouTube')}</span>
                   </a>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </motion.div>
         </motion.div>

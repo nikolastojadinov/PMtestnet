@@ -65,62 +65,67 @@ export default function Player() {
         initial={{ y: 40, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         exit={{ y: 40, opacity: 0 }}
-        transition={{ duration: 0.2 }}
+        transition={{ duration: 0.35, ease: 'easeInOut' }}
       >
-        <div className="mx-auto max-w-6xl px-4 py-3">
-          <div className="rounded-2xl border border-purple-200 bg-white/80 dark:bg-[#0b0010]/80 dark:border-purple-800/60 backdrop-blur-md shadow-xl flex gap-4 p-3 items-center">
-            {/* Visible YouTube iframe 200x200 */}
-            <div className="bg-black overflow-hidden rounded-xl" style={{ width: 200, height: 200, minWidth: 200, minHeight: 200 }}>
-              {videoId && !isFullOpen ? (
-                <YouTube
-                  videoId={videoId}
-                  className="w-[200px] h-[200px]"
-                  iframeClassName="w-[200px] h-[200px]"
-                  onReady={(e) => register('mini', e.target)}
-                  opts={{
-                    playerVars: {
-                      enablejsapi: 1,
-                      modestbranding: 1,
-                      rel: 0,
-                      playsinline: 1,
-                      origin,
-                    },
-                  }}
-                />
-              ) : (
-                <div className="w-[200px] h-[200px] bg-[#120018]" />
-              )}
-            </div>
+        <div className="mx-auto max-w-6xl">
+          <div className="w-full border-t border-white/10 rounded-t-2xl shadow-[0_-4px_16px_rgba(0,0,0,0.5)] bg-gradient-to-br from-[#120018] to-[#200030] bg-opacity-95 px-4 py-3">
+            <div className="flex flex-col md:flex-row gap-3 items-center">
+              {/* Visible YouTube iframe 200x200 */}
+              <button onClick={() => openFull(queue as any, index)} className="rounded-xl overflow-hidden border border-gray-800/60 focus:outline-none" aria-label="Expand player">
+                <div className="bg-black" style={{ width: 200, height: 200, minWidth: 200, minHeight: 200 }}>
+                  {videoId && !isFullOpen ? (
+                    <YouTube
+                      videoId={videoId}
+                      className="w-[200px] h-[200px]"
+                      iframeClassName="w-[200px] h-[200px]"
+                      onReady={(e) => register('mini', e.target)}
+                      opts={{
+                        playerVars: {
+                          enablejsapi: 1,
+                          modestbranding: 1,
+                          rel: 0,
+                          playsinline: 1,
+                          origin,
+                        },
+                      }}
+                    />
+                  ) : (
+                    <div className="w-[200px] h-[200px] bg-[#120018]" />
+                  )}
+                </div>
+              </button>
 
-            {/* Info + controls */}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-start justify-between gap-2">
-                <button onClick={() => openFull(queue as any, index)} className="text-left min-w-0">
-                  <div className="text-sm font-medium text-[#111111] dark:text-gray-100 truncate" aria-label="Open fullscreen">
-                    {current?.title || t('player.nothing')}
-                  </div>
-                  <div className="text-xs text-gray-600 dark:text-gray-400 truncate">{current?.artist || ''}</div>
-                </button>
-                <button onClick={clear} aria-label={t('player.close')} className="p-2 rounded hover:bg-purple-100 dark:hover:bg-purple-900/30">
-                  <X size={18} />
-                </button>
-              </div>
-              <div className="mt-3 flex items-center gap-2">
-                <motion.button whileTap={{ scale: 0.95 }} whileHover={{ scale: 1.05 }} onClick={toggleLike}
-                  aria-label={t('player.like')}
-                  className={`p-2 rounded transition-colors hover:bg-purple-100 dark:hover:bg-purple-900/30 ${liked ? 'text-pink-600 dark:text-pink-400' : 'text-[#111111] dark:text-gray-200'}`}
-                >
-                  <Heart size={18} />
-                </motion.button>
-                <motion.button whileTap={{ scale: 0.95 }} whileHover={{ scale: 1.05 }} onClick={prev} aria-label={t('player.prev')} className="p-2 rounded transition-colors hover:bg-purple-100 text-[#111111] dark:hover:bg-purple-900/30 dark:text-gray-200">
-                  <SkipBack size={18} />
-                </motion.button>
-                <motion.button whileTap={{ scale: 0.92 }} whileHover={{ scale: 1.06 }} onClick={togglePlay} aria-label={isPlaying ? t('player.pause') : t('player.play')} className="p-2 rounded transition-colors hover:bg-purple-100 text-[#111111] dark:hover:bg-purple-900/30 dark:text-gray-200">
-                  {isPlaying ? <Pause size={18} /> : <PlayIcon size={18} />}
-                </motion.button>
-                <motion.button whileTap={{ scale: 0.95 }} whileHover={{ scale: 1.05 }} onClick={next} aria-label={t('player.next')} className="p-2 rounded transition-colors hover:bg-purple-100 text-[#111111] dark:hover:bg-purple-900/30 dark:text-gray-200">
-                  <SkipForward size={18} />
-                </motion.button>
+              {/* Info + controls */}
+              <div className="flex-1 min-w-0 px-1">
+                <div className="flex items-start justify-between gap-2">
+                  <button onClick={() => openFull(queue as any, index)} className="text-left min-w-0">
+                    <div className="text-white text-sm font-medium truncate" aria-label="Open fullscreen">
+                      {current?.title || t('player.nothing')}
+                    </div>
+                    <div className="text-gray-400 text-xs truncate">{current?.artist || ''}</div>
+                  </button>
+                  <button onClick={clear} aria-label={t('player.close')} className="p-2 rounded-full border border-gray-600/40 bg-[#140022]/60 hover:bg-purple-600/40 hover:border-purple-400/50 transition-colors">
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="mt-3 flex items-center gap-3">
+                  <motion.button whileTap={{ scale: 0.96 }} whileHover={{ scale: 1.04 }} onClick={toggleLike}
+                    aria-label={t('player.like')}
+                    className={`p-2 rounded-full border transition-colors border-gray-600/40 bg-[#140022]/60 hover:bg-purple-600/40 hover:border-purple-400/50 ${liked ? 'text-pink-400' : 'text-white'}`}
+                  >
+                    <Heart size={18} />
+                  </motion.button>
+                  <motion.button whileTap={{ scale: 0.96 }} whileHover={{ scale: 1.04 }} onClick={prev} aria-label={t('player.prev')} className="p-2 rounded-full border border-gray-600/40 bg-[#140022]/60 hover:bg-purple-600/40 hover:border-purple-400/50 transition-colors text-white">
+                    <SkipBack size={18} />
+                  </motion.button>
+                  <motion.button whileTap={{ scale: 0.95 }} whileHover={{ scale: 1.06 }} onClick={togglePlay} aria-label={isPlaying ? t('player.pause') : t('player.play')} className="p-2 rounded-full border border-gray-600/40 bg-[#140022]/60 hover:bg-purple-600/40 hover:border-purple-400/50 transition-colors text-white">
+                    {isPlaying ? <Pause size={18} /> : <PlayIcon size={18} />}
+                  </motion.button>
+                  <motion.button whileTap={{ scale: 0.96 }} whileHover={{ scale: 1.04 }} onClick={next} aria-label={t('player.next')} className="p-2 rounded-full border border-gray-600/40 bg-[#140022]/60 hover:bg-purple-600/40 hover:border-purple-400/50 transition-colors text-white">
+                    <SkipForward size={18} />
+                  </motion.button>
+                </div>
               </div>
             </div>
           </div>
