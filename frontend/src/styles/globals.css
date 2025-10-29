@@ -4,6 +4,8 @@
 
 :root {
   color-scheme: dark;
+  /* Footer height used to keep the mini player bar above it */
+  --footer-h: 64px;
 }
 
 html, body, #__next {

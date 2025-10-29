@@ -26,10 +26,16 @@ export type PlayerContextType = {
   isFullOpen: boolean;
   activeSurface: Surface;
   current: Track | null;
+  // media state
+  duration: number;
+  currentTime: number;
+  volume: number; // 0-100
 
   // controls
   openFull: (tracks: Track[], startIndex: number) => void;
+  openFullPlayer: (tracks: Track[], startIndex: number) => void; // alias
   closeFull: () => void;
+  minimizeToMini: () => void; // alias
   play: () => void;
   pause: () => void;
   togglePlay: () => void;
@@ -55,8 +61,13 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isFullOpen, setIsFullOpen] = useState(false);
   const [activeSurface, setActiveSurface] = useState<Surface>('mini');
+  const [duration, setDuration] = useState<number>(0);
+  const [currentTime, setCurrentTime] = useState<number>(0);
+  const [volume, setVolumeState] = useState<number>(80);
   const fullPlayerRef = useRef<any | null>(null);
   const miniPlayerRef = useRef<any | null>(null);
+  // play intent is set by a user gesture (Play/Play All) so onReady may auto-play
+  const intentToPlayRef = useRef<boolean>(false);
 
   // Handoff helpers when switching surfaces
   const pendingSeekRef = useRef<number | null>(null);
@@ -124,8 +135,10 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   }, [getActive]);
 
   const setVolume = useCallback((vol: number) => {
+    const v = Math.max(0, Math.min(100, vol));
+    setVolumeState(v);
     const p = getActive();
-    try { p?.setVolume?.(Math.max(0, Math.min(100, vol))); } catch {}
+    try { p?.setVolume?.(v); } catch {}
   }, [getActive]);
 
   const register = useCallback((surface: Surface, player: any | null) => {
@@ -137,6 +150,13 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         if (isPlaying) player.playVideo?.();
       } catch {}
       pendingSeekRef.current = null;
+    }
+    // Apply persisted volume to newly-registered surface
+    try { player?.setVolume?.(volume); } catch {}
+    // If this was a user-initiated play, honor it once on first ready
+    if (player && intentToPlayRef.current) {
+      try { player.playVideo?.(); setIsPlaying(true); } catch {}
+      intentToPlayRef.current = false;
     }
   }, [isPlaying]);
 
@@ -170,9 +190,12 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     setVideoId(t?.external_id ?? null);
     setIsFullOpen(true);
     setActiveSurface('full');
-    // slight delay to ensure mount before issuing play
-    setTimeout(() => play(), 50);
-  }, [play]);
+    // Mark play intent; onReady will start playback
+    intentToPlayRef.current = true;
+  }, []);
+
+  // alias per spec
+  const openFullPlayer = openFull;
 
   const closeFull = useCallback(() => {
     // Capture current time from full, then handoff to mini
@@ -188,8 +211,11 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     setActiveSurface('mini');
     setIsFullOpen(false);
     // mini will seek on register if pendingSeek set
-    setTimeout(() => { if (isPlaying) play(); }, 60);
-  }, [isPlaying, play]);
+    // do not force play() here; registration handler will resume if isPlaying
+  }, [isPlaying]);
+
+  // alias per spec
+  const minimizeToMini = closeFull;
 
   const clear = useCallback(() => {
     setIsPlaying(false);
@@ -216,11 +242,28 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener('visibilitychange', onVis);
   }, [getActive, videoId]);
 
+  // Poll currentTime/duration periodically
+  useEffect(() => {
+    let timer: any;
+    const p = getActive();
+    const tick = () => {
+      try {
+        const t = p?.getCurrentTime?.() ?? 0;
+        const d = p?.getDuration?.() ?? 0;
+        if (Number.isFinite(t)) setCurrentTime(t);
+        if (Number.isFinite(d)) setDuration(d);
+      } catch {}
+    };
+    timer = setInterval(tick, 500);
+    return () => { if (timer) clearInterval(timer); };
+  }, [getActive, activeSurface, videoId]);
+
   const value: PlayerContextType = useMemo(() => ({
     queue, index, videoId, isPlaying, isFullOpen, activeSurface, current,
-    openFull, closeFull, play, pause, togglePlay, next, prev, seek, setVolume, clear, register,
+    duration, currentTime, volume,
+    openFull, openFullPlayer, closeFull, minimizeToMini, play, pause, togglePlay, next, prev, seek, setVolume, clear, register,
     syncFromPlayerState, toggleFromIframe,
-  }), [queue, index, videoId, isPlaying, isFullOpen, activeSurface, current, openFull, closeFull, play, pause, togglePlay, next, prev, seek, setVolume, clear, register, syncFromPlayerState, toggleFromIframe]);
+  }), [queue, index, videoId, isPlaying, isFullOpen, activeSurface, current, duration, currentTime, volume, openFull, closeFull, play, pause, togglePlay, next, prev, seek, setVolume, clear, register, syncFromPlayerState, toggleFromIframe]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

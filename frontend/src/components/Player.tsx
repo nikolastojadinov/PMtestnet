@@ -33,32 +33,36 @@ export default function Player() {
   return (
     <AnimatePresence>
       <motion.div
-        className="fixed bottom-[64px] left-0 right-0 z-[9999] translate-y-0"
+        className="fixed bottom-[var(--footer-h,64px)] left-0 right-0 z-[9999] translate-y-0"
         initial={{ y: 8, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         exit={{ y: 8, opacity: 0 }}
         transition={{ duration: 0.35, ease: 'easeInOut' }}
       >
         <div className="mx-auto max-w-[800px]">
-          <div className="h-[90px] md:h-[100px] w-full flex items-center justify-between px-4 rounded-t-lg backdrop-blur-md shadow-[0_-4px_16px_rgba(0,0,0,0.6)] border-t border-purple-800/40 bg-gradient-to-r from-[#10001a] to-[#22003a]">
-            {/* Left: visible YouTube iframe 120x68 (16:9) */}
-            <div className="w-[120px] h-[68px] rounded-md overflow-hidden border border-purple-800/50 bg-black">
+          <div className="h-[90px] md:h-[96px] w-full flex items-center justify-between px-4 rounded-t-2xl backdrop-blur-md shadow-[0_-6px_20px_rgba(0,0,0,0.55)] border border-purple-500/30 bg-black/45">
+            {/* Left: render a 200x200 iframe scaled into a ~110x70 viewport */}
+            <div className="shrink-0 w-[110px] h-[70px] overflow-hidden rounded-lg border border-purple-800/50 bg-black relative">
               {videoId ? (
-                <YouTube
-                  videoId={videoId}
-                  className="w-[120px] h-[68px]"
-                  iframeClassName="w-[120px] h-[68px]"
-                  onReady={(e) => register('mini', e.target)}
-                  opts={{
-                    playerVars: {
-                      enablejsapi: 1,
-                      modestbranding: 1,
-                      rel: 0,
-                      playsinline: 1,
-                      origin,
-                    },
-                  }}
-                />
+                <div className="absolute top-0 left-0 origin-top-left scale-[0.55]" style={{ width: 200, height: 200 }}>
+                  <YouTube
+                    videoId={videoId}
+                    className="w-[200px] h-[200px]"
+                    iframeClassName="w-[200px] h-[200px]"
+                    onReady={(e) => register('mini', e.target)}
+                    opts={{
+                      width: 200,
+                      height: 200,
+                      playerVars: {
+                        enablejsapi: 1,
+                        modestbranding: 1,
+                        rel: 0,
+                        playsinline: 1,
+                        origin,
+                      },
+                    }}
+                  />
+                </div>
               ) : (
                 <div className="w-full h-full bg-black" />
               )}
@@ -71,7 +75,7 @@ export default function Player() {
                 whileHover={{ scale: 1.04 }}
                 onClick={toggleFromIframe}
                 aria-label={isPlaying ? t('player.pause') : t('player.play')}
-                className="w-[52px] h-[52px] flex items-center justify-center rounded-full text-white bg-[#260045] border border-purple-700/60 shadow-md shadow-purple-900/40 hover:bg-purple-700/60 hover:border-purple-400/40 transition-all duration-300"
+                className="w-[52px] h-[52px] flex items-center justify-center rounded-full text-white bg-transparent border border-white/70 shadow-md hover:bg-white/10 transition-all duration-300"
               >
                 {isPlaying ? <Pause size={20} /> : <PlayIcon size={20} />}
               </motion.button>
