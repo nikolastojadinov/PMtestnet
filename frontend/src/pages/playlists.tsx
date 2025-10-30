@@ -15,7 +15,7 @@ interface Track {
 export default function PlaylistPage() {
   const router = useRouter();
   const { id } = router.query;
-  const { openFull } = usePlayer();
+  const { playTrack } = usePlayer();
 
   const [playlist, setPlaylist] = useState<any>(null);
   const [trackList, setTrackList] = useState<Track[]>([]);
@@ -61,12 +61,12 @@ export default function PlaylistPage() {
 
   const handlePlayAll = () => {
     if (trackList.length > 0) {
-      openFull(trackList, 0); // ✅ start from first song
+      playTrack(trackList, 0);
     }
   };
 
   const handlePlaySingle = (index: number) => {
-    openFull(trackList, index); // ✅ start from specific song
+    playTrack(trackList, index);
   };
 
   return (

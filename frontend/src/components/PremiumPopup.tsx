@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase } from '@/utils/supabaseClient';
 import { getOrCreateGuestId } from '@/lib/guestUser';
 import { motion, AnimatePresence } from 'framer-motion';
 

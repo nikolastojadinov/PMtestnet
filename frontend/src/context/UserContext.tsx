@@ -1,7 +1,7 @@
 "use client";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import i18n from '@/i18n/config';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase } from '@/utils/supabaseClient';
 import { useGuestUser } from '@/hooks/useGuestUser';
 import { supportedLngs } from '@/i18n/config';
 

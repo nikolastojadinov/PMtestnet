@@ -4,7 +4,7 @@ import Image from 'next/image';
 import FallbackImage from '@/components/FallbackImage';
 import SearchBar from '@/components/SearchBar';
 import ScrollableRow from '@/components/ScrollableRow';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase } from '@/utils/supabaseClient';
 import { getRecent as getLocalRecent } from '@/lib/recent';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
