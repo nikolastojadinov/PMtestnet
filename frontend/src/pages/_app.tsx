@@ -2,6 +2,9 @@
 import type { AppProps } from "next/app";
 import Head from "next/head";
 import { PlayerProvider } from "@/context/PlayerContext";
+import MainLayout from "@/layouts/MainLayout";
+import { ThemeProvider } from "@/context/ThemeContext";
+import { UserProvider } from "@/context/UserContext";
 import "@/styles/globals.css";
 
 export default function App({ Component, pageProps }: AppProps) {
@@ -14,9 +17,15 @@ export default function App({ Component, pageProps }: AppProps) {
       </Head>
 
       {/* ✅ PlayerProvider wraps the whole app, fixes client-side crash */}
-      <PlayerProvider>
-        <Component {...pageProps} />
-      </PlayerProvider>
+      <ThemeProvider>
+        <UserProvider>
+          <PlayerProvider>
+            <MainLayout>
+              <Component {...pageProps} />
+            </MainLayout>
+          </PlayerProvider>
+        </UserProvider>
+      </ThemeProvider>
     </>
   );
 }

@@ -21,12 +21,12 @@ export default function Header() {
   };
 
   return (
-  <header className="fixed top-0 inset-x-0 z-50 w-full transition-colors duration-300 bg-white/80 backdrop-blur-md text-[#111111] border-b border-purple-200 dark:bg-[#0b0010]/70 dark:text-gray-200 dark:border-[#3b0066]/60 shadow-[0_1px_0_#e9e9e9_inset] dark:shadow-[0_1px_0_#3b0066_inset]">
+  <header className="fixed top-0 inset-x-0 z-50 w-full bg-gradient-to-r from-[#2a004e] to-[#4a007f] text-white shadow-lg">
       <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="h-8 w-8 rounded-md bg-gradient-to-br from-purple-600 via-fuchsia-500 to-amber-300 shadow-md" aria-hidden />
           <h1 className="text-lg sm:text-xl font-semibold tracking-wide">
-            <span className="bg-gradient-to-r from-purple-400 via-fuchsia-300 to-yellow-300 bg-clip-text text-transparent">Purple Music</span>
+            <span className="bg-gradient-to-r from-purple-300 via-yellow-200 to-yellow-300 bg-clip-text text-transparent">Purple Music</span>
           </h1>
         </div>
 
@@ -36,7 +36,7 @@ export default function Header() {
             aria-haspopup="menu"
             aria-expanded={open}
             onClick={() => setOpen(!open)}
-            className="h-9 w-9 rounded-full bg-purple-900/30 border border-purple-700/40 flex items-center justify-center text-purple-200 hover:bg-purple-800/40 focus:outline-none"
+            className="h-9 w-9 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-white hover:bg-white/15 focus:outline-none"
           >
             <span className="sr-only">Open profile menu</span>
             {/* simple avatar dot */}
@@ -51,7 +51,7 @@ export default function Header() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
               transition={{ duration: 0.18 }}
-              className="absolute right-0 mt-2 w-72 rounded-md transition-colors duration-300 bg-white text-[#111111] border border-purple-200 shadow-xl p-2 text-sm dark:bg-[#0b0010] dark:text-gray-200 dark:border-purple-800/50"
+              className="absolute right-0 mt-2 w-72 rounded-md bg-[#0a0014] text-gray-200 border border-purple-800/50 shadow-2xl p-2 text-sm"
             >
               <div className="px-3 py-2 rounded items-center flex justify-between">
                 <span className="opacity-90">{t('header.signedInAs')}</span>
@@ -65,10 +65,10 @@ export default function Header() {
                   id="lang"
                   value={String(language)}
                   onChange={(e) => setLanguage(e.target.value)}
-                  className="w-full bg-transparent border border-purple-300 dark:border-purple-800/50 rounded px-2 py-1 focus:outline-none"
+                  className="w-full bg-transparent border border-purple-800/50 rounded px-2 py-1 focus:outline-none"
                 >
                   {supportedLngs.map((lng) => (
-                    <option key={lng} className="bg-white dark:bg-[#0b0010]" value={lng}>
+                    <option key={lng} className="bg-[#0a0014]" value={lng}>
                       {languageNames[lng as string] || lng}
                     </option>
                   ))}
@@ -77,10 +77,10 @@ export default function Header() {
               {/* Theme selector */}
               <ThemeSelector />
               <div className="my-2 h-px bg-purple-800/40" />
-              <div className="px-3 py-2 text-purple-700 dark:text-purple-200">{t('header.goPremium')}</div>
+              <div className="px-3 py-2 text-purple-200">{t('header.goPremium')}</div>
               <div className="my-2 h-px bg-purple-800/40" />
-              <Link href="/privacy.html" className="block px-3 py-2 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded" role="menuitem">{t('header.privacy')}</Link>
-              <Link href="/terms.html" className="block px-3 py-2 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded" role="menuitem">{t('header.terms')}</Link>
+              <Link href="/privacy.html" className="block px-3 py-2 hover:bg-purple-900/30 rounded" role="menuitem">{t('header.privacy')}</Link>
+              <Link href="/terms.html" className="block px-3 py-2 hover:bg-purple-900/30 rounded" role="menuitem">{t('header.terms')}</Link>
             </motion.div>
           )}
           </AnimatePresence>

@@ -27,3 +27,7 @@ html {
 .pm-player {
   @apply bg-pm-dark rounded-xl border border-pm-purple/40 shadow-xl overflow-hidden;
 }
+
+/* Hide scrollbars for horizontal lists when needed */
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }

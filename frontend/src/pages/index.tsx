@@ -126,7 +126,7 @@ export default function IndexPage() {
   }, []);
 
   return (
-    <div className="space-y-10 px-4 md:px-8">
+  <div className="space-y-10 px-4 md:px-8 pt-16 pb-20">
       <div className="pt-2">
         <SearchBar />
       </div>
@@ -175,8 +175,8 @@ function PlaylistTile({ p, large = false }: { p: Playlist; large?: boolean }) {
     <motion.div whileHover={{ y: -3 }} whileTap={{ scale: 0.98 }}>
     <Link
       href={`/playlist/${p.id}`}
-      className={`group relative rounded-lg overflow-hidden transition-colors bg-white border border-purple-200 hover:border-purple-400 dark:bg-[#120018] dark:border-purple-800/40 dark:hover:border-purple-600/60 transition ${
-        large ? 'w-full' : 'min-w-[160px] w-[180px]'
+      className={`group relative rounded-xl overflow-hidden bg-white border border-purple-200 hover:border-purple-400 dark:bg-[#120018] dark:border-purple-800/40 dark:hover:border-purple-600/60 transition ${
+        large ? 'w-full' : 'w-[40vw] sm:w-[36vw] md:w-[32vw] lg:w-[28vw] xl:w-[24vw]'
       }`}
     >
       <div className={`${large ? 'aspect-[16/9]' : 'aspect-square'} w-full overflow-hidden relative`}>
@@ -184,8 +184,8 @@ function PlaylistTile({ p, large = false }: { p: Playlist; large?: boolean }) {
           src={src || '/images/fallback-cover.jpg'}
           alt={p.title}
           fill
-          sizes={large ? '(max-width: 768px) 100vw, 50vw' : '180px'}
-          className="object-cover transition-transform group-hover:scale-105 rounded-md"
+          sizes={large ? '(max-width: 768px) 100vw, 50vw' : '40vw'}
+          className="object-cover transition-transform group-hover:scale-105"
           placeholder="blur"
           blurDataURL={BLUR}
           priority={large}
