@@ -1,58 +1,25 @@
-import React, { useRef } from 'react';
-import { motion } from 'framer-motion';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import React from 'react';
+import PlaylistCard from './PlaylistCard';
+
+type Playlist = { id: string; title: string; description?: string; cover_url?: string | null };
 
 type Props = {
-  title: React.ReactNode;
-  loading?: boolean;
-  children: React.ReactNode;
+  title: string;
+  playlists: Playlist[];
 };
 
-export default function ScrollableRow({ title, loading, children }: Props) {
-  const ref = useRef<HTMLDivElement | null>(null);
-
-  const scrollBy = (dir: -1 | 1) => {
-    const el = ref.current;
-    if (!el) return;
-    const amount = Math.round(el.clientWidth * 0.8) * dir;
-    el.scrollBy({ left: amount, behavior: 'smooth' });
-  };
-
+export default function ScrollableRow({ title, playlists }: Props) {
   return (
-    <section className="space-y-3 group">
-      <motion.h3
-        initial={{ opacity: 0, y: 8 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true }}
-        transition={{ duration: 0.25 }}
-        className="text-base md:text-lg font-semibold bg-gradient-to-r from-purple-400 via-fuchsia-300 to-yellow-300 bg-clip-text text-transparent"
-      >
+    <section className="mb-10">
+      <h2 className="text-xl md:text-2xl font-semibold mb-4 px-2 bg-gradient-to-r from-purple-400 via-fuchsia-300 to-yellow-300 bg-clip-text text-transparent">
         {title}
-      </motion.h3>
-      <div className="relative">
-        {/* left */}
-        <button
-          aria-label="Scroll left"
-          onClick={() => scrollBy(-1)}
-          className="hidden md:flex absolute left-0 top-1/2 -translate-y-1/2 z-10 h-9 w-9 items-center justify-center rounded-full bg-black/40 border border-purple-800/50 text-purple-100 opacity-0 group-hover:opacity-100 focus:opacity-100 focus:outline-none"
-        >
-          <ChevronLeft size={18} />
-        </button>
-        {/* right */}
-        <button
-          aria-label="Scroll right"
-          onClick={() => scrollBy(1)}
-          className="hidden md:flex absolute right-0 top-1/2 -translate-y-1/2 z-10 h-9 w-9 items-center justify-center rounded-full bg-black/40 border border-purple-800/50 text-purple-100 opacity-0 group-hover:opacity-100 focus:opacity-100 focus:outline-none"
-        >
-          <ChevronRight size={18} />
-        </button>
-
-        <div
-          ref={ref}
-          className="flex gap-4 pr-4 overflow-x-auto snap-x snap-mandatory scroll-smooth [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
-        >
-          {children}
-        </div>
+      </h2>
+      <div className="flex gap-4 overflow-x-auto scroll-smooth snap-x snap-mandatory px-2 pb-2 scrollbar-hide">
+        {playlists.map((p) => (
+          <div key={p.id} className="snap-start">
+            <PlaylistCard id={p.id} title={p.title} description={p.description} cover_url={p.cover_url || undefined} />
+          </div>
+        ))}
       </div>
     </section>
   );

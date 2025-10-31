@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import FallbackImage from '@/components/FallbackImage';
 import SearchBar from '@/components/SearchBar';
 import ScrollableRow from '@/components/ScrollableRow';
 import { supabase } from '@/utils/supabaseClient';
@@ -132,74 +131,52 @@ export default function IndexPage() {
       </div>
 
       <section>
-        <ScrollableRow title={t('home.recentlyPlayed')}>
-          {loadingRecent
-            ? Array.from({ length: 4 }).map((_, i) => <PlaylistTileSkeleton key={i} large />)
-            : recent.length > 0
-              ? recent.map((p) => (
-                <motion.div key={p.id} initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.2 }}>
-                  <PlaylistTile p={p} large />
-                </motion.div>
-              ))
-              : <div className="text-sm text-gray-400 px-2 py-4">{t('home.emptyRecent')}</div>
-          }
-        </ScrollableRow>
+        {loadingRecent ? (
+          <>
+            <h3 className="text-base md:text-lg font-semibold mb-3 px-2 bg-gradient-to-r from-purple-400 via-fuchsia-300 to-yellow-300 bg-clip-text text-transparent">{t('home.recentlyPlayed')}</h3>
+            <div className="flex gap-4 overflow-x-auto scroll-smooth snap-x snap-mandatory px-2 pb-2 scrollbar-hide">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="snap-start min-w-[10rem]">
+                  <PlaylistTileSkeleton large />
+                </div>
+              ))}
+            </div>
+          </>
+        ) : recent.length > 0 ? (
+          <ScrollableRow title={t('home.recentlyPlayed')} playlists={recent} />
+        ) : (
+          <>
+            <h3 className="text-base md:text-lg font-semibold mb-3 px-2 bg-gradient-to-r from-purple-400 via-fuchsia-300 to-yellow-300 bg-clip-text text-transparent">{t('home.recentlyPlayed')}</h3>
+            <div className="text-sm text-gray-400 px-2 py-4">{t('home.emptyRecent')}</div>
+          </>
+        )}
       </section>
 
       {categoryDefs.map((def) => (
         <section key={def.key}>
-          <ScrollableRow title={t(`home.${def.key}`)}>
-            {loadingCats
-              ? Array.from({ length: 8 }).map((_, i) => <PlaylistTileSkeleton key={i} />)
-              : (byCategory[def.key] || []).length > 0
-                ? (byCategory[def.key] || []).map((p) => (
-                  <motion.div key={p.id} initial={{ opacity: 0, scale: 0.98 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }} transition={{ duration: 0.2 }}>
-                    <PlaylistTile p={p} />
-                  </motion.div>
-                ))
-                : <div className="text-sm text-gray-400 px-2 py-4">{t('home.emptyCategory')}</div>
-            }
-          </ScrollableRow>
+          {loadingCats ? (
+            <>
+              <h3 className="text-base md:text-lg font-semibold mb-3 px-2 bg-gradient-to-r from-purple-400 via-fuchsia-300 to-yellow-300 bg-clip-text text-transparent">{t(`home.${def.key}`)}</h3>
+              <div className="flex gap-4 overflow-x-auto scroll-smooth snap-x snap-mandatory px-2 pb-2 scrollbar-hide">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} className="snap-start min-w-[9rem]">
+                    <PlaylistTileSkeleton />
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (byCategory[def.key] || []).length > 0 ? (
+            <ScrollableRow title={t(`home.${def.key}`)} playlists={byCategory[def.key] || []} />
+          ) : (
+            <>
+              <h3 className="text-base md:text-lg font-semibold mb-3 px-2 bg-gradient-to-r from-purple-400 via-fuchsia-300 to-yellow-300 bg-clip-text text-transparent">{t(`home.${def.key}`)}</h3>
+              <div className="text-sm text-gray-400 px-2 py-4">{t('home.emptyCategory')}</div>
+            </>
+          )}
         </section>
       ))}
     </div>
   );
 }
 
-function PlaylistTile({ p, large = false }: { p: Playlist; large?: boolean }) {
-  const { t } = useTranslation();
-  const BLUR = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0nMScgaGVpZ2h0PScxJyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnPjxyZWN0IHdpZHRoPScxJyBoZWlnaHQ9JzEnIGZpbGw9JyMxNTAwMmUnLz48L3N2Zz4=';
-  const [src, setSrc] = React.useState<string | undefined>(p.cover_url || undefined);
-
-  return (
-    <motion.div whileHover={{ y: -3 }} whileTap={{ scale: 0.98 }}>
-    <Link
-      href={`/playlist/${p.id}`}
-      className={`group relative rounded-xl overflow-hidden bg-white border border-purple-200 hover:border-purple-400 dark:bg-[#120018] dark:border-purple-800/40 dark:hover:border-purple-600/60 transition ${
-        large ? 'w-full' : 'w-[40vw] sm:w-[36vw] md:w-[32vw] lg:w-[28vw] xl:w-[24vw]'
-      }`}
-    >
-      <div className={`${large ? 'aspect-[16/9]' : 'aspect-square'} w-full overflow-hidden relative`}>
-        <FallbackImage
-          src={src || '/images/fallback-cover.jpg'}
-          alt={p.title}
-          fill
-          sizes={large ? '(max-width: 768px) 100vw, 50vw' : '40vw'}
-          className="object-cover transition-transform group-hover:scale-105"
-          placeholder="blur"
-          blurDataURL={BLUR}
-          priority={large}
-          fallback="/images/fallback-cover.jpg"
-        />
-      </div>
-      <div className="absolute inset-0 hidden group-hover:flex items-center justify-center bg-black/10 dark:bg-black/30">
-        <button className="px-3 py-1.5 rounded bg-purple-700 text-white text-xs shadow-md">{t('player.play')}</button>
-      </div>
-      <div className="p-3">
-        <div className="text-sm font-medium truncate text-[#111111] dark:text-gray-100">{p.title}</div>
-        <div className="text-xs text-gray-600 dark:text-gray-400 truncate">{p.region || p.category || t('search.playlist')}</div>
-      </div>
-    </Link>
-    </motion.div>
-  );
-}
+// PlaylistTile removed in favor of reusable PlaylistCard inside ScrollableRow.
