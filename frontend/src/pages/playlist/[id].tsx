@@ -2,7 +2,7 @@ import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/utils/supabaseClient';
 import { usePlayer } from '@/context/PlayerContext';
-import Image from 'next/image';
+import FallbackImage from '@/components/FallbackImage';
 
 interface Track {
   id: string;
@@ -47,9 +47,10 @@ export default function PlaylistPage() {
           title: s.tracks.title,
           artist: s.tracks.artist,
           cover_url: s.tracks.cover_url,
-          url: s.tracks.source === 'youtube'
-            ? `https://www.youtube.com/watch?v=${s.tracks.external_id}`
-            : s.tracks.url,
+          url:
+            s.tracks.source === 'youtube'
+              ? `https://www.youtube.com/watch?v=${s.tracks.external_id}`
+              : s.tracks.url,
         }));
         setTracks(formattedTracks);
       }
@@ -70,12 +71,12 @@ export default function PlaylistPage() {
     <div className="min-h-screen bg-black text-white p-6">
       <div className="flex flex-col items-center mb-6">
         {cover && (
-          <Image
+          <FallbackImage
             src={cover}
             alt={playlistTitle}
             width={300}
             height={300}
-            className="rounded-lg shadow-lg mb-4"
+            className="aspect-square object-cover rounded-xl shadow-lg mb-4"
           />
         )}
         <h1 className="text-3xl font-bold mb-2">{playlistTitle}</h1>
@@ -95,13 +96,13 @@ export default function PlaylistPage() {
             onClick={() => handlePlayTrack(index)}
           >
             <div className="flex items-center space-x-3">
-              {track.cover_url && (
-                <img
-                  src={track.cover_url}
-                  alt={track.title}
-                  className="w-12 h-12 object-cover rounded"
-                />
-              )}
+              <FallbackImage
+                src={track.cover_url || '/images/fallback-cover.jpg'}
+                alt={track.title}
+                width={48}
+                height={48}
+                className="w-12 h-12 aspect-square object-cover rounded-md"
+              />
               <div>
                 <div className="font-semibold">{track.title}</div>
                 <div className="text-sm opacity-70">{track.artist}</div>
