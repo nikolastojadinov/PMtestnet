@@ -1,31 +1,25 @@
-// ✅ FULL REWRITE v4.3 — Intelligent global playlist fetcher (quality validated)
-// Dodato: automatski preskače nevalidne i prazne playliste (Mix, Private, For Kids, kratki naslovi)
-// Cilj: preuzimati samo realne muzičke playliste sa kvalitetnim metapodacima
+// ✅ FULL REWRITE v4.4 — Smart Safe Fetcher (optimized quota + valid playlists)
+// - Skida samo stvarne muzičke playliste
+// - Preskače "Mix", "Private", "Kids", "Shorts", "Deleted", i duplikate
+// - Upisuje samo ako postoje validni rezultati
+// - Manji broj regiona po ciklusu (8) radi stabilnosti i štednje kvote
 
 import axios from 'axios';
 import { getSupabase } from '../lib/supabase.js';
 import { nextKeyFactory, pickTodayRegions, sleep } from '../lib/utils.js';
 import { pickTodayPlan } from '../lib/monthlyCycle.js';
 
-const TARGET_PLAYLISTS_PER_DAY = 8000;
-const MAX_API_CALLS_PER_DAY    = 90000;
-const MAX_PAGES_PER_QUERY      = 12;
-const REGIONS_PER_BATCH        = 24;
+const TARGET_PLAYLISTS_PER_DAY = 6000;
+const MAX_API_CALLS_PER_DAY = 60000;
+const MAX_PAGES_PER_QUERY = 10;
+const REGIONS_PER_BATCH = 8; // ⬅️ smanjeno sa 24 radi uštede kvote
 
-// 🎧 Globalni muzički keyword set (v4.2)
+// 🌍 Globalni muzički keyword set (skraćen i optimizovan)
 const KEYWORDS = [
-  'music', 'best songs', 'playlist', 'top hits', 'mix', 'official', 'new songs', 'charts', 'latest songs',
-  'pop', 'rock', 'hip hop', 'r&b', 'soul', 'funk', 'house', 'deep house', 'techno', 'trance', 'edm', 'indie',
-  'alternative', 'punk', 'metal', 'country', 'folk', 'blues', 'jazz', 'classical', 'orchestra', 'reggae', 'ska',
-  'latin', 'reggaeton', 'afrobeats', 'k-pop', 'j-pop', 'c-pop', 'turkish', 'hindi', 'bollywood', 'arabic',
-  'balkan', 'serbian', 'greek', 'chill', 'relax', 'sleep', 'study', 'focus', 'background music', 'lofi',
-  'ambient', 'instrumental', 'romantic', 'love songs', 'sad songs', 'happy songs', 'motivational', 'dance',
-  'party', 'workout', 'gym', 'running', 'driving', 'travel', 'road trip', 'coffee shop', 'meditation', 'yoga',
-  'vibes', 'deep focus', 'throwback', 'oldies', '70s', '80s', '90s', '2000s', '2010s', '2020s', 'movie soundtrack',
-  'anime songs', 'game soundtrack', 'tv series', 'hollywood songs', 'disney songs', 'film score', 'cinematic music',
-  'indian songs', 'korean hits', 'japanese songs', 'vietnamese music', 'filipino songs', 'nigerian hits',
-  'brazilian music', 'mexican songs', 'russian songs', 'french songs', 'spanish hits', 'italian hits',
-  'german music', 'thai songs', 'indonesian music', 'malay songs', 'vietnam hits', 'usa top songs'
+  'music', 'top hits', 'pop', 'rock', 'hip hop', 'r&b', 'soul',
+  'dance', 'edm', 'lofi', 'chill', 'relax', 'focus', 'study', 'jazz',
+  'latin', 'reggaeton', 'afrobeats', 'k-pop', 'bollywood', 'serbian',
+  '80s', '90s', '2000s', 'love songs', 'instrumental', 'party', 'workout'
 ];
 
 const API_KEYS = (process.env.YOUTUBE_API_KEYS || '')
@@ -37,24 +31,19 @@ if (!API_KEYS.length) throw new Error('YOUTUBE_API_KEYS missing.');
 const nextKey = nextKeyFactory(API_KEYS);
 let apiCallsToday = 0;
 
-/**
- * 🎯 Heuristika kvaliteta
- * (dužina naslova + opis → skala 0.1–1.0)
- */
+// 🎯 Heuristika kvaliteta
 function calcQualityScore(title, desc) {
   const len = (title?.length || 0) + (desc?.length || 0);
   return Math.min(1, Math.max(0.1, len / 300));
 }
 
-/**
- * 🧠 Validacija kvaliteta plejlista
- * - preskače “Mix”, “Shorts”, “Kids”, “Private”, i one sa prekratkim naslovom
- */
-function isValidPlaylist(title = '', desc = '') {
+// ⚙️ Validacija — isključuje "Mix", "Shorts", "Kids", "Private", i prekratke naslove
+function isValidPlaylist(id, title = '', desc = '') {
   const lower = (title + ' ' + desc).toLowerCase();
 
-  // ❌ Nevalidne reči u nazivu
   if (
+    !id ||
+    id.startsWith('RD') || // Mix liste
     lower.includes('mix') ||
     lower.includes('shorts') ||
     lower.includes('kids') ||
@@ -62,19 +51,15 @@ function isValidPlaylist(title = '', desc = '') {
     lower.includes('baby') ||
     lower.includes('cartoon') ||
     lower.includes('story for kids') ||
-    lower.includes('sleep music for kids')
+    lower.includes('sleep music for kids') ||
+    lower.includes('private')
   ) return false;
 
-  // ❌ Naslov prekratak
   if (title.length < 5) return false;
-
-  // ✅ Prolazi filter
   return true;
 }
 
-/**
- * 🔍 Pretraga YouTube plejlista po regionu i ključnim rečima
- */
+// 🔍 Pretraga YouTube plejlista po regionu i ključnim rečima
 async function searchPlaylists({ region, q, tier, cycleDay }) {
   const out = [];
   let pageToken = null;
@@ -100,10 +85,12 @@ async function searchPlaylists({ region, q, tier, cycleDay }) {
 
       const batch = (data.items || [])
         .map(it => {
+          const id = it.id?.playlistId;
           const s = it.snippet || {};
           const quality_score = calcQualityScore(s.title, s.description);
+
           return {
-            external_id: it.id?.playlistId,
+            external_id: id,
             title: s.title ?? null,
             description: s.description ?? null,
             cover_url: s.thumbnails?.high?.url ?? s.thumbnails?.default?.url ?? null,
@@ -124,13 +111,18 @@ async function searchPlaylists({ region, q, tier, cycleDay }) {
             sync_status: 'fetched'
           };
         })
-        .filter(r => r.external_id && isValidPlaylist(r.title, r.description) && r.quality_score >= 0.4);
+        .filter(r =>
+          r.external_id &&
+          r.external_id.length > 10 &&
+          isValidPlaylist(r.external_id, r.title, r.description) &&
+          r.quality_score >= 0.4
+        );
 
       out.push(...batch);
       pageToken = data.nextPageToken || null;
       pages++;
 
-      await sleep(90 + Math.random() * 50);
+      await sleep(100 + Math.random() * 80);
     } catch (e) {
       console.error(`[fetchPlaylists:${region}]`, e.response?.data || e.message);
       break;
@@ -140,9 +132,7 @@ async function searchPlaylists({ region, q, tier, cycleDay }) {
   return out;
 }
 
-/**
- * 🚀 Glavna funkcija — pokreće dnevni ciklus
- */
+// 🚀 Glavna funkcija — pokreće dnevni ciklus
 export async function runFetchPlaylists({ reason = 'daily-fetch' } = {}) {
   const sb = getSupabase();
   console.log(`[playlists] start (${reason})`);
@@ -175,8 +165,11 @@ export async function runFetchPlaylists({ reason = 'daily-fetch' } = {}) {
     return acc;
   }, {}));
 
-  const { error } = await sb.from('playlists').upsert(unique, { onConflict: 'external_id' });
-  if (error) console.error('[playlists] upsert error:', error);
-
-  console.log(`[playlists] done ✅ total: ${unique.length}, API calls: ${apiCallsToday}`);
+  if (unique.length > 0) {
+    const { error } = await sb.from('playlists').upsert(unique, { onConflict: 'external_id' });
+    if (error) console.error('[playlists] upsert error:', error);
+    console.log(`[playlists] done ✅ total: ${unique.length}, API calls: ${apiCallsToday}`);
+  } else {
+    console.log('[playlists] ⚠️ No valid playlists found — nothing to insert');
+  }
 }
