@@ -1,22 +1,28 @@
 import React from 'react';
-import Image from 'next/image';
+import Image, { type ImageProps } from 'next/image';
 
-type Props = React.ComponentProps<typeof Image> & { fallback?: string };
+type Props = ImageProps & { fallback?: string };
 
-export default function FallbackImage({ src, fallback = '/images/fallback-cover.jpg', alt, ...rest }: Props) {
-  const [s, setS] = React.useState<string | undefined>(typeof src === 'string' ? src : undefined);
+export default function FallbackImage({ src, alt, fallback = '/images/fallback-cover.jpg', className, ...rest }: Props) {
+  const [useFallback, setUseFallback] = React.useState(false);
 
   React.useEffect(() => {
-    if (typeof src === 'string') setS(src);
+    setUseFallback(false);
   }, [src]);
 
+  const displaySrc = useFallback ? fallback : src;
+  const mergedClass = [
+    'w-full h-auto aspect-square object-cover rounded-lg transition-transform duration-200 hover:scale-105',
+    className || ''
+  ].join(' ').trim();
+
   return (
-    // @ts-ignore - pass through to Next/Image
     <Image
-      src={s || fallback}
-      alt={String(alt || '')}
-      onError={() => setS(fallback)}
-      {...(rest as any)}
+      {...rest}
+      src={displaySrc}
+      alt={String(alt || 'playlist cover')}
+      onError={() => setUseFallback(true)}
+      className={mergedClass}
     />
   );
 }
