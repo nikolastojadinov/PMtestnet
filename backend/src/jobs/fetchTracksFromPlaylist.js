@@ -1,14 +1,13 @@
-// ✅ FULL REWRITE v5.0 — Unlimited YouTube track fetcher (no limits)
-// - Fetches *all* available tracks from every playlist
-// - No daily cap, no per-playlist cap
+// ✅ FULL REWRITE v5.1 — Unlimited YouTube track fetcher + auto-clean empty playlists
+// - Fetches *all* tracks from every playlist (no limits)
+// - Deletes empty or invalid playlists automatically from Supabase
+// - Updates item_count for valid playlists
 // - Safe key rotation and retry logic
-// - Updates item_count accurately in Supabase
 
 import axios from 'axios';
 import { getSupabase } from '../lib/supabase.js';
 import { nextKeyFactory, sleep } from '../lib/utils.js';
 
-// 🚫 Uklonjeni svi limiti i kvote
 const PAGE_SIZE = 50;
 
 const API_KEYS = (process.env.YOUTUBE_API_KEYS || '')
@@ -20,7 +19,7 @@ if (!API_KEYS.length) throw new Error('YOUTUBE_API_KEYS missing.');
 const nextKey = nextKeyFactory(API_KEYS);
 
 // ───────────────────────────────────────────────
-// 🎵 Fetchuje sve pesme iz jedne YouTube playliste — bez ikakvog ograničenja
+// 🎵 Fetchuje sve pesme iz jedne YouTube playliste
 async function fetchTracksForPlaylist(playlistId) {
   const all = [];
   let pageToken = null;
@@ -51,7 +50,7 @@ async function fetchTracksForPlaylist(playlistId) {
             it.snippet?.thumbnails?.default?.url ||
             null;
 
-          // ❌ Preskoči obrisane, privatne ili nedostupne video-zapise
+          // ❌ Preskoči obrisane, privatne, ili nedostupne video-zapise
           if (
             !videoId ||
             !title ||
@@ -60,9 +59,7 @@ async function fetchTracksForPlaylist(playlistId) {
             title.toLowerCase().includes('unavailable') ||
             title === '[Deleted video]' ||
             title === '[Private video]'
-          ) {
-            return null;
-          }
+          ) return null;
 
           return {
             external_id: videoId,
@@ -77,8 +74,6 @@ async function fetchTracksForPlaylist(playlistId) {
         .filter(Boolean);
 
       all.push(...tracks);
-
-      // ↪️ Idi na sledeću stranicu dok YouTube vraća nextPageToken
       pageToken = data.nextPageToken || null;
       if (!pageToken) break;
 
@@ -95,18 +90,16 @@ async function fetchTracksForPlaylist(playlistId) {
   }
 
   // ✅ Ukloni duplikate
-  const unique = Object.values(
-    all.reduce((acc, t) => {
-      if (!acc[t.external_id]) acc[t.external_id] = t;
-      return acc;
-    }, {})
-  );
+  const unique = Object.values(all.reduce((acc, t) => {
+    if (!acc[t.external_id]) acc[t.external_id] = t;
+    return acc;
+  }, {}));
 
   return unique;
 }
 
 // ───────────────────────────────────────────────
-// 🚀 Glavna funkcija — preuzima pesme za sve playliste dana (bez limita)
+// 🚀 Glavna funkcija — preuzima pesme za sve playliste dana
 export async function runFetchTracks({ reason = 'daily-tracks' } = {}) {
   const sb = getSupabase();
   console.log(`[tracks] start (${reason})`);
@@ -125,17 +118,22 @@ export async function runFetchTracks({ reason = 'daily-tracks' } = {}) {
   for (const pl of playlists || []) {
     try {
       const tracks = await fetchTracksForPlaylist(pl.external_id);
+
+      // ⚠️ Ako je prazna ili nevalidna → obriši je iz baze
       if (!tracks.length) {
-        console.warn(`[tracks] ⚠️ Skipping empty or invalid playlist: ${pl.title}`);
+        console.warn(`[tracks] ⚠️ Empty playlist detected → deleting ${pl.title}`);
+        await sb.from('playlists').delete().eq('id', pl.id);
         continue;
       }
 
+      // ✅ Upsert pesama u tabelu tracks
       const { data: inserted, error: err1 } = await sb
         .from('tracks')
         .upsert(tracks, { onConflict: 'external_id' })
         .select('id, external_id');
       if (err1) throw err1;
 
+      // ✅ Veza između playliste i pesama
       const rels = inserted.map(t => ({
         playlist_id: pl.id,
         track_id: t.id,
@@ -147,6 +145,7 @@ export async function runFetchTracks({ reason = 'daily-tracks' } = {}) {
         .upsert(rels, { onConflict: 'playlist_id,track_id' });
       if (err2) throw err2;
 
+      // ✅ Ažuriraj broj pesama u playlisti
       await sb
         .from('playlists')
         .update({ item_count: inserted.length })
@@ -159,5 +158,5 @@ export async function runFetchTracks({ reason = 'daily-tracks' } = {}) {
     }
   }
 
-  console.log('[tracks] done ✅ (no limits applied)');
+  console.log('[tracks] done ✅ (empty playlists auto-deleted)');
 }
