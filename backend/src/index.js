@@ -1,37 +1,51 @@
-// ✅ Backend entry — init only (no auto jobs on start)
+// ✅ FULL REWRITE v3.7 — Purple Music backend entrypoint
 
-import { initSupabase } from './lib/supabase.js';
-import { startDualJobs } from './lib/scheduler.js';
-import http from 'http';
+import express from 'express';
+import cron from 'node-cron';
+import supabase from './lib/supabase.js';
+import { runFetchTracks } from './jobs/fetchTracksFromPlaylist.js';
+import { runFetchPlaylists } from './jobs/fetchPlaylists.js';
+import { runCleanEmptyPlaylists } from './jobs/cleanEmptyPlaylists.js';
 
-async function main() {
-  console.log('──────────────────────────────────────────────');
-  console.log('[backend:init] Starting Purple Music backend...');
-  console.log(`[backend:init] Node.js version: ${process.version}`);
-  console.log('[backend:init] Environment:', process.env.NODE_ENV || 'development');
+const app = express();
+const PORT = process.env.PORT || 8080;
 
-  const ok = await initSupabase();
-  if (!ok) {
-    console.error('[backend:init] Supabase ENV missing. Exiting.');
-    process.exit(1);
-  }
-  console.log('[backend:init] ✅ Supabase initialized');
+console.log('──────────────────────────────────────────────');
+console.log('[backend:init] Starting Purple Music backend...');
+console.log(`[backend:init] Node.js version: ${process.version}`);
+console.log(`[backend:init] Environment: ${process.env.NODE_ENV || 'development'}`);
 
-  // Samo startuj CRON — bez pokretanja poslova prilikom deploy-a
-  startDualJobs();
-
-  // Neki trivijalan HTTP server (Render health check)
-  const port = process.env.PORT || 8080;
-  http.createServer((_, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('OK\n');
-  }).listen(port, () => {
-    console.log(`[backend] listening on port :${port}`);
-    console.log('──────────────────────────────────────────────');
-  });
-}
-
-main().catch(err => {
-  console.error('[backend:init] fatal error:', err);
+// ✅ Supabase client check
+if (!supabase) {
+  console.error('[supabase] ❌ Supabase client not initialized!');
   process.exit(1);
+}
+console.log('[supabase] client initialized');
+
+// ✅ SCHEDULER SETUP
+console.log('[scheduler] ✅ cron set:');
+console.log('  - cleanup@12:55→21:55');
+console.log('  - tracks@13:00→22:00 (Europe/Belgrade)');
+
+// Cleanup job
+cron.schedule('55 12,21 * * *', async () => {
+  console.log('[scheduler] 🧹 Running cleanup job...');
+  await runCleanEmptyPlaylists();
+});
+
+// Playlist + Track fetch job
+cron.schedule('0 13,22 * * *', async () => {
+  console.log('[scheduler] 🎵 Running fetch job...');
+  await runFetchPlaylists();
+  await runFetchTracks();
+});
+
+// HTTP server
+app.get('/', (req, res) => {
+  res.json({ status: 'Purple Music backend running ✅' });
+});
+
+app.listen(PORT, () => {
+  console.log(`[backend] listening on port :${PORT}`);
+  console.log('──────────────────────────────────────────────');
 });
