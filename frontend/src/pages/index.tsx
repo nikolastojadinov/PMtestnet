@@ -14,23 +14,51 @@ type Playlist = {
   playlist_categories?: Array<{ categories: Category }> | null;
 };
 
+const ITEMS_PER_SECTION = 10;
+
+function inferCategoryName(title?: string | null, description?: string | null): string | null {
+  const text = `${title || ''} ${description || ''}`.toLowerCase();
+  const rules: Array<{ re: RegExp; name: string }> = [
+    { re: /(80s|80's|eighties)/, name: 'Best of 80s' },
+    { re: /(90s|90's|nineties)/, name: 'Best of 90s' },
+    { re: /(2000s|2000's|noughties|aughts)/, name: 'Best of 2000' },
+    { re: /(workout|gym|fitness)/, name: 'Workout' },
+    { re: /(party|club)/, name: 'Party' },
+    { re: /(chill|lofi|relax|study|focus)/, name: 'Chill & study' },
+    { re: /(jazz|blues)/, name: 'Jazz & Blues' },
+    { re: /(latin|reggaeton)/, name: 'Latin' },
+    { re: /(afrobeats|afro)/, name: 'Afrobeats' },
+    { re: /(k[- ]?pop)/, name: 'K-pop' },
+    { re: /(bollywood|hindi)/, name: 'Bollywood' },
+    { re: /(serbian|balkan|ex yu|ex-yu)/, name: 'Balkan' },
+    { re: /(edm|electro|dance)/, name: 'Electronic' },
+    { re: /(rock|metal)/, name: 'Rock' },
+    { re: /(r&b|rnb|hip[- ]?hop|rap)/, name: 'Hip hop & R&B' },
+    { re: /(love|romance|ballad)/, name: 'Love songs' }
+  ];
+  for (const r of rules) {
+    if (r.re.test(text)) return r.name;
+  }
+  return null;
+}
 function groupByCategoryM2M(list: Playlist[]): Record<string, Playlist[]> {
   const groups: Record<string, Playlist[]> = {};
   for (const p of list) {
     const rel = p.playlist_categories || [];
     if (!rel.length) {
       // Fallback bucket if playlist has no categories
-      const key = 'music';
+      const inferred = inferCategoryName(p.title, p.description);
+      const key = inferred || 'music';
       if (!groups[key]) groups[key] = [];
-      if (groups[key].length < 8) groups[key].push(p);
+      if (groups[key].length < ITEMS_PER_SECTION) groups[key].push(p);
       continue;
     }
     for (const r of rel) {
       const name = r?.categories?.name?.trim();
       if (!name) continue;
       const key = name;
-      if (!groups[key]) groups[key] = [];
-      if (groups[key].length < 8) groups[key].push(p);
+  if (!groups[key]) groups[key] = [];
+  if (groups[key].length < ITEMS_PER_SECTION) groups[key].push(p);
     }
   }
   return groups;
@@ -42,11 +70,11 @@ function SkeletonRow({ title }: { title: string }) {
       <h3 className="text-lg md:text-xl font-semibold mb-3 px-1 text-white">
         {title}
       </h3>
-      <div className="flex gap-4 overflow-x-auto scroll-smooth px-1 pb-2 scrollbar-hide">
+      <div className="flex gap-4 overflow-x-auto scroll-smooth px-1 pb-2 scrollbar-hide snap-x snap-mandatory">
         {Array.from({ length: 8 }).map((_, i) => (
           <div
             key={i}
-            className="shrink-0 w-40 md:w-48 lg:w-52"
+            className="shrink-0 w-[42vw] sm:w-48 md:w-56 lg:w-60 snap-start"
           >
             <div className="aspect-square rounded-xl bg-[#1f1f1f] animate-pulse" />
             <div className="h-4 w-24 mt-2 rounded bg-[#1f1f1f] animate-pulse" />
@@ -86,7 +114,7 @@ export default function HomePage() {
             cover_url,
             created_at,
             is_public,
-            playlist_categories!inner(
+            playlist_categories(
               categories(id, name, group_type)
             )
           `)
@@ -168,9 +196,14 @@ export default function HomePage() {
             <h3 className="text-lg md:text-xl font-semibold mb-3 px-1 text-white">
               {title}
             </h3>
-            <div className="flex gap-4 overflow-x-auto scrollbar-hide scroll-smooth px-1 pb-2">
-              {items.slice(0, 8).map((p) => (
-                <div key={p.id} className="snap-start shrink-0">
+            <div className="flex gap-4 overflow-x-auto scrollbar-hide scroll-smooth px-1 pb-2 snap-x snap-mandatory">
+              {(() => {
+                const withCover = items.filter(p => !!p.cover_url);
+                const withoutCover = items.filter(p => !p.cover_url);
+                const display = withCover.concat(withoutCover).slice(0, ITEMS_PER_SECTION);
+                return display;
+              })().map((p) => (
+                <div key={p.id} className="snap-start shrink-0 w-[42vw] sm:w-48 md:w-56 lg:w-60">
                   <PlaylistCard id={p.id} title={p.title} description={p.description || undefined} cover_url={p.cover_url || undefined} />
                 </div>
               ))}

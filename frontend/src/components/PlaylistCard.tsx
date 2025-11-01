@@ -15,7 +15,7 @@ export default function PlaylistCard({ id, title, description, cover_url }: Play
   return (
     <div
       onClick={() => router.push(`/playlist/${id}`)}
-      className="flex flex-col items-center cursor-pointer w-40 md:w-48 lg:w-52 transition-transform hover:scale-105"
+      className="flex flex-col items-center cursor-pointer w-[42vw] sm:w-48 md:w-56 lg:w-60 transition-transform hover:scale-105"
     >
       <div className="w-full aspect-square rounded-xl overflow-hidden mb-2 shadow-lg bg-[#181818] border border-[#2a2a2a]">
         <FallbackImage
