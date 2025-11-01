@@ -57,12 +57,17 @@ export default function HomePage() {
           .from('playlists')
           .select('*')
           .order('created_at', { ascending: false });
-        if (error) throw error;
+        if (error) {
+          // eslint-disable-next-line no-console
+          console.error(error.message);
+          throw error;
+        }
         const list = (data || []) as Playlist[];
         const grouped = groupByCategory(list);
         if (!isMounted) return;
         setGroups(grouped);
-        console.log('✅ Playlists loaded by category', Object.keys(grouped));
+        // eslint-disable-next-line no-console
+        console.log('✅ Playlists loaded by category:', Object.keys(grouped));
         setLoading(false);
       } catch (e: any) {
         if (!isMounted) return;
