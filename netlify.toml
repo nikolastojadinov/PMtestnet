@@ -6,12 +6,9 @@
   command = "npm run build"
   publish = ".next"
 
-[build.environment]
-  NEXT_PUBLIC_SUPABASE_URL       = ""
-  NEXT_PUBLIC_SUPABASE_ANON_KEY  = ""
-  NEXT_PUBLIC_BACKEND_URL        = ""
-  NEXT_PUBLIC_PI_APP_ID          = ""
-  NEXT_PUBLIC_FRONTEND_URL       = ""
+# NOTE: Do not set environment variables here as empty strings,
+# as it will override values configured in the Netlify UI.
+# Set NEXT_PUBLIC_* variables in Netlify → Site settings → Environment variables.
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"

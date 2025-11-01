@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
 import PlaylistCard from '@/components/PlaylistCard';
 
 type Playlist = {
@@ -52,6 +52,14 @@ export default function HomePage() {
   useEffect(() => {
     let isMounted = true;
     (async () => {
+      if (!isSupabaseConfigured) {
+        if (!isMounted) return;
+        setError(
+          'Supabase is not configured. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in Netlify (Site settings → Environment variables) and redeploy.'
+        );
+        setLoading(false);
+        return;
+      }
       try {
         const { data, error } = await supabase
           .from('playlists')
