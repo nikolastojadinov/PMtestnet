@@ -32,7 +32,7 @@ export default function PlaylistPage() {
 
       const { data: songs } = await supabase
         .from('playlist_tracks')
-        .select('track_id, position, tracks(id, title, artist, cover_url, source, external_id)')
+        .select('track_id, position, tracks(id, title, artist, cover_url, source, external_id, url)')
         .eq('playlist_id', id)
         .order('position', { ascending: true });
 
@@ -43,16 +43,21 @@ export default function PlaylistPage() {
       }
 
       if (songs) {
-        const formattedTracks = (songs as any[]).map((s: any) => ({
-          id: s.tracks.id,
-          title: s.tracks.title,
-          artist: s.tracks.artist,
-          cover_url: s.tracks.cover_url,
-          url:
-            s.tracks.source === 'youtube'
-              ? `https://www.youtube.com/watch?v=${s.tracks.external_id}`
-              : s.tracks.url,
-        }));
+        const formattedTracks = (songs as any[])
+          .filter((s: any) => s?.tracks?.source === 'youtube' && (s.tracks.external_id || s.tracks.url))
+          .map((s: any) => {
+            const videoId = s.tracks.external_id || null;
+            const url = videoId
+              ? `https://www.youtube.com/watch?v=${videoId}`
+              : (s.tracks.url || null);
+            return {
+              id: s.tracks.id,
+              title: s.tracks.title,
+              artist: s.tracks.artist,
+              cover_url: s.tracks.cover_url,
+              url: url || undefined,
+            } as Track;
+          });
         setTracks(formattedTracks);
       }
     };

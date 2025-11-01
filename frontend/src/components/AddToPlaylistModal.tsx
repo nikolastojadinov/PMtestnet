@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+// WRITE operacije su onemogućene u YouTube-only režimu; ovaj modal je no-op
 
 type Props = {
   open: boolean;
@@ -19,44 +19,18 @@ export default function AddToPlaylistModal({ open, onClose, trackId }: Props) {
 
   useEffect(() => {
     if (!open) return;
-    (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        // Mock user "Guest": try several common columns
-        const { data, error } = await (supabase as any)
-          .from('playlists')
-          .select('id, title')
-          .or('owner.eq.Guest,user_id.eq.Guest,created_by.eq.Guest')
-          .limit(20);
-        if (error) throw error;
-        setPlaylists((data || []) as Playlist[]);
-      } catch (e: any) {
-        console.warn('fetch playlists for modal', e?.message || e);
-        setPlaylists([]);
-      } finally {
-        setLoading(false);
-      }
-    })();
+      setLoading(false);
+      setPlaylists([]);
+      // READ iz Supabase-a je opcionalan; ovde prikazujemo no-op poruku
   }, [open]);
 
   async function addTo(playlistId: string | number) {
     if (!trackId) return;
     setLoading(true);
     setError(null);
-    try {
-      const { error } = await (supabase as any).from('playlist_tracks').insert({
-        playlist_id: playlistId,
-        track_id: trackId,
-        added_at: new Date().toISOString(),
-      });
-      if (error) throw error;
-      onClose();
-    } catch (e: any) {
-      setError(e?.message || 'Failed to add to playlist');
-    } finally {
-      setLoading(false);
-    }
+    // WRITE je onemogućen u ovom režimu; prikaži poruku i zatvori
+    setError('Adding to playlist is disabled in this demo.');
+    setLoading(false);
   }
 
   if (!open) return null;

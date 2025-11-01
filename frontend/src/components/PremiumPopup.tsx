@@ -1,6 +1,5 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { supabase } from '@/lib/supabaseClient';
 import { getOrCreateGuestId } from '@/lib/guestUser';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -15,21 +14,18 @@ type Props = {
   onClose: () => void;
 };
 
-async function updatePremium(plan: 'weekly' | 'monthly') {
-  // Frontend-only mock update for user "Guest"
+function updatePremiumLocal(plan: 'weekly' | 'monthly') {
+  // Lokalni mock, bez ikakvog WRITE ka Supabase-u
   const now = new Date();
   const until = new Date(now);
   until.setDate(until.getDate() + (plan === 'weekly' ? 7 : 30));
   try {
     const uid = getOrCreateGuestId();
-    const { error } = await (supabase as any)
-      .from('users')
-      .upsert({ user_id: uid, wallet: 'Guest', premium_until: until.toISOString() }, { onConflict: 'user_id' });
-    if (error) throw error;
-  } catch (e) {
-    // non-fatal in UI
-    console.warn('premium update failed', e);
-  }
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('pm_premium_until', until.toISOString());
+      if (uid) localStorage.setItem('pm_guest_uuid', uid);
+    }
+  } catch {}
 }
 
 export default function PremiumPopup({ open, onClose }: Props) {
@@ -40,7 +36,8 @@ export default function PremiumPopup({ open, onClose }: Props) {
     const Pi = typeof window !== 'undefined' ? window.Pi : undefined;
     if (!Pi || !Pi.createPayment) {
       // Fallback: pretend success in non-Pi environments
-      updatePremium(plan).finally(onClose);
+      updatePremiumLocal(plan);
+      onClose();
       return;
     }
 
@@ -56,7 +53,7 @@ export default function PremiumPopup({ open, onClose }: Props) {
           // We keep frontend-only per instruction
         },
         onReadyForServerCompletion: async (paymentId: string) => {
-          await updatePremium(plan);
+          updatePremiumLocal(plan);
           onClose();
         },
         onCancel: () => {
