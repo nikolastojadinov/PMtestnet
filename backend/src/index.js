@@ -65,6 +65,49 @@ async function main() {
         };
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(response));
+      } else if (req.url === '/info') {
+        // Mirror scheduler settings from ./lib/scheduler.js without importing internals
+        const TZ = 'Europe/Belgrade';
+        const CLEAN_SCHEDULES = [
+          '55 12 * * *',
+          '55 13 * * *',
+          '55 14 * * *',
+          '55 15 * * *',
+          '55 16 * * *',
+          '55 17 * * *',
+          '55 18 * * *',
+          '55 19 * * *',
+          '55 20 * * *',
+          '55 21 * * *',
+        ];
+        const TRACK_SCHEDULES = [
+          '0 13 * * *',
+          '0 14 * * *',
+          '0 15 * * *',
+          '0 16 * * *',
+          '0 17 * * *',
+          '0 18 * * *',
+          '0 19 * * *',
+          '0 20 * * *',
+          '0 21 * * *',
+          '0 22 * * *',
+        ];
+        const body = {
+          version: 'v5.0',
+          cron: {
+            timezone: TZ,
+            cleanup: CLEAN_SCHEDULES,
+            tracks: TRACK_SCHEDULES,
+          },
+          env: {
+            supabase: !!process.env.SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE,
+            youtubeKeys: process.env.YOUTUBE_API_KEYS ? process.env.YOUTUBE_API_KEYS.split(',').length : 0,
+          },
+          uptime: `${Math.round(process.uptime())}s`,
+          timestamp: new Date().toISOString(),
+        };
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(body));
       } else {
         res.writeHead(200, { 'Content-Type': 'text/plain' });
         res.end('Purple Music Backend running.\n');
