@@ -24,6 +24,7 @@ export default function FullPlayer() {
     queue,
     currentTrackIndex,
     isPlaying,
+    togglePlay,
     playTrack,
     openFull,
     closeFull,
@@ -31,7 +32,6 @@ export default function FullPlayer() {
   } = usePlayer();
 
   const [ytReady, setYtReady] = useState(false);
-  const [ytPlaying, setYtPlaying] = useState(false);
   const playerRef = useRef<any>(null);
 
   const videoId = useMemo(() => getYouTubeId(currentTrack?.url), [currentTrack?.url]);
@@ -42,14 +42,12 @@ export default function FullPlayer() {
     if (!videoId || !ytReady || !playerRef.current) return;
     try {
       playerRef.current.playVideo();
-      setYtPlaying(true);
     } catch {}
   }, [videoId, ytReady]);
 
-  // If fullscreen flag is off or no track, do not render
+  // Ensure fullscreen is engaged when a track is active
   useEffect(() => {
     if (currentTrack && !isFullScreen) {
-      // Ensure fullscreen mode is engaged when player appears via playTrack()
       openFull();
     }
   }, [currentTrack, isFullScreen, openFull]);
@@ -61,34 +59,16 @@ export default function FullPlayer() {
     setYtReady(true);
     try {
       e.target.playVideo();
-      setYtPlaying(true);
     } catch {}
   };
 
-  const onYTStateChange: YouTubeProps['onStateChange'] = (e) => {
-    // 1: unstarted, 0: ended, 1: playing, 2: paused, 3: buffering, 5: cued
-    const state = e.data;
-    if (state === 1) setYtPlaying(true);
-    else if (state === 2 || state === 0) setYtPlaying(false);
+  const onYTStateChange: YouTubeProps['onStateChange'] = () => {
+    // no-op; control is tied to PlayerContext
   };
 
   const handlePlayPause = () => {
-    if (videoId && playerRef.current) {
-      const state = playerRef.current.getPlayerState?.();
-      // If playing, pause; otherwise play
-      if (state === 1) {
-        playerRef.current.pauseVideo();
-        setYtPlaying(false);
-      } else {
-        playerRef.current.playVideo();
-        setYtPlaying(true);
-      }
-      return;
-    }
-    // Fallback to context for non-YouTube audio
-    // This uses the shared audio element
-    // eslint-disable-next-line @typescript-eslint/no-empty-function
-    (async () => {})();
+    // Delegate play/pause to the shared PlayerContext only
+    togglePlay();
   };
 
   const handleNext = () => {
@@ -103,30 +83,15 @@ export default function FullPlayer() {
     }
   };
 
-  const handleMinimize = () => {
-    // Prefer pausing YouTube playback so the mini player can mirror state
-    try {
-      playerRef.current?.pauseVideo?.();
-    } catch {}
+  const handleClose = () => {
+    // Close the fullscreen overlay only; keep context state intact
     closeFull();
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      className="fixed inset-0 z-[70] flex flex-col bg-gradient-to-b from-purple-950 via-black to-black text-white"
-    >
-      {/* Top-left minimize (pauses playback and returns to mini player) */}
-      <button
-        onClick={handleMinimize}
-        className="absolute left-4 top-4 z-50 rounded-full bg-purple-800/50 hover:bg-purple-700 p-2 text-sm"
-        aria-label="Minimize player"
-      >
-        ⬇
-      </button>
+    <div className="fixed inset-0 z-[50] flex flex-col bg-gradient-to-b from-purple-950 via-black to-black text-white">
       {/* Header */}
-      <div className="flex items-center justify-start p-4">
+      <div className="flex items-center justify-between p-4">
         <div className="flex items-center space-x-3">
           {currentTrack.cover_url && (
             <img
@@ -140,6 +105,12 @@ export default function FullPlayer() {
             <div className="text-sm text-purple-200/80 line-clamp-1">{currentTrack.artist}</div>
           </div>
         </div>
+        <button
+          onClick={handleClose}
+          className="rounded-full bg-purple-800/50 hover:bg-purple-700 px-3 py-2 text-sm"
+        >
+          ✖ Close
+        </button>
       </div>
 
       {/* Player Area */}
@@ -193,7 +164,7 @@ export default function FullPlayer() {
             onClick={handlePlayPause}
             className="px-6 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-yellow-400 text-black font-semibold hover:opacity-95"
           >
-            {videoId ? (ytPlaying ? '⏸ Pause' : '▶ Play') : (isPlaying ? '⏸ Pause' : '▶ Play')}
+            {isPlaying ? '⏸ Pause' : '▶ Play'}
           </button>
           <button
             onClick={handleNext}
@@ -212,3 +183,4 @@ export default function FullPlayer() {
     </div>
   );
 }
+
