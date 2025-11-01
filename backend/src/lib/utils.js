@@ -3,7 +3,6 @@
 // 🔹 ZADRŽANO: sve funkcije za datume, rotaciju i sleep()
 // 🔹 BEZ promene strukture — potpuno kompatibilno sa starim pozivima
 
-// 🌍 Region pool — identičan kao ranije (70 regiona + GLOBAL)
 const REGION_POOL = [
   'US','CA','MX','BR','AR','CL','CO','PE','VE','EC','UY','PY',
   'GB','FR','DE','ES','IT','NL','PL','SE','NO','FI','PT','UA','CZ','HU','RO','GR','RS','HR','BG','CH',
@@ -12,13 +11,11 @@ const REGION_POOL = [
   'AU','NZ','RU','ET','TZ','LK','GLOBAL'
 ];
 
-// 📈 NOVO: dinamički score sistem za regione (cache u memoriji)
 let regionScores = REGION_POOL.reduce((acc, r) => {
   acc[r] = { success: 1, fail: 0, score: 1.0 };
   return acc;
 }, {});
 
-// 🔹 Funkcija koju fetchPlaylists.js koristi da “uči” koji region vredi
 export function updateRegionScore(region, playlistsCount) {
   if (!regionScores[region]) return;
   if (playlistsCount > 100) regionScores[region].success++;
@@ -27,14 +24,12 @@ export function updateRegionScore(region, playlistsCount) {
   regionScores[region].score = Math.max(0.1, regionScores[region].success / total);
 }
 
-// 🔹 Interna funkcija — vraća regione sortirane po uspešnosti
 function weightedShuffle(arr) {
   const weighted = arr.map(r => ({ r, w: regionScores[r]?.score || 0.5 }));
   weighted.sort((a, b) => b.w - a.w);
   return weighted.map(x => x.r);
 }
 
-// 🔁 Rotator API ključeva (isto kao pre)
 export function nextKeyFactory(keys) {
   let i = -1;
   const safe = Array.isArray(keys) ? keys.filter(Boolean) : [];
@@ -45,7 +40,6 @@ export function nextKeyFactory(keys) {
   };
 }
 
-// 🌍 Pametni odabir regiona za današnji dan (učeni izbor)
 export function pickTodayRegions(n = 8, now = new Date()) {
   const dayIndex = Math.floor(now.getTime() / (24 * 3600 * 1000));
   const shuffled = weightedShuffle(REGION_POOL);
@@ -56,7 +50,6 @@ export function pickTodayRegions(n = 8, now = new Date()) {
   return selected;
 }
 
-// 📅 Datum, vreme i pomoćne funkcije — nepromenjeno
 export function parseYMD(s) {
   const [y, m, d] = s.split('-').map(Number);
   const dt = new Date(y, m - 1, d, 0, 0, 0, 0);
