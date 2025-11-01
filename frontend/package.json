@@ -7,6 +7,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "export": "next export",
+    "typecheck": "tsc --noEmit",
     "lhci": "lhci autorun --upload.target=temporary-public-storage"
   },
   "dependencies": {
@@ -27,5 +29,8 @@
     "postcss": "^8.4.47",
     "typescript": "5.9.3",
     "@lhci/cli": "^0.13.0"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
