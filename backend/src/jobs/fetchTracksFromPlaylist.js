@@ -1,7 +1,7 @@
-// ✅ FULL REWRITE v3.6 — Fetch tracks from YouTube playlists and save to Supabase
+// ✅ FULL REWRITE v3.7 — Fetch tracks from YouTube playlists and save to Supabase
 
 import { fetchPlaylistItems } from '../lib/youtube.js';
-import { supabase } from '../lib/supabase.js';
+import supabase from '../lib/supabase.js'; // ✅ default import
 
 export async function runFetchTracks() {
   console.log('[tracks] Starting playlist track fetch job...');
@@ -23,15 +23,12 @@ export async function runFetchTracks() {
     for (const playlist of playlists) {
       console.log(`[tracks] Fetching tracks for: ${playlist.title}`);
 
-      // ✅ koristi novu funkciju iz youtube.js
       const items = await fetchPlaylistItems(playlist.external_id);
-
       if (!items || items.length === 0) {
         console.log(`[tracks] ⚠️ No tracks found for ${playlist.title}`);
         continue;
       }
 
-      // Mapiramo YouTube iteme u tracks format
       const tracks = items.map(item => ({
         source: 'youtube',
         external_id: item.contentDetails?.videoId || null,
@@ -44,7 +41,6 @@ export async function runFetchTracks() {
         last_synced_at: new Date().toISOString(),
       })).filter(t => t.external_id);
 
-      // Upisujemo pesme u Supabase
       const { error: insertError } = await supabase
         .from('tracks')
         .upsert(tracks, { onConflict: 'external_id' });
