@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '@/utils/supabaseClient';
+import { supabase } from '@/lib/supabaseClient';
 
 type Props = {
   open: boolean;
@@ -24,7 +24,7 @@ export default function AddToPlaylistModal({ open, onClose, trackId }: Props) {
       setError(null);
       try {
         // Mock user "Guest": try several common columns
-        const { data, error } = await supabase
+        const { data, error } = await (supabase as any)
           .from('playlists')
           .select('id, title')
           .or('owner.eq.Guest,user_id.eq.Guest,created_by.eq.Guest')
@@ -45,7 +45,7 @@ export default function AddToPlaylistModal({ open, onClose, trackId }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const { error } = await supabase.from('playlist_tracks').insert({
+      const { error } = await (supabase as any).from('playlist_tracks').insert({
         playlist_id: playlistId,
         track_id: trackId,
         added_at: new Date().toISOString(),

@@ -1,6 +1,6 @@
 import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
-import { supabase } from '@/utils/supabaseClient';
+import { supabase } from '@/lib/supabaseClient';
 import { usePlayer } from '@/context/PlayerContext';
 import FallbackImage from '@/components/FallbackImage';
 
@@ -37,12 +37,13 @@ export default function PlaylistPage() {
         .order('position', { ascending: true });
 
       if (playlist) {
-        setPlaylistTitle(playlist.title);
-        setCover(playlist.cover_url);
+        const pl = playlist as any;
+        setPlaylistTitle(pl.title);
+        setCover(pl.cover_url);
       }
 
       if (songs) {
-        const formattedTracks = songs.map((s: any) => ({
+        const formattedTracks = (songs as any[]).map((s: any) => ({
           id: s.tracks.id,
           title: s.tracks.title,
           artist: s.tracks.artist,

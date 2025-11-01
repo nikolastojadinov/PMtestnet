@@ -1,7 +1,7 @@
 "use client";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import i18n from '@/i18n/config';
-import { supabase } from '@/utils/supabaseClient';
+import { supabase } from '@/lib/supabaseClient';
 import { useGuestUser } from '@/hooks/useGuestUser';
 import { supportedLngs } from '@/i18n/config';
 
@@ -26,8 +26,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     try {
       const uid = guest.id;
       if (uid) {
-        const { data } = await supabase.from('users').select('language').eq('user_id', uid).maybeSingle();
-        if (data?.language) return data.language as string;
+  const { data } = await (supabase as any).from('users').select('language').eq('user_id', uid).maybeSingle();
+  if ((data as any)?.language) return (data as any).language as string;
       }
     } catch {}
     // 3) Pi Browser language or navigator.language
@@ -51,7 +51,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     try {
       const uid = guest.id;
       if (uid) {
-        await supabase.from('users').upsert({ user_id: uid, language: String(lang), wallet: 'Guest' }, { onConflict: 'user_id' });
+  await (supabase as any).from('users').upsert({ user_id: uid, language: String(lang), wallet: 'Guest' }, { onConflict: 'user_id' });
       }
     } catch {}
   }, [guest.id]);

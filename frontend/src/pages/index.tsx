@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
+import { supabase } from '@/lib/supabaseClient';
 import PlaylistCard from '@/components/PlaylistCard';
 
 type Playlist = {
@@ -15,7 +15,7 @@ type Playlist = {
 function groupByCategory(list: Playlist[]): Record<string, Playlist[]> {
   const groups: Record<string, Playlist[]> = {};
   for (const p of list) {
-    const key = p.category && p.category.trim() ? p.category : 'misc';
+    const key = p.category && p.category.trim() ? p.category : 'music';
     if (!groups[key]) groups[key] = [];
     if (groups[key].length < 8) groups[key].push(p);
   }
@@ -52,25 +52,25 @@ export default function HomePage() {
   useEffect(() => {
     let isMounted = true;
     (async () => {
-      if (!isSupabaseConfigured) {
-        if (!isMounted) return;
-        setError(
-          'Supabase is not configured. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in Netlify (Site settings → Environment variables) and redeploy.'
-        );
-        setLoading(false);
-        return;
-      }
       try {
-        const { data, error } = await supabase
+        const { data, error, status } = await supabase
           .from('playlists')
-          .select('*')
+          .select('id, title, cover_url, category, description, region, created_at')
           .order('created_at', { ascending: false });
+
+        let list = (data || []) as Playlist[];
         if (error) {
-          // eslint-disable-next-line no-console
-          console.error(error.message);
-          throw error;
+          const msg = String((error as any)?.message || '');
+          const isUserIdConflict = msg.toLowerCase().includes('user_id');
+          const is400 = (status === 400) || (error as any)?.status === 400;
+          if (isUserIdConflict || is400) {
+            console.warn('Non-blocking Supabase warning:', { status, message: msg });
+          } else {
+            // eslint-disable-next-line no-console
+            console.error('Supabase error fetching playlists:', msg);
+            throw error;
+          }
         }
-        const list = (data || []) as Playlist[];
         const grouped = groupByCategory(list);
         if (!isMounted) return;
         setGroups(grouped);

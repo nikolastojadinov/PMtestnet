@@ -1,4 +1,4 @@
-import { supabase } from '@/utils/supabaseClient';
+import { supabase } from '@/lib/supabaseClient';
 
 const KEY = 'pm_guest_uuid';
 
@@ -29,7 +29,7 @@ export async function ensureGuestUserRecord(): Promise<string | null> {
   const id = getOrCreateGuestId();
   if (!id) return null;
   try {
-    await supabase
+    await (supabase as any)
       .from('users')
       .upsert({ user_id: id, wallet: 'Guest' }, { onConflict: 'user_id' });
   } catch {

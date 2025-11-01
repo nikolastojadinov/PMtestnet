@@ -2,7 +2,7 @@
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
 import { usePlayer } from "@/context/PlayerContext";
-import { supabase } from "@/utils/supabaseClient";
+import { supabase } from "@/lib/supabaseClient";
 
 interface Track {
   id: string;
@@ -27,14 +27,14 @@ export default function PlaylistPage() {
       setLoading(true);
 
       // ✅ Load playlist data
-      const { data: playlistData } = await supabase
+      const { data: playlistData } = await (supabase as any)
         .from("playlists")
         .select("*")
         .eq("id", id)
         .single();
 
       // ✅ Load track list for the playlist
-      const { data: tracksData } = await supabase
+      const { data: tracksData } = await (supabase as any)
         .from("playlist_tracks")
         .select("track_id, tracks(*)")
         .eq("playlist_id", id);
