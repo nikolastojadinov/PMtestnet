@@ -6,7 +6,6 @@
  */
 import React from 'react';
 import Header from '../components/Header';
-import Footer from '../components/Footer';
 import dynamic from 'next/dynamic';
 
 const FullPlayer = dynamic(() => import('@/components/FullPlayer'), { ssr: false });
@@ -14,15 +13,14 @@ const MiniPlayer = dynamic(() => import('@/components/MiniPlayer'), { ssr: false
 
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen transition-colors duration-300 bg-[#fafafa] text-[#111111] dark:bg-[#090010] dark:text-gray-200">
+    <div className="min-h-screen bg-[#121212] text-gray-100">
       <Header />
-      <div className="pt-16 pb-20 max-w-6xl mx-auto px-4">
+      <div className="pt-16 pb-24 max-w-6xl mx-auto px-4">
         {children}
       </div>
   {/* Players */}
     <FullPlayer />
     <MiniPlayer />
-      <Footer />
     </div>
   );
 }

@@ -39,7 +39,7 @@ function groupByCategoryM2M(list: Playlist[]): Record<string, Playlist[]> {
 function SkeletonRow({ title }: { title: string }) {
   return (
     <section className="mb-8">
-      <h3 className="text-lg md:text-xl font-semibold mb-3 px-1 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-fuchsia-300 to-yellow-300">
+      <h3 className="text-lg md:text-xl font-semibold mb-3 px-1 text-white">
         {title}
       </h3>
       <div className="flex gap-4 overflow-x-auto scroll-smooth px-1 pb-2 scrollbar-hide">
@@ -48,8 +48,8 @@ function SkeletonRow({ title }: { title: string }) {
             key={i}
             className="shrink-0 w-40 md:w-48 lg:w-52"
           >
-            <div className="aspect-square rounded-xl bg-purple-900/40 animate-pulse" />
-            <div className="h-4 w-24 mt-2 rounded bg-purple-900/40 animate-pulse" />
+            <div className="aspect-square rounded-xl bg-[#1f1f1f] animate-pulse" />
+            <div className="h-4 w-24 mt-2 rounded bg-[#1f1f1f] animate-pulse" />
           </div>
         ))}
       </div>
@@ -141,7 +141,7 @@ export default function HomePage() {
   const categoryOrder = useMemo(() => Object.keys(groups), [groups]);
 
   return (
-    <div className="min-h-screen px-4 md:px-8 pt-16 pb-24 bg-gradient-to-b from-[#0d001a] to-[#1a0033] text-white">
+    <div className="min-h-screen px-4 md:px-8 pt-16 pb-24 bg-[#121212] text-white">
       {loading && (
         <>
           <SkeletonRow title={t('home.mostPopular', { defaultValue: 'Most popular' })} />
@@ -165,7 +165,7 @@ export default function HomePage() {
         const title = t(`home.${cat}`, { defaultValue: cat });
         return (
           <section key={cat} className="mb-8">
-            <h3 className="text-lg md:text-xl font-semibold mb-3 px-1 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-fuchsia-300 to-yellow-300">
+            <h3 className="text-lg md:text-xl font-semibold mb-3 px-1 text-white">
               {title}
             </h3>
             <div className="flex gap-4 overflow-x-auto scrollbar-hide scroll-smooth px-1 pb-2">
