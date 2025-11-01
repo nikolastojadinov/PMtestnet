@@ -150,11 +150,11 @@ export default function HomePage() {
       )}
 
       {!loading && error && (
-        <div className="text-sm text-purple-200/80 py-8">{error}</div>
+        <div className="text-sm text-gray-300/80 py-8">{error}</div>
       )}
 
       {!loading && !error && categoryOrder.length === 0 && (
-        <div className="text-sm text-purple-200/80 py-8">
+        <div className="text-sm text-gray-300/80 py-8">
           {t('home.emptyCategory', { defaultValue: 'Nothing here yet — check back soon.' })}
         </div>
       )}
