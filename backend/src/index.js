@@ -1,51 +1,56 @@
-// ✅ FULL REWRITE v3.7 — Purple Music backend entrypoint
+// ✅ FULL REWRITE v4.1 — Boot-time environment summary and startup logger
 
-import express from 'express';
-import cron from 'node-cron';
 import supabase from './lib/supabase.js';
-import { runFetchTracks } from './jobs/fetchTracksFromPlaylist.js';
-import { runFetchPlaylists } from './jobs/fetchPlaylists.js';
-import { runCleanEmptyPlaylists } from './jobs/cleanEmptyPlaylists.js';
+import { getNextApiKey } from './lib/youtube.js';
+import { startDualJobs } from './lib/scheduler.js';
 
-const app = express();
-const PORT = process.env.PORT || 8080;
+console.log('==========================================');
+console.log('🚀 Purple Music Backend — Boot Summary');
+console.log('==========================================');
 
-console.log('──────────────────────────────────────────────');
-console.log('[backend:init] Starting Purple Music backend...');
-console.log(`[backend:init] Node.js version: ${process.version}`);
-console.log(`[backend:init] Environment: ${process.env.NODE_ENV || 'development'}`);
+// 🔍 Safe environment check (without exposing secrets)
+const envStatus = {
+  SUPABASE_URL: !!process.env.SUPABASE_URL ? '✅' : '❌',
+  SUPABASE_SERVICE_ROLE: !!process.env.SUPABASE_SERVICE_ROLE ? '✅' : '❌',
+  YOUTUBE_API_KEYS:
+    process.env.YOUTUBE_API_KEYS
+      ? `✅ (${process.env.YOUTUBE_API_KEYS.split(',').length} keys loaded)`
+      : '❌'
+};
 
-// ✅ Supabase client check
-if (!supabase) {
-  console.error('[supabase] ❌ Supabase client not initialized!');
-  process.exit(1);
+console.log('Environment status:');
+for (const [key, val] of Object.entries(envStatus)) {
+  console.log(` - ${key}: ${val}`);
 }
-console.log('[supabase] client initialized');
 
-// ✅ SCHEDULER SETUP
-console.log('[scheduler] ✅ cron set:');
-console.log('  - cleanup@12:55→21:55');
-console.log('  - tracks@13:00→22:00 (Europe/Belgrade)');
+console.log('==========================================');
 
-// Cleanup job
-cron.schedule('55 12,21 * * *', async () => {
-  console.log('[scheduler] 🧹 Running cleanup job...');
-  await runCleanEmptyPlaylists();
-});
+// 🧩 Initialization sequence
+async function main() {
+  try {
+    console.log('[startup] Initializing Supabase client...');
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE) {
+      console.error('[startup] ❌ Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE');
+      process.exit(1);
+    }
 
-// Playlist + Track fetch job
-cron.schedule('0 13,22 * * *', async () => {
-  console.log('[scheduler] 🎵 Running fetch job...');
-  await runFetchPlaylists();
-  await runFetchTracks();
-});
+    console.log('[startup] ✅ Supabase client ready');
 
-// HTTP server
-app.get('/', (req, res) => {
-  res.json({ status: 'Purple Music backend running ✅' });
-});
+    if (!process.env.YOUTUBE_API_KEYS) {
+      console.warn('[startup] ⚠️ Missing YOUTUBE_API_KEYS — YouTube fetch jobs will be skipped.');
+    } else {
+      const keyCount = process.env.YOUTUBE_API_KEYS.split(',').length;
+      console.log(`[startup] ✅ YouTube API key rotation active (${keyCount} keys)`);
+    }
 
-app.listen(PORT, () => {
-  console.log(`[backend] listening on port :${PORT}`);
-  console.log('──────────────────────────────────────────────');
-});
+    console.log('[startup] Scheduling cron jobs...');
+    // Start the scheduled cleanup and track fetch jobs
+    startDualJobs();
+    console.log('[startup] ✅ Scheduler initialized');
+  } catch (err) {
+    console.error('[startup] ❌ Fatal error during backend boot:', err);
+    process.exit(1);
+  }
+}
+
+main();
