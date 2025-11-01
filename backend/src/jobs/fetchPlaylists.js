@@ -1,10 +1,9 @@
-// ✅ FULL REWRITE v5.5 — Smart Fetcher with Region Learning (GLOBAL fix)
+// ✅ FULL REWRITE v5.6 — Smart Fetcher with Region Learning & GLOBAL fix
 // 🔹 Radi SAMO tokom FETCH faze (29 dana)
 // 🔹 Preskače prazne, mix, kids, private, deleted plejliste
 // 🔹 Dodaje GLOBAL region svaki drugi dan
 // 🔹 Uči koji region daje dobre rezultate (updateRegionScore)
 // 🔹 Kompatibilno sa 6 API ključeva (60 000 kvote/dan)
-// 🔹 ✅ FIX: GLOBAL više ne šalje regionCode (nema više 400 greške)
 
 import axios from 'axios';
 import { getSupabase } from '../lib/supabase.js';
@@ -48,12 +47,9 @@ async function searchPlaylists({ region, q }) {
   const out = [];
   let pageToken = null;
   let pages = 0;
-
   do {
     if (apiCallsToday >= MAX_API_CALLS_PER_DAY) break;
     const key = nextKey();
-
-    // ✅ NOVO: ne šalji regionCode ako je region === 'GLOBAL'
     const params = {
       key,
       part: 'snippet',
@@ -61,13 +57,12 @@ async function searchPlaylists({ region, q }) {
       q,
       maxResults: 50,
       pageToken,
-      ...(region !== 'GLOBAL' ? { regionCode: region } : {}) // ⬅️ fix
+      ...(region !== 'GLOBAL' ? { regionCode: region } : {}) // ✅ GLOBAL fix
     };
 
     try {
       const { data } = await axios.get('https://www.googleapis.com/youtube/v3/search', { params });
       apiCallsToday++;
-
       const batch = (data.items || [])
         .map(it => ({
           external_id: it.id?.playlistId,
@@ -83,7 +78,6 @@ async function searchPlaylists({ region, q }) {
           sync_status: 'fetched'
         }))
         .filter(r => isValidPlaylist(r.external_id, r.title, r.description));
-
       out.push(...batch);
       pageToken = data.nextPageToken || null;
       pages++;
@@ -93,7 +87,6 @@ async function searchPlaylists({ region, q }) {
       break;
     }
   } while (pageToken && pages < MAX_PAGES_PER_QUERY);
-
   return out;
 }
 
@@ -114,7 +107,7 @@ export async function runFetchPlaylists() {
   for (const region of regions) {
     for (const q of KEYWORDS) {
       const batch = await searchPlaylists({ region, q });
-      updateRegionScore(region, batch.length); // 🧠 učenje uspešnosti
+      updateRegionScore(region, batch.length);
       collected.push(...batch);
       console.log(`[playlists:${region}] +${batch.length} (total=${collected.length})`);
       if (collected.length >= TARGET_PLAYLISTS_PER_DAY) break;
