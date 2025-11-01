@@ -16,6 +16,11 @@ export interface PlayerContextType {
   currentTrackIndex: number | null;
   isFullScreen: boolean;
   isPlaying: boolean;
+  activeTrack: Track | null;
+
+  // Setters (exposed to restore original control surface)
+  setIsFullScreen: React.Dispatch<React.SetStateAction<boolean>>;
+  setActiveTrack: React.Dispatch<React.SetStateAction<Track | null>>;
 
   // Derived
   currentTrack: Track | null;
@@ -41,6 +46,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [currentTrackIndex, setCurrentTrackIndex] = useState<number | null>(null);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [activeTrack, setActiveTrack] = useState<Track | null>(null);
 
   // Single shared audio element instance
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -59,10 +65,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Derived current track
-  const currentTrack: Track | null = useMemo(() => {
-    if (currentTrackIndex == null) return null;
-    return queue[currentTrackIndex] ?? null;
-  }, [queue, currentTrackIndex]);
+  // Derive current track from activeTrack to ensure a single source of truth
+  const currentTrack: Track | null = useMemo(() => activeTrack, [activeTrack]);
 
   const loadAndPlay = (track: Track) => {
     const audio = ensureAudio();
@@ -84,7 +88,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     if (queue.length > 0 && nextIndex < queue.length) {
       setCurrentTrackIndex(nextIndex);
       const nextTrack = queue[nextIndex];
-      loadAndPlay(nextTrack);
+      setActiveTrack(nextTrack ?? null);
+      if (nextTrack) loadAndPlay(nextTrack);
     } else {
       setIsPlaying(false);
     }
@@ -96,9 +101,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     setQueue(list);
     setCurrentTrackIndex(index);
     const track = list[index];
-    if (track) {
-      loadAndPlay(track);
-    }
+    setActiveTrack(track ?? null);
+    if (track) loadAndPlay(track);
     // When playing a track directly, open fullscreen by design? Leave fullscreen as-is.
   };
 
@@ -109,21 +113,19 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       playTrack(list, index);
       return;
     }
-    // If nothing provided, ensure playback starts/resumes automatically
-    if (currentTrack) {
+    // Keep activeTrack unchanged; optionally resume audio if paused
+    if (activeTrack) {
       const audio = ensureAudio();
       if (audio.paused) {
         audio.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
-      } else {
-        // Already playing, keep state
-        setIsPlaying(true);
       }
     }
   };
 
   const closeFull = () => {
-    // Keep the same song active; just hide fullscreen
+    // Restore original behavior: exiting fullscreen clears active track
     setIsFullScreen(false);
+    setActiveTrack(null);
   };
 
   const togglePlay = () => {
@@ -143,6 +145,11 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     currentTrackIndex,
     isFullScreen,
     isPlaying,
+    activeTrack,
+
+    // Setters
+    setIsFullScreen,
+    setActiveTrack,
 
     // Derived
     currentTrack,
