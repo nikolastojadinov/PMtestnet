@@ -2,10 +2,27 @@
 
 import { google } from 'googleapis';
 
-const youtube = google.youtube({
-  version: 'v3',
-  auth: process.env.YOUTUBE_API_KEY
-});
+// Unified API keys: YOUTUBE_API_KEYS=key1,key2,... (legacy YOUTUBE_API_KEY supported as fallback)
+const rawKeys = process.env.YOUTUBE_API_KEYS || process.env.YOUTUBE_API_KEY || '';
+const API_KEYS = String(rawKeys)
+  .split(',')
+  .map(k => k.trim())
+  .filter(Boolean);
+
+if (API_KEYS.length === 0) {
+  console.error('[youtube] ❌ Missing YOUTUBE_API_KEYS (or YOUTUBE_API_KEY) in environment');
+}
+
+let keyIndex = 0;
+export function getNextApiKey() {
+  if (API_KEYS.length === 0) return undefined;
+  const key = API_KEYS[keyIndex];
+  keyIndex = (keyIndex + 1) % API_KEYS.length;
+  return key;
+}
+
+// Note: we omit global auth so we can rotate keys per request
+const youtube = google.youtube({ version: 'v3' });
 
 /**
  * ✅ Fetch public music playlists from YouTube (categoryId = 10)
@@ -15,6 +32,7 @@ export async function fetchYouTubePlaylists() {
 
   try {
     const res = await youtube.playlists.list({
+      auth: getNextApiKey(),
       part: ['snippet', 'contentDetails'],
       chart: 'mostPopular',
       maxResults: 25,
@@ -38,6 +56,7 @@ export async function fetchPlaylistItems(playlistId) {
 
   try {
     const res = await youtube.playlistItems.list({
+      auth: getNextApiKey(),
       part: ['snippet', 'contentDetails'],
       playlistId,
       maxResults: 50
