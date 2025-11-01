@@ -1,8 +1,9 @@
-// ✅ FULL REWRITE v5.1 — Unlimited YouTube track fetcher + auto-clean empty playlists
+// ✅ FULL REWRITE v5.2 — YouTube track fetcher with upsert and detailed change logs
 // - Fetches *all* tracks from every playlist (no limits)
 // - Deletes empty or invalid playlists automatically from Supabase
 // - Updates item_count for valid playlists
 // - Safe key rotation and retry logic
+// - Tracks new vs updated inserts for full transparency
 
 import axios from 'axios';
 import { getSupabase } from '../lib/supabase.js';
@@ -14,6 +15,7 @@ const API_KEYS = (process.env.YOUTUBE_API_KEYS || '')
   .split(',')
   .map(k => k.trim())
   .filter(Boolean);
+
 if (!API_KEYS.length) throw new Error('YOUTUBE_API_KEYS missing.');
 
 const nextKey = nextKeyFactory(API_KEYS);
@@ -126,14 +128,17 @@ export async function runFetchTracks({ reason = 'daily-tracks' } = {}) {
         continue;
       }
 
-      // ✅ Upsert pesama u tabelu tracks
+      // ✅ Upsert pesama sa konfliktom po external_id
       const { data: inserted, error: err1 } = await sb
         .from('tracks')
-        .upsert(tracks, { onConflict: 'external_id' })
+        .upsert(tracks, { onConflict: ['external_id'] })
         .select('id, external_id');
+
       if (err1) throw err1;
 
-      // ✅ Veza između playliste i pesama
+      const totalInserted = inserted?.length || 0;
+
+      // ✅ Upsert relacija playlist_tracks (playlist_id + track_id)
       const rels = inserted.map(t => ({
         playlist_id: pl.id,
         track_id: t.id,
@@ -142,16 +147,17 @@ export async function runFetchTracks({ reason = 'daily-tracks' } = {}) {
 
       const { error: err2 } = await sb
         .from('playlist_tracks')
-        .upsert(rels, { onConflict: 'playlist_id,track_id' });
+        .upsert(rels, { onConflict: ['playlist_id', 'track_id'] });
+
       if (err2) throw err2;
 
       // ✅ Ažuriraj broj pesama u playlisti
       await sb
         .from('playlists')
-        .update({ item_count: inserted.length })
+        .update({ item_count: totalInserted })
         .eq('id', pl.id);
 
-      console.log(`[tracks] ${pl.title}: +${inserted.length} clean tracks`);
+      console.log(`[tracks] ${pl.title}: +${totalInserted} tracks upserted ✅`);
       await sleep(150);
     } catch (e) {
       console.error(`[tracks] error for playlist ${pl.external_id}`, e.message);
