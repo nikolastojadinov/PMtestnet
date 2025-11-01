@@ -1,170 +1,54 @@
-// ✅ FULL REWRITE v5.3 — YouTube track fetcher + safe retry system
-// - Fetches *all* tracks from every playlist (no limits)
-// - Marks empty playlists as pending retry (item_count=0, sync_status='new')
-// - Updates item_count for valid playlists
-// - Safe key rotation and retry logic
-// - Fully compatible with current Render + Supabase setup
+// 🔄 CLEANUP DIRECTIVE
+// Full rewrite — remove any previous code or duplicate Supabase client instances before applying this version.
 
-import axios from 'axios';
-import { getSupabase } from '../lib/supabase.js';
-import { nextKeyFactory, sleep } from '../lib/utils.js';
+import { sb, initSupabase } from "../lib/supabase.js";
+import { getTracksFromYouTube } from "../lib/youtube.js";
 
-const PAGE_SIZE = 50;
+/**
+ * Fetch and sync all tracks for a given playlist into Supabase.
+ * Uses the shared Supabase client to ensure writes persist in the main database.
+ */
 
-const API_KEYS = (process.env.YOUTUBE_API_KEYS || '')
-  .split(',')
-  .map(k => k.trim())
-  .filter(Boolean);
-if (!API_KEYS.length) throw new Error('YOUTUBE_API_KEYS missing.');
+export async function fetchTracksFromPlaylist(playlist) {
+  await initSupabase();
 
-const nextKey = nextKeyFactory(API_KEYS);
+  try {
+    console.log(`[tracks] Fetching: ${playlist.title}`);
 
-// ───────────────────────────────────────────────
-// 🎵 Fetchuje sve pesme iz jedne YouTube playliste
-async function fetchTracksForPlaylist(playlistId) {
-  const all = [];
-  let pageToken = null;
+    // 1️⃣ Fetch all tracks from YouTube API
+    const tracks = await getTracksFromYouTube(playlist.external_id);
 
-  while (true) {
-    const key = nextKey();
-    const params = {
-      key,
-      part: 'snippet,contentDetails',
-      playlistId,
-      maxResults: PAGE_SIZE,
-      pageToken,
-    };
-
-    try {
-      const { data } = await axios.get('https://www.googleapis.com/youtube/v3/playlistItems', { params });
-
-      if (!data.items?.length) break;
-
-      const tracks = data.items
-        .map(it => {
-          const title = it.snippet?.title?.trim() || null;
-          const videoId = it.contentDetails?.videoId || null;
-          const artist = it.snippet?.videoOwnerChannelTitle?.trim() || null;
-          const cover =
-            it.snippet?.thumbnails?.high?.url ||
-            it.snippet?.thumbnails?.medium?.url ||
-            it.snippet?.thumbnails?.default?.url ||
-            null;
-
-          // ❌ Preskoči obrisane, privatne, ili nedostupne video-zapise
-          if (
-            !videoId ||
-            !title ||
-            title.toLowerCase().includes('deleted video') ||
-            title.toLowerCase().includes('private video') ||
-            title.toLowerCase().includes('unavailable') ||
-            title === '[Deleted video]' ||
-            title === '[Private video]'
-          ) return null;
-
-          return {
-            external_id: videoId,
-            title,
-            artist,
-            cover_url: cover,
-            source: 'youtube',
-            sync_status: 'fetched',
-            created_at: new Date().toISOString(),
-          };
-        })
-        .filter(Boolean);
-
-      all.push(...tracks);
-      pageToken = data.nextPageToken || null;
-      if (!pageToken) break;
-
-      await sleep(100 + Math.random() * 60);
-    } catch (e) {
-      const msg = e.response?.data?.error?.message || e.message;
-      if (msg.includes('playlistNotFound') || msg.includes('Invalid id')) {
-        console.warn(`[tracks:${playlistId}] ⚠️ Playlist not found or private`);
-        return [];
-      }
-      console.error(`[tracks:${playlistId}] ${msg}`);
-      break;
+    if (!tracks || tracks.length === 0) {
+      console.warn(`[tracks] ${playlist.title}: no tracks found.`);
+      return;
     }
-  }
 
-  // ✅ Ukloni duplikate
-  const unique = Object.values(all.reduce((acc, t) => {
-    if (!acc[t.external_id]) acc[t.external_id] = t;
-    return acc;
-  }, {}));
+    // 2️⃣ Prepare track objects for insertion
+    const prepared = tracks.map((t) => ({
+      source: "youtube",
+      external_id: t.id,
+      title: t.title,
+      artist: t.artist || null,
+      duration: t.duration || null,
+      cover_url: t.cover || null,
+      created_at: new Date().toISOString(),
+      sync_status: "synced",
+      last_synced_at: new Date().toISOString(),
+    }));
 
-  return unique;
-}
+    // 3️⃣ Insert into Supabase
+    const { data: inserted, error } = await sb
+      .from("tracks")
+      .insert(prepared)
+      .select("id");
 
-// ───────────────────────────────────────────────
-// 🚀 Glavna funkcija — preuzima pesme za sve playliste dana
-export async function runFetchTracks({ reason = 'daily-tracks' } = {}) {
-  const sb = getSupabase();
-  console.log(`[tracks] start (${reason})`);
-
-  const today = new Date().toISOString().split('T')[0];
-  const { data: playlists, error } = await sb
-    .from('playlists')
-    .select('id, external_id, title')
-    .gte('fetched_on', `${today}T00:00:00Z`)
-    .lt('fetched_on', `${today}T23:59:59Z`)
-    .eq('is_public', true);
-
-  if (error) throw error;
-  console.log(`[tracks] ${playlists?.length || 0} playlists to process`);
-
-  for (const pl of playlists || []) {
-    try {
-      const tracks = await fetchTracksForPlaylist(pl.external_id);
-
-      // ⚠️ Ako je prazna → označi je za retry
-      if (!tracks.length) {
-        console.warn(`[tracks] ⚠️ Empty playlist → marking as pending retry`);
-        await sb
-          .from('playlists')
-          .update({ item_count: 0, sync_status: 'new' })
-          .eq('id', pl.id);
-        continue;
-      }
-
-      // ✅ Upsert pesama u tabelu tracks
-      const { data: inserted, error: err1 } = await sb
-        .from('tracks')
-        .upsert(tracks, { onConflict: 'external_id' })
-        .select('id, external_id');
-      if (err1) throw err1;
-
-      // ✅ Veza između playliste i pesama
-      const rels = inserted.map(t => ({
-        playlist_id: pl.id,
-        track_id: t.id,
-        added_at: new Date().toISOString(),
-      }));
-
-      const { error: err2 } = await sb
-        .from('playlist_tracks')
-        .upsert(rels, { onConflict: 'playlist_id,track_id' });
-      if (err2) throw err2;
-
-      // ✅ Ažuriraj broj pesama i status u playlisti
-      await sb
-        .from('playlists')
-        .update({
-          item_count: inserted.length,
-          sync_status: 'fetched',
-          last_synced_at: new Date().toISOString(),
-        })
-        .eq('id', pl.id);
-
-      console.log(`[tracks] ${pl.title}: +${inserted.length} tracks synced`);
-      await sleep(150);
-    } catch (e) {
-      console.error(`[tracks] error for playlist ${pl.external_id}`, e.message);
+    if (error) {
+      console.warn(`[tracks] ${playlist.title}: insert error → ${error.message}`);
+      return;
     }
-  }
 
-  console.log('[tracks] done ✅ (empty playlists marked for retry)');
+    console.log(`[tracks] ${playlist.title}: +${inserted.length} tracks synced`);
+  } catch (err) {
+    console.warn(`[tracks] ${playlist.title}: failed → ${err.message}`);
+  }
 }
