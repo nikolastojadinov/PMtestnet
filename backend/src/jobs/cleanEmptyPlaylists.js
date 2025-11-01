@@ -1,37 +1,42 @@
-// ✅ FULL REWRITE v2.0 — Auto-cleaner for empty playlists
-// - Runs before each track-fetch batch (e.g. at 12:55, 13:55, 14:55...)
-// - Detects playlists with no linked tracks
-// - Sets item_count = 0 and deletes them safely from Supabase
+// ✅ FIXED VERSION — Marks empty playlists instead of deleting
+// - Finds playlists without tracks
+// - Sets item_count = 0 and sync_status = 'pending'
+// - Keeps them for re-fetching later (do NOT delete)
 
 import { getSupabase } from '../lib/supabase.js';
 
-export async function runCleanEmptyPlaylists({ reason = 'scheduled-cleanup' } = {}) {
+export async function runCleanEmptyPlaylists({ reason = 'auto-clean' } = {}) {
   const sb = getSupabase();
-  console.log(`[cleanup] start (${reason})`);
+  console.log(`[cleanup] start (${reason}) — marking empty playlists as item_count=0`);
 
   try {
-    // ✅ Mark all playlists that have no linked tracks
-    const { error: updateErr } = await sb.rpc('exec', {
-      sql: `
-        UPDATE playlists
-        SET item_count = 0
-        WHERE id NOT IN (
-          SELECT DISTINCT playlist_id FROM playlist_tracks
-        );
-      `
-    });
+    // Pronadji sve playliste koje nemaju nijednu pesmu
+    const { data: emptyPlaylists, error: findErr } = await sb
+      .from('playlists')
+      .select('id, title')
+      .not('id', 'in', sb
+        .from('playlist_tracks')
+        .select('playlist_id'));
+
+    if (findErr) throw findErr;
+
+    if (!emptyPlaylists || emptyPlaylists.length === 0) {
+      console.log('[cleanup] ✅ No empty playlists found.');
+      return;
+    }
+
+    console.log(`[cleanup] Found ${emptyPlaylists.length} empty playlists → marking as item_count=0`);
+
+    // Oznaci prazne plejliste umesto da ih brises
+    const { error: updateErr } = await sb
+      .from('playlists')
+      .update({ item_count: 0, sync_status: 'pending' })
+      .in('id', emptyPlaylists.map(p => p.id));
+
     if (updateErr) throw updateErr;
 
-    // ✅ Delete all playlists that have 0 items
-    const { error: deleteErr } = await sb
-      .from('playlists')
-      .delete()
-      .eq('item_count', 0);
-
-    if (deleteErr) throw deleteErr;
-
-    console.log('[cleanup] ✅ Empty playlists cleaned up successfully');
+    console.log(`[cleanup] ✅ Updated ${emptyPlaylists.length} playlists (set item_count=0, sync_status=pending)`);
   } catch (e) {
-    console.error('[cleanup] ❌ Error during cleanup:', e.message);
+    console.error('[cleanup] ❌ Error during playlist cleanup:', e.message);
   }
 }
