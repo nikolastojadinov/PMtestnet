@@ -103,16 +103,30 @@ export default function FullPlayer() {
     }
   };
 
-  const handleClose = () => {
-    // Stop YT playback if active
-    try { playerRef.current?.stopVideo?.(); } catch {}
+  const handleMinimize = () => {
+    // Prefer pausing YouTube playback so the mini player can mirror state
+    try {
+      playerRef.current?.pauseVideo?.();
+    } catch {}
     closeFull();
   };
 
   return (
-    <div className="fixed inset-0 z-40 flex flex-col bg-gradient-to-b from-purple-950 via-black to-black text-white">
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-[70] flex flex-col bg-gradient-to-b from-purple-950 via-black to-black text-white"
+    >
+      {/* Top-left minimize (pauses playback and returns to mini player) */}
+      <button
+        onClick={handleMinimize}
+        className="absolute left-4 top-4 z-50 rounded-full bg-purple-800/50 hover:bg-purple-700 p-2 text-sm"
+        aria-label="Minimize player"
+      >
+        ⬇
+      </button>
       {/* Header */}
-      <div className="flex items-center justify-between p-4">
+      <div className="flex items-center justify-start p-4">
         <div className="flex items-center space-x-3">
           {currentTrack.cover_url && (
             <img
@@ -126,12 +140,6 @@ export default function FullPlayer() {
             <div className="text-sm text-purple-200/80 line-clamp-1">{currentTrack.artist}</div>
           </div>
         </div>
-        <button
-          onClick={handleClose}
-          className="rounded-full bg-purple-800/50 hover:bg-purple-700 px-3 py-2 text-sm"
-        >
-          ✖ Close
-        </button>
       </div>
 
       {/* Player Area */}
