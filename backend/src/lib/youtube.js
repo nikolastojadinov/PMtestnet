@@ -1,8 +1,6 @@
 // 🔄 CLEANUP DIRECTIVE
 // Full rewrite — remove any previous code before applying this version.
 
-import fetch from "node-fetch";
-
 /**
  * Fetches all tracks from a given YouTube playlist.
  * Returns an array of track objects with id, title, artist, duration, and cover.
@@ -30,6 +28,7 @@ export async function getTracksFromYouTube(playlistId) {
       url.searchParams.set("key", YT_API_KEY);
       if (nextPage) url.searchParams.set("pageToken", nextPage);
 
+      // ✅ native fetch (built into Node 18+)
       const res = await fetch(url.href);
       const json = await res.json();
 
