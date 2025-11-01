@@ -1,74 +1,64 @@
-// 🔄 CLEANUP DIRECTIVE
-// Full rewrite — remove any previous code or partial functions before applying this version.
+// ✅ FULL REWRITE v3.6 — Fetch tracks from YouTube playlists and save to Supabase
 
-import { sb } from '../lib/supabase.js';
-import { getTracksFromYouTube } from '../lib/youtube.js';
+import { fetchPlaylistItems } from '../lib/youtube.js';
+import { supabase } from '../lib/supabase.js';
 
-/**
- * ✅ Fetches all tracks for playlists marked as "new" or "refresh"
- * and writes them into the Supabase 'tracks' table in batches.
- */
 export async function runFetchTracks() {
-  console.log('[tracks] 🚀 Starting full track synchronization...');
+  console.log('[tracks] Starting playlist track fetch job...');
 
-  const { data: playlists, error: plErr } = await sb
-    .from('playlists')
-    .select('id, external_id, title')
-    .in('sync_status', ['new', 'refresh'])
-    .limit(100);
-
-  if (plErr) {
-    console.error('[tracks] ❌ Playlist fetch error:', plErr.message);
-    return;
-  }
-
-  if (!playlists || playlists.length === 0) {
-    console.log('[tracks] ✅ No playlists to sync.');
-    return;
-  }
-
-  for (const pl of playlists) {
-    console.log(`[tracks] Fetching ${pl.title}...`);
-    const tracks = await getTracksFromYouTube(pl.external_id);
-
-    if (!tracks || tracks.length === 0) {
-      console.warn(`[tracks] ⚠️ No tracks found for ${pl.title}`);
-      continue;
-    }
-
-    // Insert tracks in safe batches
-    const batchSize = 200;
-    for (let i = 0; i < tracks.length; i += batchSize) {
-      const batch = tracks.slice(i, i + batchSize);
-      const { error: insErr } = await sb.from('tracks').upsert(
-        batch.map((t) => ({
-          source: 'youtube',
-          external_id: t.id,
-          title: t.title,
-          artist: t.artist,
-          cover_url: t.cover,
-          created_at: new Date().toISOString(),
-          sync_status: 'ready'
-        })),
-        { onConflict: 'external_id' }
-      );
-      if (insErr) {
-        console.error(`[tracks] ❌ Insert batch error (${pl.title}):`, insErr.message);
-      }
-    }
-
-    // Mark playlist as synced
-    await sb
+  try {
+    // Uzimamo sve playliste iz Supabase koje imaju validan external_id
+    const { data: playlists, error: plError } = await supabase
       .from('playlists')
-      .update({
-        item_count: tracks.length,
-        sync_status: 'done',
-        last_synced_at: new Date().toISOString()
-      })
-      .eq('id', pl.id);
+      .select('id, external_id, title')
+      .not('external_id', 'is', null)
+      .limit(1000);
 
-    console.log(`[tracks] ✅ ${pl.title}: +${tracks.length} tracks synced`);
+    if (plError) throw plError;
+    if (!playlists || playlists.length === 0) {
+      console.log('[tracks] ⚠️ No playlists found.');
+      return;
+    }
+
+    for (const playlist of playlists) {
+      console.log(`[tracks] Fetching tracks for: ${playlist.title}`);
+
+      // ✅ koristi novu funkciju iz youtube.js
+      const items = await fetchPlaylistItems(playlist.external_id);
+
+      if (!items || items.length === 0) {
+        console.log(`[tracks] ⚠️ No tracks found for ${playlist.title}`);
+        continue;
+      }
+
+      // Mapiramo YouTube iteme u tracks format
+      const tracks = items.map(item => ({
+        source: 'youtube',
+        external_id: item.contentDetails?.videoId || null,
+        title: item.snippet?.title || 'Untitled',
+        artist: item.snippet?.videoOwnerChannelTitle || 'Unknown Artist',
+        duration: null,
+        cover_url: item.snippet?.thumbnails?.high?.url || null,
+        created_at: new Date().toISOString(),
+        sync_status: 'synced',
+        last_synced_at: new Date().toISOString(),
+      })).filter(t => t.external_id);
+
+      // Upisujemo pesme u Supabase
+      const { error: insertError } = await supabase
+        .from('tracks')
+        .upsert(tracks, { onConflict: 'external_id' });
+
+      if (insertError) {
+        console.error(`[tracks] ❌ Failed to upsert tracks for ${playlist.title}:`, insertError.message);
+        continue;
+      }
+
+      console.log(`[tracks] ${playlist.title}: +${tracks.length} tracks synced`);
+    }
+
+    console.log('[tracks] 🎵 All playlists processed.');
+  } catch (err) {
+    console.error('[tracks] ❌ Error in runFetchTracks:', err.message);
   }
-
-  console.log('[tracks] 🎵 All playlists processed.');
 }
