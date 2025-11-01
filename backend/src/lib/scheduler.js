@@ -1,34 +1,68 @@
-// ✅ Multi-slot daily scheduler — Europe/Belgrade
-// 🔹 09:05 → fetch playlists (FETCH only)
-// 🔹 13:00, 14:00, 15:00 ... 22:00 → fetch tracks (REFRESH in 10 fixed runs)
+// ✅ FULL REWRITE v3.0 — Multi-hour scheduler for playlist cleanup and track fetching
+// 🔹 Cleans empty playlists at :55 (12:55 → 21:55)
+// 🔹 Fetches tracks each full hour from 13:00 → 22:00
+// 🔹 Timezone: Europe/Belgrade
 
 import cron from 'node-cron';
-import { runFetchPlaylists } from '../jobs/fetchPlaylists.js';
 import { runFetchTracks } from '../jobs/fetchTracksFromPlaylist.js';
+import { runCleanEmptyPlaylists } from '../jobs/cleanEmptyPlaylists.js';
 
 const TZ = 'Europe/Belgrade';
 
-// CRON format: minute hour day month weekday
-const PLAYLIST_SCHEDULE = '5 9 * * *'; // 09:05
-const TRACK_HOURS = [13, 14, 15, 16, 17, 18, 19, 20, 21, 22]; // 10 runs per day
+// 🧹 Cleanup times (12:55 → 21:55)
+const CLEAN_SCHEDULES = [
+  '55 12 * * *',
+  '55 13 * * *',
+  '55 14 * * *',
+  '55 15 * * *',
+  '55 16 * * *',
+  '55 17 * * *',
+  '55 18 * * *',
+  '55 19 * * *',
+  '55 20 * * *',
+  '55 21 * * *',
+];
+
+// 🎵 Track fetch times (13:00 → 22:00)
+const TRACK_SCHEDULES = [
+  '0 13 * * *',
+  '0 14 * * *',
+  '0 15 * * *',
+  '0 16 * * *',
+  '0 17 * * *',
+  '0 18 * * *',
+  '0 19 * * *',
+  '0 20 * * *',
+  '0 21 * * *',
+  '0 22 * * *',
+];
 
 export function startDualJobs() {
-  // 🎵 Fetch playlists once daily
-  cron.schedule(PLAYLIST_SCHEDULE, async () => {
-    console.log(`[scheduler] 09:05 (${TZ}) → Fetch Playlists`);
-    await runFetchPlaylists();
-  }, { timezone: TZ });
+  // 🔁 Cleanup pre svakog fetch ciklusa
+  CLEAN_SCHEDULES.forEach((pattern, i) => {
+    cron.schedule(
+      pattern,
+      async () => {
+        console.log(`[scheduler] ${pattern} (${TZ}) → Clean empty playlists`);
+        await runCleanEmptyPlaylists({ reason: `cleanup-${i + 1}` });
+      },
+      { timezone: TZ }
+    );
+  });
 
-  // 🎶 Fetch tracks hourly from 13h to 22h
-  for (const hour of TRACK_HOURS) {
-    const expr = `0 ${hour} * * *`; // every full hour between 13–22
-    cron.schedule(expr, async () => {
-      console.log(`[scheduler] ${hour}:00 (${TZ}) → Fetch Tracks`);
-      await runFetchTracks();
-    }, { timezone: TZ });
-  }
+  // 🎵 Fetch tracks svakog punog sata (13h–22h)
+  TRACK_SCHEDULES.forEach((pattern, i) => {
+    cron.schedule(
+      pattern,
+      async () => {
+        console.log(`[scheduler] ${pattern} (${TZ}) → Fetch tracks`);
+        await runFetchTracks({ reason: `hourly-fetch-${i + 1}` });
+      },
+      { timezone: TZ }
+    );
+  });
 
-  console.log(`[scheduler] cron set:
-  playlists@09:05 ${TZ},
-  tracks@13–22h every hour (${TZ})`);
+  console.log(`[scheduler] ✅ cron set:
+  - cleanup@12:55→21:55
+  - tracks@13:00→22:00 (${TZ})`);
 }
