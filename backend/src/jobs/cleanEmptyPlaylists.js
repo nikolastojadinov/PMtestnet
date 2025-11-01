@@ -1,42 +1,39 @@
-// ✅ FIXED VERSION — Marks empty playlists instead of deleting
-// - Finds playlists without tracks
-// - Sets item_count = 0 and sync_status = 'pending'
-// - Keeps them for re-fetching later (do NOT delete)
-
+// ✅ FIXED v3.2 — Marks empty playlists safely
 import { getSupabase } from '../lib/supabase.js';
 
-export async function runCleanEmptyPlaylists({ reason = 'auto-clean' } = {}) {
+export async function runCleanEmptyPlaylists({ reason = 'manual-clean' } = {}) {
   const sb = getSupabase();
   console.log(`[cleanup] start (${reason}) — marking empty playlists as item_count=0`);
 
-  try {
-    // Pronadji sve playliste koje nemaju nijednu pesmu
-    const { data: emptyPlaylists, error: findErr } = await sb
-      .from('playlists')
-      .select('id, title')
-      .not('id', 'in', sb
-        .from('playlist_tracks')
-        .select('playlist_id'));
+  // Pokupi sve playliste koje nemaju pesme
+  const { data: emptyPls, error: err1 } = await sb
+    .from('playlists')
+    .select('id, title')
+    .or('item_count.is.null,item_count.eq.0');
 
-    if (findErr) throw findErr;
+  if (err1) {
+    console.error(`[cleanup] ❌ Fetch error:`, err1.message);
+    return;
+  }
 
-    if (!emptyPlaylists || emptyPlaylists.length === 0) {
-      console.log('[cleanup] ✅ No empty playlists found.');
-      return;
-    }
+  // Ako nema nijedne — izlaz
+  if (!emptyPls || emptyPls.length === 0) {
+    console.log('[cleanup] ✅ No empty playlists found.');
+    return;
+  }
 
-    console.log(`[cleanup] Found ${emptyPlaylists.length} empty playlists → marking as item_count=0`);
+  const ids = emptyPls.map(p => p.id).filter(Boolean);
+  console.log(`[cleanup] Found ${ids.length} empty playlists → marking as pending.`);
 
-    // Oznaci prazne plejliste umesto da ih brises
-    const { error: updateErr } = await sb
-      .from('playlists')
-      .update({ item_count: 0, sync_status: 'pending' })
-      .in('id', emptyPlaylists.map(p => p.id));
+  // Ažuriraj ih bez filter greške
+  const { error: err2 } = await sb
+    .from('playlists')
+    .update({ item_count: 0, sync_status: 'pending' })
+    .in('id', ids.length ? ids : ['00000000-0000-0000-0000-000000000000']); // fallback kad je prazan niz
 
-    if (updateErr) throw updateErr;
-
-    console.log(`[cleanup] ✅ Updated ${emptyPlaylists.length} playlists (set item_count=0, sync_status=pending)`);
-  } catch (e) {
-    console.error('[cleanup] ❌ Error during playlist cleanup:', e.message);
+  if (err2) {
+    console.error(`[cleanup] ❌ Update error:`, err2.message);
+  } else {
+    console.log(`[cleanup] ✅ ${ids.length} playlists marked as pending`);
   }
 }
