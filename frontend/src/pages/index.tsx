@@ -55,7 +55,8 @@ export default function HomePage() {
       try {
         const { data, error, status } = await supabase
           .from('playlists')
-          .select('id, title, cover_url, category, description, region, created_at')
+          .select('id, title, cover_url, category, description, region, created_at, is_public')
+          .eq('is_public', true)
           .order('created_at', { ascending: false });
 
         let list = (data || []) as Playlist[];

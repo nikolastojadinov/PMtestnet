@@ -79,6 +79,13 @@ Core tables in use during content syncing and playback:
 
 App intentionally **retains only playlists and tracks**; user-related tables are periodically cleared during login tests.
 
+Minimal schema and RLS policies ready to run are included under `supabase/`:
+
+- `supabase/schema.sql` — creates `playlists`, `tracks` (YouTube-only), `playlist_tracks`, `users` and helpful indexes
+- `supabase/policies.sql` — enables RLS and allows public READ for public playlists and related records
+
+Apply these via Supabase SQL editor if starting fresh.
+
 ---
 
 ## Localization (25 Languages)
@@ -166,6 +173,7 @@ Steps:
 - Netlify will detect `netlify.toml` and wire the Next.js plugin automatically.
 - Add the 5 required environment variables in Site settings ➜ Environment.
 - Trigger a deploy. The plugin will produce optimized output and serverless functions where needed.
+ - After deploy, open the site and check browser console for: `✅ Supabase connected successfully (single instance).`
 
 ---
 
