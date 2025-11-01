@@ -1,9 +1,9 @@
-// ✅ FULL REWRITE v5.2 — YouTube track fetcher with upsert and detailed change logs
+// ✅ FULL REWRITE v5.3 — YouTube track fetcher + safe retry system
 // - Fetches *all* tracks from every playlist (no limits)
-// - Deletes empty or invalid playlists automatically from Supabase
+// - Marks empty playlists as pending retry (item_count=0, sync_status='new')
 // - Updates item_count for valid playlists
 // - Safe key rotation and retry logic
-// - Tracks new vs updated inserts for full transparency
+// - Fully compatible with current Render + Supabase setup
 
 import axios from 'axios';
 import { getSupabase } from '../lib/supabase.js';
@@ -15,7 +15,6 @@ const API_KEYS = (process.env.YOUTUBE_API_KEYS || '')
   .split(',')
   .map(k => k.trim())
   .filter(Boolean);
-
 if (!API_KEYS.length) throw new Error('YOUTUBE_API_KEYS missing.');
 
 const nextKey = nextKeyFactory(API_KEYS);
@@ -121,24 +120,24 @@ export async function runFetchTracks({ reason = 'daily-tracks' } = {}) {
     try {
       const tracks = await fetchTracksForPlaylist(pl.external_id);
 
-      // ⚠️ Ako je prazna ili nevalidna → obriši je iz baze
+      // ⚠️ Ako je prazna → označi je za retry
       if (!tracks.length) {
-        console.warn(`[tracks] ⚠️ Empty playlist detected → deleting ${pl.title}`);
-        await sb.from('playlists').delete().eq('id', pl.id);
+        console.warn(`[tracks] ⚠️ Empty playlist → marking as pending retry`);
+        await sb
+          .from('playlists')
+          .update({ item_count: 0, sync_status: 'new' })
+          .eq('id', pl.id);
         continue;
       }
 
-      // ✅ Upsert pesama sa konfliktom po external_id
+      // ✅ Upsert pesama u tabelu tracks
       const { data: inserted, error: err1 } = await sb
         .from('tracks')
-        .upsert(tracks, { onConflict: ['external_id'] })
+        .upsert(tracks, { onConflict: 'external_id' })
         .select('id, external_id');
-
       if (err1) throw err1;
 
-      const totalInserted = inserted?.length || 0;
-
-      // ✅ Upsert relacija playlist_tracks (playlist_id + track_id)
+      // ✅ Veza između playliste i pesama
       const rels = inserted.map(t => ({
         playlist_id: pl.id,
         track_id: t.id,
@@ -147,22 +146,25 @@ export async function runFetchTracks({ reason = 'daily-tracks' } = {}) {
 
       const { error: err2 } = await sb
         .from('playlist_tracks')
-        .upsert(rels, { onConflict: ['playlist_id', 'track_id'] });
-
+        .upsert(rels, { onConflict: 'playlist_id,track_id' });
       if (err2) throw err2;
 
-      // ✅ Ažuriraj broj pesama u playlisti
+      // ✅ Ažuriraj broj pesama i status u playlisti
       await sb
         .from('playlists')
-        .update({ item_count: totalInserted })
+        .update({
+          item_count: inserted.length,
+          sync_status: 'fetched',
+          last_synced_at: new Date().toISOString(),
+        })
         .eq('id', pl.id);
 
-      console.log(`[tracks] ${pl.title}: +${totalInserted} tracks upserted ✅`);
+      console.log(`[tracks] ${pl.title}: +${inserted.length} tracks synced`);
       await sleep(150);
     } catch (e) {
       console.error(`[tracks] error for playlist ${pl.external_id}`, e.message);
     }
   }
 
-  console.log('[tracks] done ✅ (empty playlists auto-deleted)');
+  console.log('[tracks] done ✅ (empty playlists marked for retry)');
 }
