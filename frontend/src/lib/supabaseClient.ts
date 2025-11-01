@@ -5,6 +5,13 @@ const SUPABASE_URL =
 const SUPABASE_ANON_KEY =
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '<insert your anon key>'
 
+// Configuration state (used by pages to decide on demo fallbacks)
+export const isSupabaseConfigured = Boolean(
+  (process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim() &&
+  (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '').trim() &&
+  !String(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY).includes('<insert')
+)
+
 // Singleton pattern to prevent multiple instances in browser
 let _supabase: ReturnType<typeof createClient> | null = null
 

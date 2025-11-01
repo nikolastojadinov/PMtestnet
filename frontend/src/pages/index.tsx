@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
 import PlaylistCard from '@/components/PlaylistCard';
 
 type Playlist = {
@@ -49,6 +49,16 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [groups, setGroups] = useState<Record<string, Playlist[]>>({});
 
+  // Demo playlists to render when Supabase is not configured or unauthorized
+  const demoPlaylists: Playlist[] = [
+    { id: 'demo-1', title: 'Most popular', cover_url: '', category: 'mostPopular' },
+    { id: 'demo-2', title: 'Trending now', cover_url: '', category: 'trendingNow' },
+    { id: 'demo-3', title: 'Best of 80s', cover_url: '', category: 'best80s' },
+    { id: 'demo-4', title: 'Best of 90s', cover_url: '', category: 'best90s' },
+    { id: 'demo-5', title: 'Best of 2000', cover_url: '', category: 'best2000' },
+    { id: 'demo-6', title: 'Fresh picks', cover_url: '', category: 'music' },
+  ];
+
   useEffect(() => {
     let isMounted = true;
     (async () => {
@@ -64,13 +74,21 @@ export default function HomePage() {
           const msg = String((error as any)?.message || '');
           const isUserIdConflict = msg.toLowerCase().includes('user_id');
           const is400 = (status === 400) || (error as any)?.status === 400;
+          const is401 = (status === 401) || /invalid api key/i.test(msg);
           if (isUserIdConflict || is400) {
             console.warn('Non-blocking Supabase warning:', { status, message: msg });
+          } else if (is401 || !isSupabaseConfigured) {
+            console.warn('Supabase unauthorized or not configured — showing demo content.');
+            list = demoPlaylists;
           } else {
             // eslint-disable-next-line no-console
             console.error('Supabase error fetching playlists:', msg);
             throw error;
           }
+        }
+        // If configured but empty, show demo to avoid a blank page in early deploys
+        if (list.length === 0 && !error && !isSupabaseConfigured) {
+          list = demoPlaylists;
         }
         const grouped = groupByCategory(list);
         if (!isMounted) return;
@@ -80,7 +98,13 @@ export default function HomePage() {
         setLoading(false);
       } catch (e: any) {
         if (!isMounted) return;
-        setError(e?.message || 'Failed to load playlists');
+        if (!isSupabaseConfigured) {
+          const grouped = groupByCategory(demoPlaylists);
+          setGroups(grouped);
+          setError(null);
+        } else {
+          setError(e?.message || 'Failed to load playlists');
+        }
         setLoading(false);
       }
     })();
