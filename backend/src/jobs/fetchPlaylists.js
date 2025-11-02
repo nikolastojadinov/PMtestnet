@@ -1,7 +1,7 @@
 // ✅ Large-scale YouTube playlist fetcher — 6000+ daily
+// ✅ Compatible with existing Supabase schema
 // ✅ Uses fetchRegionPlaylists() from lib/youtube.js
-// ✅ 70-region weighted pool + 40 daily rotations
-// ✅ Compatible with scheduler @ 13:15 local (Europe/Budapest)
+// ✅ No new columns required
 
 import { createClient } from '@supabase/supabase-js';
 import { pickTodayRegions, updateRegionScore, sleep } from '../lib/utils.js';
@@ -11,7 +11,6 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
 
 const DAILY_REGION_COUNT = 40; // koliko regiona dnevno
 const TARGET_PLAYLISTS = 6000; // ukupno playlisti dnevno
-const PLAYLISTS_PER_REGION = Math.ceil(TARGET_PLAYLISTS / DAILY_REGION_COUNT);
 
 export async function runFetchPlaylists() {
   console.log('[playlists] 🚀 Starting YouTube playlist fetch job...');
@@ -24,7 +23,7 @@ export async function runFetchPlaylists() {
       const playlists = await fetchRegionPlaylists([region]);
       updateRegionScore(region, playlists.length);
       all.push(...playlists);
-      await sleep(500);
+      await sleep(400);
     } catch (err) {
       console.log(`[youtube] ⚠️ Error in region ${region}: ${err.message}`);
       await sleep(1000);
@@ -48,7 +47,7 @@ export async function runFetchPlaylists() {
         region: p.region,
         category: '10',
         is_public: true,
-        channelTitle: p.snippet?.channelTitle || '',
+        // ✅ Removed "channelTitle" to match existing Supabase schema
         created_at: new Date().toISOString(),
         fetched_on: new Date().toISOString(),
       });
@@ -57,7 +56,7 @@ export async function runFetchPlaylists() {
 
   console.log(`[playlists] ✅ Deduplicated: ${unique.length} playlists`);
 
-  // 🗄️ Upsert into Supabase
+  // 🗄️ Upsert into Supabase (using only existing columns)
   const { error } = await supabase
     .from('playlists')
     .upsert(unique, { onConflict: 'external_id,region' });
