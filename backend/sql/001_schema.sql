@@ -132,6 +132,29 @@ alter table public.categories add column if not exists group_key text;
 alter table public.categories add column if not exists label text;
 create unique index if not exists uq_categories_key on public.categories(key);
 
+-- Backward-compatibility: some installs may have had a NOT NULL "name" column.
+-- If present, relax the NOT NULL and backfill label from name so our seeds work.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'categories' and column_name = 'name'
+  ) then
+    begin
+      execute 'alter table public.categories alter column name drop not null';
+    exception when undefined_column then
+      -- ignore if column disappeared between checks
+      null;
+    end;
+    -- Backfill label from name when label is null
+    begin
+      execute 'update public.categories set label = name where label is null';
+    exception when undefined_column then
+      null;
+    end;
+  end if;
+end$$;
+
 create table if not exists public.regions (
   code text primary key,
   label text
