@@ -1,58 +1,66 @@
-// ✅ Full optimized version — fetch 6000+ playlists daily
-// ✅ Uses 40-region rotation + key rotator + Supabase upsert
-// ✅ Keeps all playlists (music only, categoryId=10)
-// ✅ Compatible with scheduler @ 13:05 local (Europe/Budapest)
+// ✅ Large-scale YouTube playlist fetcher — 6000+ daily
+// ✅ Uses fetchRegionPlaylists() from lib/youtube.js
+// ✅ 70-region weighted pool + 40 daily rotations
+// ✅ Compatible with scheduler @ 13:15 local (Europe/Budapest)
 
 import { createClient } from '@supabase/supabase-js';
-import { nextKeyFactory, pickTodayRegions, sleep, updateRegionScore } from '../lib/utils.js';
-import { fetchYoutubePlaylists } from '../lib/youtube.js';
+import { pickTodayRegions, updateRegionScore, sleep } from '../lib/utils.js';
+import { fetchRegionPlaylists } from '../lib/youtube.js';
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE);
-const apiKeys = (process.env.YOUTUBE_API_KEYS || '').split(',').map(k => k.trim()).filter(Boolean);
-const nextKey = nextKeyFactory(apiKeys);
 
-const MAX_REGIONS = 40; // ⚡️ increase for more playlists
-const PLAYLISTS_PER_REGION = 150; // avg 150×40 = 6000
-const CATEGORY_ID = '10'; // 🎵 Music
+const DAILY_REGION_COUNT = 40; // koliko regiona dnevno
+const TARGET_PLAYLISTS = 6000; // ukupno playlisti dnevno
+const PLAYLISTS_PER_REGION = Math.ceil(TARGET_PLAYLISTS / DAILY_REGION_COUNT);
 
 export async function runFetchPlaylists() {
-  console.log('[playlists] 🚀 Starting large-scale YouTube playlist fetch...');
-  const regions = pickTodayRegions(MAX_REGIONS);
-  console.log(`[playlists] 🌍 Selected regions (${regions.length}): ${regions.join(', ')}`);
+  console.log('[playlists] 🚀 Starting YouTube playlist fetch job...');
+  const regions = pickTodayRegions(DAILY_REGION_COUNT);
+  console.log(`[youtube] 🌍 Fetching playlists for regions: ${regions.join(', ')}`);
 
-  let allPlaylists = [];
-
+  let all = [];
   for (const region of regions) {
     try {
-      const key = nextKey();
-      const fetched = await fetchYoutubePlaylists(region, CATEGORY_ID, PLAYLISTS_PER_REGION, key);
-      updateRegionScore(region, fetched.length);
-      console.log(`[youtube] ✅ ${region}: ${fetched.length} playlists`);
-      allPlaylists.push(...fetched);
-      await sleep(1500); // small delay between API calls
+      const playlists = await fetchRegionPlaylists([region]);
+      updateRegionScore(region, playlists.length);
+      all.push(...playlists);
+      await sleep(500);
     } catch (err) {
-      console.error(`[youtube] ❌ ${region} failed:`, err.message);
-      await sleep(3000);
+      console.log(`[youtube] ⚠️ Error in region ${region}: ${err.message}`);
+      await sleep(1000);
     }
   }
 
-  console.log(`[youtube] 🎵 Total fetched before dedupe: ${allPlaylists.length}`);
+  console.log(`[youtube] 🎵 Total playlists fetched: ${all.length}`);
 
-  // 🔁 Deduplicate by external_id + region combo (so same playlist can exist in multiple regions)
-  const unique = [];
+  // 🔁 Deduplicate by playlistId + region combo
   const seen = new Set();
-  for (const p of allPlaylists) {
-    const key = `${p.external_id}_${p.region}`;
+  const unique = [];
+  for (const p of all) {
+    const key = `${p.id}_${p.region}`;
     if (!seen.has(key)) {
       seen.add(key);
-      unique.push(p);
+      unique.push({
+        external_id: p.id,
+        title: p.snippet?.title || 'Untitled',
+        description: p.snippet?.description || '',
+        cover_url: p.snippet?.thumbnails?.high?.url || p.snippet?.thumbnails?.default?.url || null,
+        region: p.region,
+        category: '10',
+        is_public: true,
+        channelTitle: p.snippet?.channelTitle || '',
+        created_at: new Date().toISOString(),
+        fetched_on: new Date().toISOString(),
+      });
     }
   }
 
-  console.log(`[playlists] ✅ Deduplicated count: ${unique.length}`);
+  console.log(`[playlists] ✅ Deduplicated: ${unique.length} playlists`);
 
-  // 🗄️ Insert into Supabase
-  const { error } = await supabase.from('playlists').upsert(unique, { onConflict: 'external_id,region' });
+  // 🗄️ Upsert into Supabase
+  const { error } = await supabase
+    .from('playlists')
+    .upsert(unique, { onConflict: 'external_id,region' });
 
   if (error) {
     console.error('[playlists] ❌ Failed to upsert playlists:', error.message);
