@@ -58,6 +58,21 @@ create table if not exists public.playlists (
   cycle_day smallint,
   cycle_mode text
 );
+-- Harden existing installations: add missing columns if table already existed
+alter table public.playlists add column if not exists external_id text;
+alter table public.playlists add column if not exists cover_url text;
+alter table public.playlists add column if not exists is_public boolean default true;
+alter table public.playlists add column if not exists is_empty boolean default false;
+alter table public.playlists add column if not exists item_count integer;
+alter table public.playlists add column if not exists fetched_on timestamp with time zone;
+alter table public.playlists add column if not exists validated_on timestamp with time zone;
+alter table public.playlists add column if not exists last_refreshed_on timestamp with time zone;
+alter table public.playlists add column if not exists last_etag text;
+alter table public.playlists add column if not exists unstable boolean default false;
+alter table public.playlists add column if not exists quality_score numeric;
+alter table public.playlists add column if not exists broken boolean default false;
+alter table public.playlists add column if not exists cycle_day smallint;
+alter table public.playlists add column if not exists cycle_mode text;
 create unique index if not exists uq_playlists_external_id on public.playlists (external_id);
 create index if not exists idx_playlists_region_category on public.playlists (region, category);
 create index if not exists idx_playlists_last_refreshed_on on public.playlists (last_refreshed_on);
@@ -77,6 +92,18 @@ create table if not exists public.tracks (
   sync_status text,
   last_synced_at timestamp with time zone
 );
+-- Add missing columns if table pre-existed
+alter table public.tracks add column if not exists source text not null default 'youtube';
+alter table public.tracks add column if not exists external_id text;
+alter table public.tracks add column if not exists title text;
+alter table public.tracks add column if not exists artist text;
+alter table public.tracks add column if not exists duration integer;
+alter table public.tracks add column if not exists cover_url text;
+alter table public.tracks add column if not exists region text;
+alter table public.tracks add column if not exists category text;
+alter table public.tracks add column if not exists created_at timestamp with time zone default now();
+alter table public.tracks add column if not exists sync_status text;
+alter table public.tracks add column if not exists last_synced_at timestamp with time zone;
 create unique index if not exists uq_tracks_external_id on public.tracks (external_id);
 create index if not exists idx_tracks_created_at on public.tracks (created_at);
 
@@ -99,6 +126,11 @@ create table if not exists public.categories (
   group_key text,
   label text not null
 );
+-- If categories existed without these columns, add them
+alter table public.categories add column if not exists key text;
+alter table public.categories add column if not exists group_key text;
+alter table public.categories add column if not exists label text;
+create unique index if not exists uq_categories_key on public.categories(key);
 
 create table if not exists public.regions (
   code text primary key,

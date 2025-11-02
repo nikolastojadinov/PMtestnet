@@ -1,3 +1,9 @@
+-- Ensure table exists (safe on re-run)
+create table if not exists public.regions (
+  code text primary key,
+  label text
+);
+
 -- Seed YouTube region codes (superset; adjust to official supported list as needed)
 insert into public.regions(code, label) values
   ('US','United States'),('CA','Canada'),('MX','Mexico'),('BR','Brazil'),('AR','Argentina'),('CL','Chile'),('CO','Colombia'),('PE','Peru'),('VE','Venezuela'),('DO','Dominican Republic'),('EC','Ecuador'),('UY','Uruguay'),

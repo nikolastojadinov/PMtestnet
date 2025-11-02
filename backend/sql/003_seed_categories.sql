@@ -1,3 +1,11 @@
+-- Ensure table exists and unique index on key
+create table if not exists public.categories (
+  key text primary key,
+  group_key text,
+  label text not null
+);
+create unique index if not exists uq_categories_key on public.categories(key);
+
 -- Seed 140 categories (groups with 10 items). This is a starter; extend to full 140.
 -- Use keys as stable identifiers.
 
