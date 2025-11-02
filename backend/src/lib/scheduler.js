@@ -1,68 +1,61 @@
-// ✅ FULL REWRITE v3.0 — Multi-hour scheduler for playlist cleanup and track fetching
-// 🔹 Cleans empty playlists at :55 (12:55 → 21:55)
-// 🔹 Fetches tracks each full hour from 13:00 → 22:00
-// 🔹 Timezone: Europe/Belgrade
+// cleanup directive: full rewrite of this file before applying changes
 
 import cron from 'node-cron';
-import { runFetchTracks } from '../jobs/fetchTracksFromPlaylist.js';
-import { runCleanEmptyPlaylists } from '../jobs/cleanEmptyPlaylists.js';
+import { cleanEmptyPlaylists } from './cleanEmptyPlaylists.js';
+import { fetchTracksFromPlaylist } from './fetchTracksFromPlaylist.js';
+import { fetchYouTubePlaylists } from './youtube.js';
+import { keepAlive } from './utils.js';
 
-const TZ = 'Europe/Belgrade';
+/**
+ * Purple Music Scheduler
+ * 09:05 → fetch new playlists from YouTube
+ * 12:45–21:45 → cleanEmptyPlaylists every hour
+ * 13:00–22:00 → fetchTracksFromPlaylist every hour
+ */
+export function initScheduler() {
+  console.log('[scheduler] 🕓 Scheduler initialized.');
 
-// 🧹 Cleanup times (12:55 → 21:55)
-const CLEAN_SCHEDULES = [
-  '55 12 * * *',
-  '55 13 * * *',
-  '55 14 * * *',
-  '55 15 * * *',
-  '55 16 * * *',
-  '55 17 * * *',
-  '55 18 * * *',
-  '55 19 * * *',
-  '55 20 * * *',
-  '55 21 * * *',
-];
-
-// 🎵 Track fetch times (13:00 → 22:00)
-const TRACK_SCHEDULES = [
-  '0 13 * * *',
-  '0 14 * * *',
-  '0 15 * * *',
-  '0 16 * * *',
-  '0 17 * * *',
-  '0 18 * * *',
-  '0 19 * * *',
-  '0 20 * * *',
-  '0 21 * * *',
-  '0 22 * * *',
-];
-
-export function startDualJobs() {
-  // 🔁 Cleanup pre svakog fetch ciklusa
-  CLEAN_SCHEDULES.forEach((pattern, i) => {
-    cron.schedule(
-      pattern,
-      async () => {
-        console.log(`[scheduler] ${pattern} (${TZ}) → Clean empty playlists`);
-        await runCleanEmptyPlaylists({ reason: `cleanup-${i + 1}` });
-      },
-      { timezone: TZ }
-    );
+  // 🟣 09:05 → Fetch fresh playlists from YouTube (once per day)
+  cron.schedule('5 9 * * *', async () => {
+    console.log('[scheduler] 🎬 Running daily fetchYouTubePlaylists...');
+    try {
+      await fetchYouTubePlaylists();
+      console.log('[scheduler] ✅ Daily playlist fetch completed.');
+    } catch (err) {
+      console.error('[scheduler] ❌ Error in fetchYouTubePlaylists:', err);
+    }
   });
 
-  // 🎵 Fetch tracks svakog punog sata (13h–22h)
-  TRACK_SCHEDULES.forEach((pattern, i) => {
-    cron.schedule(
-      pattern,
-      async () => {
-        console.log(`[scheduler] ${pattern} (${TZ}) → Fetch tracks`);
-        await runFetchTracks({ reason: `hourly-fetch-${i + 1}` });
-      },
-      { timezone: TZ }
-    );
+  // 🟣 12:45–21:45 → cleanEmptyPlaylists every hour
+  cron.schedule('45 12-21 * * *', async () => {
+    console.log('[scheduler] 🧹 Running hourly cleanEmptyPlaylists...');
+    try {
+      globalThis.pendingPlaylists = await cleanEmptyPlaylists();
+      console.log(`[scheduler] 🧾 Stored ${globalThis.pendingPlaylists?.length || 0} empty playlists for next fetch.`);
+    } catch (err) {
+      console.error('[scheduler] ❌ Error in cleanEmptyPlaylists phase:', err);
+    }
   });
 
-  console.log(`[scheduler] ✅ cron set:
-  - cleanup@12:55→21:55
-  - tracks@13:00→22:00 (${TZ})`);
+  // 🟣 13:00–22:00 → fetchTracksFromPlaylist every hour
+  cron.schedule('0 13-22 * * *', async () => {
+    console.log('[scheduler] 🎧 Running hourly fetchTracksFromPlaylist...');
+    const playlists = globalThis.pendingPlaylists || [];
+    if (playlists.length === 0) {
+      console.warn('[scheduler] ⚠️ No pending playlists available, skipping fetch.');
+      return;
+    }
+
+    try {
+      await fetchTracksFromPlaylist(playlists);
+      console.log('[scheduler] ✅ Hourly track fetching completed.');
+    } catch (err) {
+      console.error('[scheduler] ❌ Error during fetchTracksFromPlaylist:', err);
+    }
+  });
+
+  // 🩵 Keepalive ping (every 5 minutes)
+  cron.schedule('*/5 * * * *', async () => {
+    await keepAlive();
+  });
 }
