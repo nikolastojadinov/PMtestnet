@@ -1,4 +1,4 @@
-// ✅ FULL REWRITE v5.2 — Fetch YouTube playlists and save to Supabase
+// ✅ v3.9 — Fetch YouTube playlists and sync to Supabase
 
 import { fetchYouTubePlaylists } from '../lib/youtube.js';
 import supabase from '../lib/supabase.js';
@@ -20,7 +20,7 @@ export async function runFetchPlaylists() {
       title: pl.snippet?.title || 'Untitled Playlist',
       description: pl.snippet?.description || '',
       cover_url: pl.snippet?.thumbnails?.high?.url || null,
-      region: pl.region || 'global',
+      region: pl.region || 'GLOBAL',
       category: 'music',
       is_public: true,
       created_at: new Date().toISOString(),
