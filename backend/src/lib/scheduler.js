@@ -1,8 +1,8 @@
-// ✅ Fixed UTC scheduler for daily playlist + hourly cleanup/track fetch
-// 🔹 runFetchPlaylists once daily at 09:05 UTC
-// 🔹 cleanEmptyPlaylists hourly at :45 from 12:45 → 21:45 UTC
-// 🔹 fetchTracksFromPlaylist hourly at :00 from 13:00 → 22:00 UTC
-// 🔹 Timezone: UTC (Render uses UTC)
+// ✅ FULL REWRITE v5.2 — Local-time aligned scheduler (Europe/Budapest)
+// 🔹 runFetchPlaylists once daily at 11:05 local (10:05 UTC)
+// 🔹 cleanEmptyPlaylists hourly at :55 from 12:55 → 21:55 local (11:55 → 20:55 UTC)
+// 🔹 fetchTracksFromPlaylist hourly at :00 from 13:00 → 22:00 local (12:00 → 21:00 UTC)
+// 🔹 Timezone: UTC (Render uses UTC), but all times adjusted to match Nikola’s local time
 
 import cron from 'node-cron';
 import { runFetchPlaylists } from '../jobs/fetchPlaylists.js';
@@ -11,25 +11,26 @@ import { fetchTracksFromPlaylist } from '../jobs/fetchTracksFromPlaylist.js';
 
 const TZ = 'UTC';
 
-// 📥 Daily playlists fetch: 09:05 UTC
-const PLAYLIST_SCHEDULE = '5 9 * * *';
+// 📥 Daily playlists fetch — 11:05 local = 10:05 UTC
+const PLAYLIST_SCHEDULE = '5 10 * * *';
 
-// 🧹 Cleanup times (12:45 → 21:45 UTC)
+// 🧹 Cleanup times — 12:55 → 21:55 local = 11:55 → 20:55 UTC
 const CLEAN_SCHEDULES = [
-  '45 12 * * *',
-  '45 13 * * *',
-  '45 14 * * *',
-  '45 15 * * *',
-  '45 16 * * *',
-  '45 17 * * *',
-  '45 18 * * *',
-  '45 19 * * *',
-  '45 20 * * *',
-  '45 21 * * *',
+  '55 11 * * *',
+  '55 12 * * *',
+  '55 13 * * *',
+  '55 14 * * *',
+  '55 15 * * *',
+  '55 16 * * *',
+  '55 17 * * *',
+  '55 18 * * *',
+  '55 19 * * *',
+  '55 20 * * *',
 ];
 
-// 🎵 Track fetch times (13:00 → 22:00 UTC)
+// 🎵 Track fetch times — 13:00 → 22:00 local = 12:00 → 21:00 UTC
 const TRACK_SCHEDULES = [
+  '0 12 * * *',
   '0 13 * * *',
   '0 14 * * *',
   '0 15 * * *',
@@ -39,7 +40,6 @@ const TRACK_SCHEDULES = [
   '0 19 * * *',
   '0 20 * * *',
   '0 21 * * *',
-  '0 22 * * *',
 ];
 
 export function startFixedJobs() {
@@ -53,8 +53,8 @@ export function startFixedJobs() {
     { timezone: TZ }
   );
 
-  // 🧹 Cleanup prior to hourly track fetch windows — store target playlist ids
-  CLEAN_SCHEDULES.forEach((pattern, i) => {
+  // 🧹 Cleanup before hourly track fetch windows
+  CLEAN_SCHEDULES.forEach((pattern) => {
     cron.schedule(
       pattern,
       async () => {
@@ -68,8 +68,8 @@ export function startFixedJobs() {
     );
   });
 
-  // 🎵 Hourly track fetch windows (13:00–22:00 UTC)
-  TRACK_SCHEDULES.forEach((pattern, i) => {
+  // 🎵 Hourly track fetch windows (13:00–22:00 local)
+  TRACK_SCHEDULES.forEach((pattern) => {
     cron.schedule(
       pattern,
       async () => {
@@ -87,8 +87,8 @@ export function startFixedJobs() {
     );
   });
 
-  console.log(`[scheduler] ✅ cron set (UTC):
-  - playlists@09:05
-  - cleanup@12:45→21:45
-  - tracks@13:00→22:00`);
+  console.log(`[scheduler] ✅ cron set (UTC, aligned to local time):
+  - playlists@10:05 UTC (11:05 local)
+  - cleanup@11:55→20:55 UTC (12:55→21:55 local)
+  - tracks@12:00→21:00 UTC (13:00→22:00 local)`);
 }
