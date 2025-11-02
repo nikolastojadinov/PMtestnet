@@ -1,35 +1,49 @@
-// ✅ FULL REWRITE v5.3 — Fetch tracks from playlists and sync to Supabase
+// ✅ FULL REWRITE v3.9 — Fetch Tracks From Each Playlist (Music only, Supabase sync)
 
-import { fetchTracksFromPlaylist } from '../lib/youtube.js';
+import { sleep, nextKeyFactory } from '../lib/utils.js';
 import supabase from '../lib/supabase.js';
+import fetch from 'node-fetch';
 
-export async function runFetchTracks(playlists = []) {
-  console.log(`[tracks] 🎵 Starting track fetch job for ${playlists.length} playlists...`);
+const YOUTUBE_API_KEYS = process.env.YOUTUBE_API_KEYS?.split(',').map(k => k.trim()).filter(Boolean);
+const getNextApiKey = nextKeyFactory(YOUTUBE_API_KEYS);
 
-  if (!Array.isArray(playlists) || playlists.length === 0) {
-    console.warn('[tracks] ⚠️ No playlists provided for track fetching.');
-    return;
+// 🎵 fetch single playlist items (videos)
+async function fetchPlaylistItems(playlistId, apiKey) {
+  const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&maxResults=50&playlistId=${playlistId}&key=${apiKey}`;
+  const res = await fetch(url);
+  const data = await res.json();
+
+  if (!data.items) {
+    console.warn(`[tracks] ⚠️ No items for playlist ${playlistId}`);
+    return [];
   }
 
-  let totalTracks = 0;
+  return data.items.map(item => ({
+    videoId: item.contentDetails?.videoId,
+    title: item.snippet?.title || 'Untitled Track',
+    artist: item.snippet?.videoOwnerChannelTitle || 'Unknown Artist',
+    cover_url: item.snippet?.thumbnails?.high?.url || null,
+  }));
+}
 
-  for (const playlistId of playlists) {
+// 🧠 main job
+export async function fetchTracksFromPlaylist(playlistIds = []) {
+  console.log(`[tracks] 🎧 Starting track fetch for ${playlistIds.length} playlists...`);
+  if (!YOUTUBE_API_KEYS?.length) throw new Error('No YOUTUBE_API_KEYS configured');
+
+  for (const playlistId of playlistIds) {
+    const apiKey = getNextApiKey();
     try {
-      console.log(`[tracks] ▶️ Fetching tracks from playlist ${playlistId}...`);
-      const tracks = await fetchTracksFromPlaylist(playlistId);
+      const tracks = await fetchPlaylistItems(playlistId, apiKey);
+      if (!tracks.length) continue;
 
-      if (!tracks?.length) {
-        console.warn(`[tracks] ⚠️ No tracks found in playlist ${playlistId}`);
-        continue;
-      }
-
-      const formatted = tracks.map((t) => ({
-        external_id: t.id,
-        title: t.title || 'Untitled Track',
-        artist: t.artist || 'Unknown Artist',
-        duration: t.duration || null,
-        cover_url: t.cover_url || null,
+      const formatted = tracks.map(t => ({
         source: 'youtube',
+        external_id: t.videoId,
+        title: t.title,
+        artist: t.artist,
+        cover_url: t.cover_url,
+        duration: null,
         created_at: new Date().toISOString(),
         sync_status: 'ok',
         last_synced_at: new Date().toISOString(),
@@ -40,17 +54,17 @@ export async function runFetchTracks(playlists = []) {
         .upsert(formatted, { onConflict: 'external_id' });
 
       if (error) {
-        console.error(`[tracks] ❌ Supabase upsert failed for playlist ${playlistId}:`, error.message);
+        console.error(`[tracks] ❌ Failed to insert tracks for ${playlistId}:`, error.message);
         continue;
       }
 
       console.log(`[tracks] ✅ ${formatted.length} tracks synced from playlist ${playlistId}`);
-      totalTracks += formatted.length;
-      await new Promise((res) => setTimeout(res, 1000));
     } catch (err) {
-      console.error(`[tracks] ❌ Error fetching tracks from ${playlistId}:`, err.message);
+      console.error(`[tracks] ❌ Error fetching playlist ${playlistId}:`, err.message);
     }
+
+    await sleep(1500); // rate limiting
   }
 
-  console.log(`[tracks] 🏁 Finished. Total tracks synced: ${totalTracks}`);
+  console.log('[tracks] ✅ Track fetch cycle completed.');
 }
