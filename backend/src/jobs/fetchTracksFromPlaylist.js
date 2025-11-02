@@ -1,70 +1,61 @@
-// ✅ Adjusted imports to proper lib paths
+// ✅ FULL REWRITE v5.2 — Fetch tracks from playlists and sync to Supabase
+// 🔹 Uses new youtube.js export: fetchTracksFromPlaylist()
+// 🔹 Handles bulk track imports and Supabase upsert
+// 🔹 Compatible with updated scheduler times (11:05 local start)
+
+import { fetchTracksFromPlaylist } from '../lib/youtube.js';
 import supabase from '../lib/supabase.js';
-import { fetchPlaylistItems, getNextApiKey } from '../lib/youtube.js';
-import { sleep } from '../lib/utils.js';
 
-/**
- * Fetches tracks for playlists (provided by cleanEmptyPlaylists)
- * and upserts them into Supabase tables.
- * Each playlist fetches up to 200 tracks (YouTube API limit).
- */
-export async function fetchTracksFromPlaylist(targetPlaylists = []) {
-  console.log('[fetchTracksFromPlaylist] 🚀 Starting track fetch process...');
+export async function runFetchTracks(playlists = []) {
+  console.log(`[tracks] 🎵 Starting track fetch job for ${playlists.length} playlists...`);
 
-  if (!targetPlaylists || targetPlaylists.length === 0) {
-    console.warn('[fetchTracksFromPlaylist] ⚠️ No target playlists provided, skipping fetch.');
+  if (!Array.isArray(playlists) || playlists.length === 0) {
+    console.warn('[tracks] ⚠️ No playlists provided for track fetching.');
     return;
   }
 
-  for (const playlistId of targetPlaylists) {
-  const apiKey = getNextApiKey();
-  console.log(`[tracks] 🎵 Fetching tracks for playlist: ${playlistId} (API key ${apiKey || 'n/a'})`);
+  let totalTracks = 0;
 
+  for (const playlistId of playlists) {
     try {
-  const items = await fetchPlaylistItems(playlistId);
+      console.log(`[tracks] ▶️ Fetching tracks from playlist ${playlistId}...`);
+      const tracks = await fetchTracksFromPlaylist(playlistId);
 
-      if (!items || items.length === 0) {
-        console.warn(`[tracks] ⚠️ No tracks returned for playlist ${playlistId}`);
+      if (!tracks?.length) {
+        console.warn(`[tracks] ⚠️ No tracks found in playlist ${playlistId}`);
         continue;
       }
 
-      // Prepare rows for tracks
-      const trackRows = items.map(item => ({
+      const formatted = tracks.map((t) => ({
+        external_id: t.id,
+        title: t.title || 'Untitled Track',
+        artist: t.artist || 'Unknown Artist',
+        duration: t.duration || null,
+        cover_url: t.cover_url || null,
         source: 'youtube',
-        external_id: item.contentDetails?.videoId || item.snippet?.resourceId?.videoId,
-        title: item.snippet?.title || 'Untitled',
-        artist: item.snippet?.videoOwnerChannelTitle || item.snippet?.channelTitle || null,
-        duration: null,
-        cover_url: item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.default?.url || null,
         created_at: new Date().toISOString(),
-        sync_status: 'synced'
+        sync_status: 'ok',
+        last_synced_at: new Date().toISOString(),
       }));
 
-      // Upsert tracks
-  const { error: trackError } = await supabase.from('tracks').upsert(trackRows, { onConflict: 'external_id' });
-      if (trackError) throw trackError;
+      const { error } = await supabase
+        .from('tracks')
+        .upsert(formatted, { onConflict: 'external_id' });
 
-      // Link tracks to playlist
-      const playlistTrackRows = trackRows.map((t, index) => ({
-        playlist_id: playlistId,
-        track_id: t.external_id,
-        added_at: new Date().toISOString(),
-        position: index
-      }));
+      if (error) {
+        console.error(`[tracks] ❌ Supabase upsert failed for playlist ${playlistId}:`, error.message);
+        continue;
+      }
 
-      const { error: linkError } = await supabase
-        .from('playlist_tracks')
-        .upsert(playlistTrackRows, { onConflict: 'playlist_id,track_id' });
+      console.log(`[tracks] ✅ ${formatted.length} tracks synced from playlist ${playlistId}`);
+      totalTracks += formatted.length;
 
-      if (linkError) throw linkError;
-
-      console.log(`[tracks] ✅ Upserted ${trackRows.length} tracks for playlist ${playlistId}`);
+      // Mali delay radi API stabilnosti
+      await new Promise((res) => setTimeout(res, 1000));
     } catch (err) {
-      console.error(`[tracks] ❌ Failed to fetch tracks for playlist ${playlistId}:`, err.message || err);
+      console.error(`[tracks] ❌ Error fetching tracks from ${playlistId}:`, err.message);
     }
-
-    await sleep(500); // small delay between playlists
   }
 
-  console.log('[fetchTracksFromPlaylist] 🎶 Finished processing all target playlists.');
+  console.log(`[tracks] 🏁 Finished. Total tracks synced: ${totalTracks}`);
 }
