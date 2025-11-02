@@ -1,43 +1,47 @@
-// ✅ v3.9 — Fetch YouTube playlists and sync to Supabase
+// backend/src/jobs/fetchPlaylists.js
+// ✅ Daily: bira ~8 regiona + GLOBAL; upsert u 'playlists'
 
-import { fetchYouTubePlaylists } from '../lib/youtube.js';
 import supabase from '../lib/supabase.js';
+import { pickTodayRegions } from '../lib/utils.js';
+import { fetchRegionPlaylists } from '../lib/youtube.js';
 
 export async function runFetchPlaylists() {
   console.log('[playlists] Starting YouTube playlist fetch job...');
 
-  try {
-    const playlists = await fetchYouTubePlaylists();
-    if (!playlists || playlists.length === 0) {
-      console.log('[playlists] ⚠️ No playlists fetched from YouTube.');
-      return;
-    }
+  const regions = pickTodayRegions(8);
+  console.log(`[youtube] 🌍 Fetching playlists for regions: ${regions.join(', ')}`);
 
-    console.log(`[playlists] Received ${playlists.length} playlists from API.`);
+  const playlists = await fetchRegionPlaylists(regions);
+  if (!playlists?.length) {
+    console.log('[playlists] ⚠️ No playlists fetched from YouTube.');
+    return;
+  }
 
-    const formatted = playlists.map(pl => ({
-      external_id: pl.id || pl.playlistId,
+  const nowIso = new Date().toISOString();
+  const formatted = playlists
+    .filter(pl => pl?.id)
+    .map(pl => ({
+      external_id: pl.id,
       title: pl.snippet?.title || 'Untitled Playlist',
       description: pl.snippet?.description || '',
-      cover_url: pl.snippet?.thumbnails?.high?.url || null,
+      cover_url: pl.snippet?.thumbnails?.high?.url
+        || pl.snippet?.thumbnails?.medium?.url
+        || pl.snippet?.thumbnails?.default?.url
+        || null,
       region: pl.region || 'GLOBAL',
       category: 'music',
       is_public: true,
-      created_at: new Date().toISOString(),
-      fetched_on: new Date().toISOString(),
+      created_at: nowIso,
+      fetched_on: nowIso
     }));
 
-    const { error } = await supabase
-      .from('playlists')
-      .upsert(formatted, { onConflict: 'external_id' });
+  const { error } = await supabase
+    .from('playlists')
+    .upsert(formatted, { onConflict: 'external_id' });
 
-    if (error) {
-      console.error('[playlists] ❌ Failed to upsert playlists:', error.message);
-      return;
-    }
-
-    console.log(`[playlists] ✅ ${formatted.length} playlists synced to Supabase.`);
-  } catch (err) {
-    console.error('[playlists] ❌ Error in runFetchPlaylists:', err.message);
+  if (error) {
+    console.error('[playlists] ❌ Failed to upsert playlists:', error.message);
+    return;
   }
+  console.log(`[playlists] ✅ ${formatted.length} playlists synced to Supabase.`);
 }
