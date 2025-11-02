@@ -1,14 +1,7 @@
 // ✅ FULL REWRITE v3.4 — Smart Region Prioritization + Core Utilities
-// 🔹 NOVO: sistem “učenja” regiona (dinamičko ponderisanje uspešnosti)
-// 🔹 ZADRŽANO: sve funkcije za datume, rotaciju i sleep()
-// 🔹 BEZ promene strukture — potpuno kompatibilno sa starim pozivima
 
 const REGION_POOL = [
-  'US','CA','MX','BR','AR','CL','CO','PE','VE','EC','UY','PY',
-  'GB','FR','DE','ES','IT','NL','PL','SE','NO','FI','PT','UA','CZ','HU','RO','GR','RS','HR','BG','CH',
-  'TR','SA','AE','EG','NG','KE','ZA','DZ','MA','TN','GH','IQ','IR','IL',
-  'IN','PK','BD','VN','PH','TH','MY','ID','KR','JP','HK','SG','TW','CN',
-  'AU','NZ','RU','ET','TZ','LK','GLOBAL'
+  'US','GB','IN','JP','VN','KR','RU','PH','BR','DE','FR','IT','ES','HU','RS','PL','TR','TH','ID','MY'
 ];
 
 let regionScores = REGION_POOL.reduce((acc, r) => {
@@ -24,12 +17,6 @@ export function updateRegionScore(region, playlistsCount) {
   regionScores[region].score = Math.max(0.1, regionScores[region].success / total);
 }
 
-function weightedShuffle(arr) {
-  const weighted = arr.map(r => ({ r, w: regionScores[r]?.score || 0.5 }));
-  weighted.sort((a, b) => b.w - a.w);
-  return weighted.map(x => x.r);
-}
-
 export function nextKeyFactory(keys) {
   let i = -1;
   const safe = Array.isArray(keys) ? keys.filter(Boolean) : [];
@@ -40,27 +27,4 @@ export function nextKeyFactory(keys) {
   };
 }
 
-export function pickTodayRegions(n = 8, now = new Date()) {
-  const dayIndex = Math.floor(now.getTime() / (24 * 3600 * 1000));
-  const shuffled = weightedShuffle(REGION_POOL);
-  const start = dayIndex % shuffled.length;
-  const selected = [];
-  for (let k = 0; k < n; k++) selected.push(shuffled[(start + k) % shuffled.length]);
-  if (!selected.includes('GLOBAL')) selected.push('GLOBAL');
-  return selected;
-}
-
-export function parseYMD(s) {
-  const [y, m, d] = s.split('-').map(Number);
-  const dt = new Date(y, m - 1, d, 0, 0, 0, 0);
-  if (Number.isNaN(dt.getTime())) throw new Error(`Invalid CYCLE_START_DATE: ${s}`);
-  return dt;
-}
-
-export function startOfDay(d) {
-  const t = new Date(d);
-  t.setHours(0, 0, 0, 0);
-  return t;
-}
-
-export const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+export const sleep = (ms) => new Promise(res => setTimeout(res, ms));
