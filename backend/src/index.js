@@ -1,8 +1,8 @@
-// ✅ FULL REWRITE v5.0 — Purple Music Backend entrypoint (production-ready)
+// ✅ FULL REWRITE v5.1 — Purple Music Backend entrypoint (fixed cron schedule + correct imports)
 
 import http from 'http';
 import supabase from './lib/supabase.js';
-import { startDualJobs } from './lib/scheduler.js';
+import { startFixedJobs } from './lib/scheduler.js';
 
 // ======================================================
 // 🚀 Purple Music Backend — Boot Summary
@@ -44,13 +44,13 @@ async function main() {
       console.log(`[startup] ✅ YouTube API key rotation active (${keyCount} keys)`);
     }
 
-    console.log('[startup] Scheduling cron jobs...');
-    // Start scheduled cleanup and track fetch jobs via existing scheduler
-    startDualJobs();
-    console.log('[startup] ✅ Scheduler initialized');
+    console.log('[startup] Scheduling fixed cron jobs...');
+    // Start daily fixed-time jobs
+    startFixedJobs();
+    console.log('[startup] ✅ Scheduler initialized (fixed UTC times)');
 
     // ======================================================
-    // 🩺 Lightweight HTTP server (for /healthz and keepalive)
+    // 🩺 Lightweight HTTP server (for /healthz and /info)
     // ======================================================
     const server = http.createServer((req, res) => {
       if (req.url === '/healthz') {
@@ -66,39 +66,25 @@ async function main() {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(response));
       } else if (req.url === '/info') {
-        // Mirror scheduler settings from ./lib/scheduler.js without importing internals
+        // Reflect scheduler details
         const TZ = 'Europe/Belgrade';
-        const CLEAN_SCHEDULES = [
-          '55 12 * * *',
-          '55 13 * * *',
-          '55 14 * * *',
-          '55 15 * * *',
-          '55 16 * * *',
-          '55 17 * * *',
-          '55 18 * * *',
-          '55 19 * * *',
-          '55 20 * * *',
-          '55 21 * * *',
-        ];
-        const TRACK_SCHEDULES = [
-          '0 13 * * *',
-          '0 14 * * *',
-          '0 15 * * *',
-          '0 16 * * *',
-          '0 17 * * *',
-          '0 18 * * *',
-          '0 19 * * *',
-          '0 20 * * *',
-          '0 21 * * *',
-          '0 22 * * *',
-        ];
+        const JOBS = {
+          fetchPlaylists: ['5 9 * * *'],
+          cleanEmptyPlaylists: [
+            '45 12 * * *', '45 13 * * *', '45 14 * * *', '45 15 * * *',
+            '45 16 * * *', '45 17 * * *', '45 18 * * *', '45 19 * * *',
+            '45 20 * * *', '45 21 * * *',
+          ],
+          fetchTracksFromPlaylist: [
+            '0 13 * * *', '0 14 * * *', '0 15 * * *', '0 16 * * *',
+            '0 17 * * *', '0 18 * * *', '0 19 * * *', '0 20 * * *',
+            '0 21 * * *', '0 22 * * *',
+          ]
+        };
         const body = {
-          version: 'v5.0',
-          cron: {
-            timezone: TZ,
-            cleanup: CLEAN_SCHEDULES,
-            tracks: TRACK_SCHEDULES,
-          },
+          version: 'v5.1',
+          timezone: TZ,
+          cronJobs: JOBS,
           env: {
             supabase: !!process.env.SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE,
             youtubeKeys: process.env.YOUTUBE_API_KEYS ? process.env.YOUTUBE_API_KEYS.split(',').length : 0,
@@ -130,7 +116,7 @@ async function main() {
           const res = await fetch(`${SELF_URL}/healthz`);
           if (res.ok) console.log('[keepalive] ✅ Still alive');
         } catch {
-          console.warn('[keepalive] ⚠️ Ping failed, but continuing...');
+          console.warn('[keepalive] ⚠️ Ping failed, continuing...');
         }
       }, 5 * 60 * 1000);
     } else {
@@ -141,11 +127,9 @@ async function main() {
     // 🧹 Log rotation cleanup
     // ======================================================
     setInterval(() => {
-      if (global.gc) {
-        global.gc();
-      }
+      if (global.gc) global.gc();
       console.log('[maintenance] 🧹 Log heartbeat — uptime', Math.round(process.uptime()), 's');
-    }, 10 * 60 * 1000); // every 10 minutes
+    }, 10 * 60 * 1000);
   } catch (err) {
     console.error('[startup] ❌ Fatal error during backend boot:', err);
     process.exit(1);
