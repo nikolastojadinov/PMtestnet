@@ -1,5 +1,6 @@
+// backend/src/lib/scheduler.js
 // ✅ Fixed paths + fixed local timezone (Europe/Budapest)
-// ✅ Playlists @ 13:25 local; Cleanup @ 13:55→22:55; Tracks @ 14:00→23:00
+// ✅ Playlists @ 13:40 local; Cleanup @ 14:55→23:55; Tracks @ 15:00→00:00
 
 import cron from 'node-cron';
 import { runFetchPlaylists } from '../jobs/fetchPlaylists.js';
@@ -8,19 +9,19 @@ import { fetchTracksFromPlaylist } from '../jobs/fetchTracksFromPlaylist.js';
 
 const TZ = 'Europe/Budapest';
 
-// 📥 Daily playlists fetch: 13:25 local
-const PLAYLIST_SCHEDULE = '25 13 * * *';
+// 📥 Daily playlists fetch: 13:40 local
+const PLAYLIST_SCHEDULE = '40 13 * * *';
 
-// 🧹 Cleanup times (:55 from 13:55 → 22:55 local)
+// 🧹 Cleanup times (:55 from 14:55 → 23:55 local)
 const CLEAN_SCHEDULES = [
-  '55 13 * * *','55 14 * * *','55 15 * * *','55 16 * * *','55 17 * * *',
-  '55 18 * * *','55 19 * * *','55 20 * * *','55 21 * * *','55 22 * * *',
+  '55 14 * * *','55 15 * * *','55 16 * * *','55 17 * * *','55 18 * * *',
+  '55 19 * * *','55 20 * * *','55 21 * * *','55 22 * * *','55 23 * * *',
 ];
 
-// 🎵 Track fetch times (:00 from 14:00 → 23:00 local)
+// 🎵 Track fetch times (:00 from 15:00 → 00:00 local)
 const TRACK_SCHEDULES = [
-  '0 14 * * *','0 15 * * *','0 16 * * *','0 17 * * *','0 18 * * *',
-  '0 19 * * *','0 20 * * *','0 21 * * *','0 22 * * *','0 23 * * *',
+  '0 15 * * *','0 16 * * *','0 17 * * *','0 18 * * *','0 19 * * *',
+  '0 20 * * *','0 21 * * *','0 22 * * *','0 23 * * *','0 0 * * *',
 ];
 
 export function startFixedJobs() {
@@ -69,7 +70,7 @@ export function startFixedJobs() {
   });
 
   console.log(`[scheduler] ✅ cron set (${TZ}):
-  - playlists@13:25
-  - cleanup@13:55→22:55
-  - tracks@14:00→23:00`);
+  - playlists@13:40
+  - cleanup@14:55→23:55
+  - tracks@15:00→00:00`);
 }
