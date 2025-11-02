@@ -1,117 +1,68 @@
-// ✅ FULL REWRITE v5.1 — Unified YouTube API logic (playlist + track fetch)
-// 🔹 Fix: replaced missing getNextApiKey with nextKeyFactory() generator
-// 🔹 Handles key rotation, pagination, and playlist-track parsing
-// 🔹 Fully compatible with Supabase + cron jobs + Render env vars
+// ✅ FULL REWRITE v5.2 — YouTube Music Playlists Fetch Job
+// 🔹 Preuzima najpopularnije muzičke YouTube plejliste (categoryId = 10)
+// 🔹 Koristi YouTube API key rotaciju iz utils.js (nextKeyFactory)
+// 🔹 Čuva plejliste u Supabase tabeli `playlists`
+// 🔹 Pokreće se svakog dana u 11:05 (lokalno vreme, 10:05 UTC)
 
-import { sleep, nextKeyFactory } from './utils.js';
+import { fetchYouTubePlaylists } from '../lib/youtube.js';
+import supabase from '../lib/supabase.js';
+import { pickTodayRegions } from '../lib/utils.js';
 
-// ✅ Create rotating key generator from env
-const getNextApiKey = nextKeyFactory(process.env.YOUTUBE_API_KEYS.split(','));
-
-// =========================================================
-// 🧩 YouTube Core Helpers
-// =========================================================
-
-async function youtubeFetch(url, params = {}, retries = 3) {
-  const apiKey = getNextApiKey();
-  const fullUrl = new URL(url);
-  fullUrl.searchParams.set('key', apiKey);
-  for (const [k, v] of Object.entries(params)) fullUrl.searchParams.set(k, v);
+export async function runFetchPlaylists() {
+  console.log('[playlists] 🎧 Starting YouTube playlist fetch job...');
 
   try {
-    const res = await fetch(fullUrl.toString());
-    if (!res.ok) {
-      const text = await res.text();
-      console.warn(`[youtube] ⚠️ ${res.status} ${res.statusText}: ${text}`);
-      if (retries > 0) {
-        await sleep(2000);
-        return youtubeFetch(url, params, retries - 1);
+    // 📍 Izaberi 8 regiona za današnji ciklus
+    const regions = pickTodayRegions(8);
+    console.log(`[playlists] 🌍 Regions selected for today: ${regions.join(', ')}`);
+
+    let totalPlaylists = [];
+
+    for (const region of regions) {
+      console.log(`[playlists] ▶️ Fetching playlists for region: ${region}`);
+      const regionPlaylists = await fetchYouTubePlaylists(region, 50);
+      if (regionPlaylists?.length) {
+        totalPlaylists = totalPlaylists.concat(regionPlaylists);
+        console.log(`[playlists] ✅ ${regionPlaylists.length} playlists fetched for ${region}`);
+      } else {
+        console.warn(`[playlists] ⚠️ No playlists found for ${region}`);
       }
-      throw new Error(`YouTube API error ${res.status}`);
+      // Mali delay između regiona radi sigurnosti
+      await new Promise((res) => setTimeout(res, 1500));
     }
-    const data = await res.json();
-    return data;
+
+    if (!totalPlaylists.length) {
+      console.warn('[playlists] ⚠️ No playlists fetched from YouTube at all.');
+      return;
+    }
+
+    console.log(`[playlists] 🗂️ Preparing ${totalPlaylists.length} playlists for Supabase sync...`);
+
+    // 📦 Formatiranje za Supabase upsert
+    const formatted = totalPlaylists.map((pl) => ({
+      external_id: pl.id || pl.playlistId,
+      title: pl.title || pl.snippet?.title || 'Untitled Playlist',
+      description: pl.description || pl.snippet?.description || '',
+      cover_url: pl.thumbnails?.high?.url || pl.snippet?.thumbnails?.high?.url || null,
+      region: pl.region || 'GLOBAL',
+      category: 'music',
+      is_public: true,
+      created_at: new Date().toISOString(),
+      fetched_on: new Date().toISOString(),
+    }));
+
+    // 💾 Upsert u Supabase
+    const { error } = await supabase
+      .from('playlists')
+      .upsert(formatted, { onConflict: 'external_id' });
+
+    if (error) {
+      console.error('[playlists] ❌ Supabase upsert failed:', error.message);
+      return;
+    }
+
+    console.log(`[playlists] ✅ ${formatted.length} playlists successfully synced to Supabase.`);
   } catch (err) {
-    console.error('[youtube] ❌ Network/API fetch failed:', err.message);
-    return null;
+    console.error('[playlists] ❌ Fatal error in runFetchPlaylists:', err.message);
   }
-}
-
-// =========================================================
-// 🎵 Fetch Music Playlists (categoryId = 10)
-// =========================================================
-
-export async function fetchYouTubePlaylists(region = 'US', maxResults = 50) {
-  console.log('[youtube] Fetching music playlists...');
-
-  const params = {
-    part: 'snippet,contentDetails',
-    chart: 'mostPopular',
-    regionCode: region,
-    maxResults,
-    videoCategoryId: '10',
-  };
-
-  const data = await youtubeFetch('https://www.googleapis.com/youtube/v3/playlists', params);
-
-  if (!data || !data.items) {
-    console.error('[youtube] ❌ Error fetching playlists: No filter selected or empty response.');
-    return [];
-  }
-
-  const playlists = data.items.map((pl) => ({
-    id: pl.id,
-    title: pl.snippet?.title || 'Untitled Playlist',
-    description: pl.snippet?.description || '',
-    thumbnails: pl.snippet?.thumbnails,
-    region,
-  }));
-
-  console.log(`[youtube] ✅ Retrieved ${playlists.length} playlists for region ${region}`);
-  return playlists;
-}
-
-// =========================================================
-// 🎶 Fetch Tracks from a Playlist
-// =========================================================
-
-export async function fetchTracksFromPlaylist(playlistId) {
-  console.log(`[youtube] Fetching tracks from playlist ${playlistId}...`);
-  let allTracks = [];
-  let pageToken = null;
-  let fetchCount = 0;
-
-  do {
-    const params = {
-      part: 'snippet,contentDetails',
-      maxResults: 200,
-      playlistId,
-      pageToken,
-    };
-
-    const data = await youtubeFetch('https://www.googleapis.com/youtube/v3/playlistItems', params);
-
-    if (!data || !data.items) break;
-
-    const tracks = data.items
-      .filter((item) => item.snippet?.title && item.snippet?.resourceId?.videoId)
-      .map((item) => ({
-        id: item.snippet.resourceId.videoId,
-        title: item.snippet.title,
-        artist: item.snippet.videoOwnerChannelTitle || 'Unknown Artist',
-        cover_url: item.snippet.thumbnails?.high?.url || null,
-        duration: null, // optional, can be added from videos API
-      }));
-
-    allTracks = [...allTracks, ...tracks];
-    pageToken = data.nextPageToken || null;
-    fetchCount++;
-
-    console.log(`[youtube] ▶️ Page ${fetchCount}: ${tracks.length} tracks`);
-
-    if (pageToken) await sleep(1000);
-  } while (pageToken && fetchCount < 5);
-
-  console.log(`[youtube] ✅ Total ${allTracks.length} tracks fetched from playlist ${playlistId}`);
-  return allTracks;
 }
