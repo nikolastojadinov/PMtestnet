@@ -1,62 +1,49 @@
-// ✅ FULL REWRITE v4.0 — YouTube API handlers for playlists and tracks
+// ✅ FULL REWRITE v3.9 — YouTube Playlist Fetcher (search.list) — 70 regions, Music-only
 
-import { google } from 'googleapis';
-import { nextKeyFactory, sleep } from './utils.js';
+import fetch from 'node-fetch';
+import { pickTodayRegions, nextKeyFactory, sleep, updateRegionScore } from './utils.js';
 
-const youtube = google.youtube('v3');
-const apiKeys = process.env.YOUTUBE_API_KEYS?.split(',').map(k => k.trim()) || [];
-const getNextKey = nextKeyFactory(apiKeys);
+const YOUTUBE_API_KEYS = process.env.YOUTUBE_API_KEYS?.split(',').map(k => k.trim()).filter(Boolean);
+const getNextApiKey = nextKeyFactory(YOUTUBE_API_KEYS);
 
-// 🎧 Fetch Playlists
-export async function fetchYouTubePlaylists(region = 'US', maxResults = 50) {
-  const key = getNextKey();
-  try {
-    const res = await youtube.playlists.list({
-      part: ['id', 'snippet', 'contentDetails'],
-      chart: 'mostPopular',
-      regionCode: region,
-      maxResults,
-      key,
-    });
-    return res.data.items || [];
-  } catch (err) {
-    console.error('[youtube] ❌ Error fetching playlists:', err.message);
-    return [];
-  }
-}
+export async function fetchYouTubePlaylists() {
+  if (!YOUTUBE_API_KEYS?.length) throw new Error('No YOUTUBE_API_KEYS provided');
 
-// 🎵 Fetch Tracks from Playlist
-export async function fetchTracksFromPlaylist(playlistId) {
-  const key = getNextKey();
-  let allTracks = [];
-  let nextPageToken = null;
+  const regions = pickTodayRegions(10);
+  console.log(`[youtube] 🌍 Fetching playlists for regions: ${regions.join(', ')}`);
 
-  try {
-    do {
-      const res = await youtube.playlistItems.list({
-        part: ['snippet', 'contentDetails'],
-        playlistId,
-        maxResults: 200,
-        pageToken: nextPageToken || '',
-        key,
-      });
+  const results = [];
 
-      const tracks = res.data.items.map(item => ({
-        id: item.contentDetails.videoId,
-        title: item.snippet?.title,
-        artist: item.snippet?.videoOwnerChannelTitle,
-        duration: null,
-        cover_url: item.snippet?.thumbnails?.high?.url,
+  for (const region of regions) {
+    const key = getNextApiKey();
+    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=playlist&videoCategoryId=10&regionCode=${region}&maxResults=25&key=${key}`;
+
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (!data.items || !Array.isArray(data.items)) {
+        console.warn(`[youtube] ⚠️ No playlists found for ${region}`);
+        updateRegionScore(region, 0);
+        continue;
+      }
+
+      const playlists = data.items.map(p => ({
+        id: p.id?.playlistId || p.id,
+        snippet: p.snippet,
+        region
       }));
 
-      allTracks.push(...tracks);
-      nextPageToken = res.data.nextPageToken;
-      await sleep(300);
-    } while (nextPageToken);
+      results.push(...playlists);
+      updateRegionScore(region, playlists.length);
+      console.log(`[youtube] ✅ ${playlists.length} playlists fetched for ${region}`);
+    } catch (err) {
+      console.error(`[youtube] ❌ Error for region ${region}:`, err.message);
+    }
 
-    return allTracks;
-  } catch (err) {
-    console.error('[youtube] ❌ Error fetching tracks:', err.message);
-    return [];
+    await sleep(1500);
   }
+
+  console.log(`[youtube] 🎵 Total playlists fetched: ${results.length}`);
+  return results;
 }
