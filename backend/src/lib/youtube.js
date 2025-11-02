@@ -1,62 +1,102 @@
-// ✅ FULL REWRITE v4.0 — YouTube Music Playlist Fetcher
-// 🔹 Uses search endpoint with videoCategoryId=10 (Music)
-// 🔹 Supports 70+ regions with dynamic key rotation
-// 🔹 Handles API quota, pagination, and region logging
+// backend/src/lib/youtube.js
+// ✅ YouTube helpers — exports used od strane jobs/*
+// - fetchRegionPlaylists(regions)
+// - fetchPlaylistItems(playlistId, apiKeyOpt)
 
-import { sleep, nextKeyFactory, pickTodayRegions } from './utils.js';
+import { sleep, nextKeyFactory } from './utils.js';
 
-const YT_BASE = 'https://www.googleapis.com/youtube/v3';
-let getNextKey;
+const API_KEYS = (process.env.YOUTUBE_API_KEYS || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+const nextKey = nextKeyFactory(API_KEYS);
 
-// 🧠 Initialize API key rotation
-export function initYouTubeKeys(keys) {
-  getNextKey = nextKeyFactory(keys);
-  console.log(`[youtube] ✅ YouTube key rotation ready (${keys.length} keys)`);
+const BASE = 'https://www.googleapis.com/youtube/v3';
+
+// Generic GET
+async function ytGet(endpoint, params) {
+  const key = nextKey();
+  const qp = new URLSearchParams({ ...params, key });
+  const url = `${BASE}/${endpoint}?${qp.toString()}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`${endpoint} ${res.status}: ${text}`);
+  }
+  return res.json();
 }
 
-// 🎵 Fetch playlists for all regions of the day
-export async function fetchYouTubePlaylists() {
-  if (!getNextKey) throw new Error('YouTube API keys not initialized.');
-
-  const regions = pickTodayRegions(10); // 10+GLOBAL = 11 total
-  console.log(`[youtube] 🌍 Fetching playlists for regions: ${regions.join(', ')}`);
-
-  const allResults = [];
-
+// 🔎 Fetch playlists per region (music topic); fallback na search po terminu
+export async function fetchRegionPlaylists(regions) {
+  const all = [];
+  const terms = ['music', 'hits', 'top songs', 'charts']; // fallback ključne reči
   for (const region of regions) {
-    const apiKey = getNextKey();
-    const url = `${YT_BASE}/search?part=snippet&type=playlist&videoCategoryId=10&regionCode=${region}&maxResults=50&key=${apiKey}`;
-
+    let regionBatch = [];
     try {
-      const res = await fetch(url);
-      if (!res.ok) {
-        const text = await res.text();
-        console.error(`[youtube] ❌ HTTP ${res.status} for ${region}: ${text}`);
-        continue;
-      }
-
-      const data = await res.json();
-      if (!data.items || data.items.length === 0) {
-        console.warn(`[youtube] ⚠️ No playlists found for ${region}`);
-        continue;
-      }
-
-      const formatted = data.items.map((item) => ({
-        id: item.id?.playlistId,
-        snippet: item.snippet,
-        region,
+      // Search playlists by topicId (music) — type=playlist
+      const j = await ytGet('search', {
+        part: 'snippet',
+        type: 'playlist',
+        maxResults: 25,
+        regionCode: region === 'GLOBAL' ? 'US' : region,
+        topicId: '/m/04rlf', // Music topic
+        relevanceLanguage: 'en'
+      });
+      regionBatch = (j.items || []).map(it => ({
+        id: it?.id?.playlistId,
+        snippet: it?.snippet,
+        region
       }));
-
-      console.log(`[youtube] ✅ ${formatted.length} playlists found for ${region}`);
-      allResults.push(...formatted);
-
-      // 💤 Sleep between region calls to avoid quota spikes
-      await sleep(1000);
-    } catch (err) {
-      console.error(`[youtube] ❌ Error fetching playlists for ${region}: ${err.message}`);
+      // Ako prazno, probaj sa terminima
+      if (regionBatch.length === 0) {
+        for (const t of terms) {
+          const sj = await ytGet('search', {
+            part: 'snippet',
+            type: 'playlist',
+            maxResults: 25,
+            regionCode: region === 'GLOBAL' ? 'US' : region,
+            q: t
+          });
+          const extra = (sj.items || []).map(it => ({
+            id: it?.id?.playlistId,
+            snippet: it?.snippet,
+            region
+          }));
+          regionBatch.push(...extra);
+          if (regionBatch.length >= 25) break;
+          await sleep(150);
+        }
+      }
+      if (regionBatch.length === 0) {
+        console.log(`[youtube] ⚠️ No playlists found for ${region}`);
+      } else {
+        console.log(`[youtube] ✅ ${region}: ${regionBatch.length} playlists`);
+      }
+      all.push(...regionBatch);
+      await sleep(200);
+    } catch (e) {
+      console.log(`[youtube] ⚠️ Region ${region} error: ${e.message}`);
     }
   }
+  console.log(`[youtube] 🎵 Total playlists fetched: ${all.length}`);
+  return all;
+}
 
-  console.log(`[youtube] 🎵 Total playlists fetched: ${allResults.length}`);
-  return allResults;
+// 📄 Fetch playlist items (videos) — up to maxPages (default 4 => ~200 items)
+export async function fetchPlaylistItems(playlistId, maxPages = 4) {
+  let pageToken = undefined;
+  const items = [];
+  for (let i = 0; i < maxPages; i++) {
+    const j = await ytGet('playlistItems', {
+      part: 'snippet,contentDetails',
+      maxResults: 50,
+      playlistId,
+      pageToken
+    });
+    items.push(...(j.items || []));
+    pageToken = j.nextPageToken;
+    if (!pageToken) break;
+    await sleep(150);
+  }
+  return items;
 }
