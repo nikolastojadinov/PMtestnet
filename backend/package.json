@@ -16,7 +16,7 @@
     "node-cron": "^3.0.3"
   },
   "engines": {
-    "node": ">=20"
+    "node": "20.x"
   },
   "license": "MPL-2.0"
 }

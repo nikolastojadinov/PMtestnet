@@ -4,6 +4,7 @@
 import supabase from '../lib/supabase.js';
 import { pickTodayRegions, sleep } from '../lib/utils.js';
 import { searchPlaylists, validatePlaylists } from '../lib/youtube.js';
+import { startFetchRun, finishFetchRun } from '../lib/metrics.js';
 
 const REGIONS_PER_DAY = 10; // start conservative; scale up later
 const CATEGORIES_PER_DAY = 22; // pick a slice of categories
@@ -39,6 +40,7 @@ async function insertChunks(table, rows) {
 
 export async function runFetchPlaylists() {
   console.log('[fetch] 🚀 Starting discovery + validation');
+  const runId = await startFetchRun({ day: null });
 
   // Regions (deterministic slice)
   const regions = pickTodayRegions(REGIONS_PER_DAY);
@@ -77,6 +79,7 @@ export async function runFetchPlaylists() {
 
   if (!discovered.length) {
     console.log('[fetch] ⚠️ Nothing discovered');
+    await finishFetchRun(runId, { items_discovered: 0, playlists_valid: 0, playlists_invalid: 0 });
     return;
   }
 
@@ -115,6 +118,7 @@ export async function runFetchPlaylists() {
 
   if (!promote.length) {
     console.log('[fetch] ℹ️ No valid playlists to promote');
+    await finishFetchRun(runId, { items_discovered: deduped.length, playlists_valid: 0, playlists_invalid: deduped.length });
     return;
   }
 
@@ -127,4 +131,10 @@ export async function runFetchPlaylists() {
   } else {
     console.log(`[fetch] ✅ Promoted ${promote.length} playlists`);
   }
+
+  await finishFetchRun(runId, {
+    items_discovered: deduped.length,
+    playlists_valid: promote.length,
+    playlists_invalid: Math.max(0, deduped.length - promote.length),
+  });
 }
