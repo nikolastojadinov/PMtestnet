@@ -1,20 +1,14 @@
-// ✅ FULL REWRITE v3.7 — Supabase client configuration
-
+// ✅ Supabase Client (Service Role)
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-// Prefer service role on the backend; fall back to anon if explicitly configured
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 
-const supabaseKey = supabaseServiceKey || supabaseAnonKey;
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE)
+  console.error('[supabase] ❌ Missing credentials');
 
-if (!supabaseUrl || !supabaseKey) {
-  console.error('[supabase] ❌ Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE (or ANON) environment variables');
-  process.exit(1);
-}
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
+  auth: { persistSession: false },
+});
 
-const supabase = createClient(supabaseUrl, supabaseKey);
-
-// ✅ eksport kao default (da se importuje bez viticastih zagrada)
 export default supabase;
