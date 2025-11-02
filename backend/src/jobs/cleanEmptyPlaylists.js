@@ -1,6 +1,5 @@
-// cleanup directive: full rewrite of this file before applying changes
-
-import { supabase } from './supabase.js';
+// ✅ Adjusted import to proper lib path
+import supabase from '../lib/supabase.js';
 
 /**
  * Selects empty playlists for the next fetch cycle instead of deleting them.

@@ -1,8 +1,7 @@
-// cleanup directive: full rewrite of this file before applying changes
-
-import { supabase } from './supabase.js';
-import { fetchPlaylistItems } from './youtube.js';
-import { sleep, getNextApiKey } from './utils.js';
+// ✅ Adjusted imports to proper lib paths
+import supabase from '../lib/supabase.js';
+import { fetchPlaylistItems } from '../lib/youtube.js';
+import { sleep, getNextApiKey } from '../lib/utils.js';
 
 /**
  * Fetches tracks for playlists (provided by cleanEmptyPlaylists)
@@ -42,7 +41,7 @@ export async function fetchTracksFromPlaylist(targetPlaylists = []) {
       }));
 
       // Upsert tracks
-      const { error: trackError } = await supabase.from('tracks').upsert(trackRows, { onConflict: 'external_id' });
+  const { error: trackError } = await supabase.from('tracks').upsert(trackRows, { onConflict: 'external_id' });
       if (trackError) throw trackError;
 
       // Link tracks to playlist

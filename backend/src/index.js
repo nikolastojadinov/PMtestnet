@@ -45,7 +45,7 @@ async function main() {
     }
 
     console.log('[startup] Scheduling fixed cron jobs...');
-    // Start daily fixed-time jobs
+    // Start scheduled jobs (UTC): playlists daily, cleanup hourly, tracks hourly
     startFixedJobs();
     console.log('[startup] ✅ Scheduler initialized (fixed UTC times)');
 
@@ -53,7 +53,7 @@ async function main() {
     // 🩺 Lightweight HTTP server (for /healthz and /info)
     // ======================================================
     const server = http.createServer((req, res) => {
-      if (req.url === '/healthz') {
+  if (req.url === '/healthz') {
         const response = {
           status: 'ok',
           supabase: !!process.env.SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE,
@@ -66,25 +66,41 @@ async function main() {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(response));
       } else if (req.url === '/info') {
-        // Reflect scheduler details
-        const TZ = 'Europe/Belgrade';
-        const JOBS = {
-          fetchPlaylists: ['5 9 * * *'],
-          cleanEmptyPlaylists: [
-            '45 12 * * *', '45 13 * * *', '45 14 * * *', '45 15 * * *',
-            '45 16 * * *', '45 17 * * *', '45 18 * * *', '45 19 * * *',
-            '45 20 * * *', '45 21 * * *',
-          ],
-          fetchTracksFromPlaylist: [
-            '0 13 * * *', '0 14 * * *', '0 15 * * *', '0 16 * * *',
-            '0 17 * * *', '0 18 * * *', '0 19 * * *', '0 20 * * *',
-            '0 21 * * *', '0 22 * * *',
-          ]
-        };
+        // Mirror fixed UTC scheduler
+        const TZ = 'UTC';
+        const PLAYLIST_SCHEDULE = '5 9 * * *';
+        const CLEAN_SCHEDULES = [
+          '45 12 * * *',
+          '45 13 * * *',
+          '45 14 * * *',
+          '45 15 * * *',
+          '45 16 * * *',
+          '45 17 * * *',
+          '45 18 * * *',
+          '45 19 * * *',
+          '45 20 * * *',
+          '45 21 * * *',
+        ];
+        const TRACK_SCHEDULES = [
+          '0 13 * * *',
+          '0 14 * * *',
+          '0 15 * * *',
+          '0 16 * * *',
+          '0 17 * * *',
+          '0 18 * * *',
+          '0 19 * * *',
+          '0 20 * * *',
+          '0 21 * * *',
+          '0 22 * * *',
+        ];
         const body = {
           version: 'v5.1',
-          timezone: TZ,
-          cronJobs: JOBS,
+          cron: {
+            timezone: TZ,
+            playlists: PLAYLIST_SCHEDULE,
+            cleanup: CLEAN_SCHEDULES,
+            tracks: TRACK_SCHEDULES,
+          },
           env: {
             supabase: !!process.env.SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE,
             youtubeKeys: process.env.YOUTUBE_API_KEYS ? process.env.YOUTUBE_API_KEYS.split(',').length : 0,
