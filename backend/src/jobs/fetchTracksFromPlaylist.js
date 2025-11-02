@@ -1,70 +1,59 @@
-// ✅ FULL REWRITE v3.9 — Fetch Tracks From Each Playlist (Music only, Supabase sync)
+// backend/src/jobs/fetchTracksFromPlaylist.js
+// ✅ Prima listu playlist ID-ova (external_id), skida do ~200 itema po listi i upsert u 'tracks'
+// ⚠️ Namerno ne postavljamo 'sync_status' da ne bismo kačili CHECK constraint.
 
-import { sleep, nextKeyFactory } from '../lib/utils.js';
 import supabase from '../lib/supabase.js';
-import fetch from 'node-fetch';
+import { fetchPlaylistItems } from '../lib/youtube.js';
 
-const YOUTUBE_API_KEYS = process.env.YOUTUBE_API_KEYS?.split(',').map(k => k.trim()).filter(Boolean);
-const getNextApiKey = nextKeyFactory(YOUTUBE_API_KEYS);
-
-// 🎵 fetch single playlist items (videos)
-async function fetchPlaylistItems(playlistId, apiKey) {
-  const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&maxResults=50&playlistId=${playlistId}&key=${apiKey}`;
-  const res = await fetch(url);
-  const data = await res.json();
-
-  if (!data.items) {
-    console.warn(`[tracks] ⚠️ No items for playlist ${playlistId}`);
-    return [];
-  }
-
-  return data.items.map(item => ({
-    videoId: item.contentDetails?.videoId,
-    title: item.snippet?.title || 'Untitled Track',
-    artist: item.snippet?.videoOwnerChannelTitle || 'Unknown Artist',
-    cover_url: item.snippet?.thumbnails?.high?.url || null,
-  }));
+function mapItemToTrack(it) {
+  const vid = it?.contentDetails?.videoId;
+  const sn = it?.snippet;
+  return {
+    source: 'youtube',
+    external_id: vid || null,
+    title: sn?.title || 'Untitled',
+    artist: sn?.videoOwnerChannelTitle || sn?.channelTitle || null,
+    duration: null, // može se naknadno dopuniti via videos.list (contentDetails.duration)
+    cover_url: sn?.thumbnails?.high?.url
+      || sn?.thumbnails?.medium?.url
+      || sn?.thumbnails?.default?.url
+      || null,
+    created_at: new Date().toISOString()
+  };
 }
 
-// 🧠 main job
-export async function fetchTracksFromPlaylist(playlistIds = []) {
-  console.log(`[tracks] 🎧 Starting track fetch for ${playlistIds.length} playlists...`);
-  if (!YOUTUBE_API_KEYS?.length) throw new Error('No YOUTUBE_API_KEYS configured');
-
-  for (const playlistId of playlistIds) {
-    const apiKey = getNextApiKey();
-    try {
-      const tracks = await fetchPlaylistItems(playlistId, apiKey);
-      if (!tracks.length) continue;
-
-      const formatted = tracks.map(t => ({
-        source: 'youtube',
-        external_id: t.videoId,
-        title: t.title,
-        artist: t.artist,
-        cover_url: t.cover_url,
-        duration: null,
-        created_at: new Date().toISOString(),
-        sync_status: 'ok',
-        last_synced_at: new Date().toISOString(),
-      }));
-
-      const { error } = await supabase
-        .from('tracks')
-        .upsert(formatted, { onConflict: 'external_id' });
-
-      if (error) {
-        console.error(`[tracks] ❌ Failed to insert tracks for ${playlistId}:`, error.message);
-        continue;
-      }
-
-      console.log(`[tracks] ✅ ${formatted.length} tracks synced from playlist ${playlistId}`);
-    } catch (err) {
-      console.error(`[tracks] ❌ Error fetching playlist ${playlistId}:`, err.message);
-    }
-
-    await sleep(1500); // rate limiting
+export async function fetchTracksFromPlaylist(targetPlaylistIds = []) {
+  if (!Array.isArray(targetPlaylistIds) || targetPlaylistIds.length === 0) {
+    console.log('[tracks] ⚠️ No target playlists provided.');
+    return;
   }
 
-  console.log('[tracks] ✅ Track fetch cycle completed.');
+  for (const pid of targetPlaylistIds) {
+    console.log(`[tracks] Fetching tracks for playlist: ${pid}`);
+    try {
+      const items = await fetchPlaylistItems(pid, 4); // 4*50 = ~200
+      if (!items.length) {
+        console.log(`[tracks] ⚠️ No items for ${pid}`);
+        continue;
+      }
+      const rows = items.map(mapItemToTrack).filter(r => r.external_id);
+      if (!rows.length) {
+        console.log(`[tracks] ⚠️ No mappable items for ${pid}`);
+        continue;
+      }
+      const { error } = await supabase
+        .from('tracks')
+        .upsert(rows, { onConflict: 'external_id' });
+
+      if (error) {
+        console.error(`[tracks] ❌ Failed to upsert tracks for ${pid}: ${error.message}`);
+      } else {
+        console.log(`[tracks] ✅ Upserted ${rows.length} tracks for ${pid}`);
+      }
+    } catch (e) {
+      console.error(`[tracks] ❌ Error on ${pid}: ${e.message}`);
+    }
+  }
+
+  console.log('[tracks] 🎵 All target playlists processed.');
 }
