@@ -1,6 +1,6 @@
 // backend/src/lib/scheduler.js
 // ✅ Fixed paths + fixed local timezone (Europe/Budapest)
-// ✅ Playlists @ 12:55 local; Cleanup @ 13:55→22:55; Tracks @ 14:00→23:00
+// ✅ Playlists @ 13:05 local; Cleanup @ 13:55→22:55; Tracks @ 14:00→23:00
 
 import cron from 'node-cron';
 import { runFetchPlaylists } from '../jobs/fetchPlaylists.js';
@@ -9,8 +9,8 @@ import { fetchTracksFromPlaylist } from '../jobs/fetchTracksFromPlaylist.js';
 
 const TZ = 'Europe/Budapest';
 
-// 📥 Daily playlists fetch: 12:55 local
-const PLAYLIST_SCHEDULE = '55 12 * * *';
+// 📥 Daily playlists fetch: 13:05 local
+const PLAYLIST_SCHEDULE = '5 13 * * *';
 
 // 🧹 Cleanup times (:55 from 13:55 → 22:55 local)
 const CLEAN_SCHEDULES = [
@@ -70,7 +70,7 @@ export function startFixedJobs() {
   });
 
   console.log(`[scheduler] ✅ cron set (${TZ}):
-  - playlists@12:55
+  - playlists@13:05
   - cleanup@13:55→22:55
   - tracks@14:00→23:00`);
 }
