@@ -26,20 +26,19 @@ async function ytGet(endpoint, params) {
   return res.json();
 }
 
-// 🔎 Fetch playlists per region (music topic); fallback na search po terminu
+// 🔎 Fetch playlists per region (music topic)
 export async function fetchRegionPlaylists(regions) {
   const all = [];
-  const terms = ['music', 'hits', 'top songs', 'charts']; // fallback ključne reči
+  const terms = ['music', 'hits', 'charts', 'mix', 'songs', 'popular', 'top', 'new music', 'latest', 'favorites'];
   for (const region of regions) {
     let regionBatch = [];
     try {
-      // Search playlists by topicId (music) — type=playlist
       const j = await ytGet('search', {
         part: 'snippet',
         type: 'playlist',
-        maxResults: 25,
+        maxResults: 50,
         regionCode: region === 'GLOBAL' ? 'US' : region,
-        topicId: '/m/04rlf', // Music topic
+        topicId: '/m/04rlf',
         relevanceLanguage: 'en'
       });
       regionBatch = (j.items || []).map(it => ({
@@ -47,13 +46,12 @@ export async function fetchRegionPlaylists(regions) {
         snippet: it?.snippet,
         region
       }));
-      // Ako prazno, probaj sa terminima
       if (regionBatch.length === 0) {
         for (const t of terms) {
           const sj = await ytGet('search', {
             part: 'snippet',
             type: 'playlist',
-            maxResults: 25,
+            maxResults: 50,
             regionCode: region === 'GLOBAL' ? 'US' : region,
             q: t
           });
@@ -63,15 +61,11 @@ export async function fetchRegionPlaylists(regions) {
             region
           }));
           regionBatch.push(...extra);
-          if (regionBatch.length >= 25) break;
+          if (regionBatch.length >= 50) break;
           await sleep(150);
         }
       }
-      if (regionBatch.length === 0) {
-        console.log(`[youtube] ⚠️ No playlists found for ${region}`);
-      } else {
-        console.log(`[youtube] ✅ ${region}: ${regionBatch.length} playlists`);
-      }
+      console.log(`[youtube] ✅ ${region}: ${regionBatch.length} playlists`);
       all.push(...regionBatch);
       await sleep(200);
     } catch (e) {
@@ -82,21 +76,31 @@ export async function fetchRegionPlaylists(regions) {
   return all;
 }
 
-// 📄 Fetch playlist items (videos) — up to maxPages (default 4 => ~200 items)
-export async function fetchPlaylistItems(playlistId, maxPages = 4) {
+// 📄 Fetch playlist items — up to 500 songs per playlist
+export async function fetchPlaylistItems(playlistId, maxPages = 10) {
   let pageToken = undefined;
   const items = [];
   for (let i = 0; i < maxPages; i++) {
-    const j = await ytGet('playlistItems', {
-      part: 'snippet,contentDetails',
-      maxResults: 50,
-      playlistId,
-      pageToken
-    });
-    items.push(...(j.items || []));
-    pageToken = j.nextPageToken;
-    if (!pageToken) break;
-    await sleep(150);
+    try {
+      const j = await ytGet('playlistItems', {
+        part: 'snippet,contentDetails',
+        maxResults: 50,
+        playlistId,
+        pageToken
+      });
+      items.push(...(j.items || []));
+      pageToken = j.nextPageToken;
+      if (!pageToken) break;
+      await sleep(150);
+    } catch (err) {
+      if (err.message.includes('invalidPageToken')) {
+        console.log(`[youtube] ⚠️ Invalid pageToken for ${playlistId} — resetting pagination`);
+        break; // prekid ciklusa za ovu playlistu
+      } else {
+        console.log(`[youtube] ⚠️ Playlist ${playlistId} error: ${err.message}`);
+        break;
+      }
+    }
   }
-  return items;
+  return items.slice(0, 500);
 }
