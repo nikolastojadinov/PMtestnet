@@ -1,7 +1,7 @@
 // ✅ Adjusted imports to proper lib paths
 import supabase from '../lib/supabase.js';
-import { fetchPlaylistItems } from '../lib/youtube.js';
-import { sleep, getNextApiKey } from '../lib/utils.js';
+import { fetchPlaylistItems, getNextApiKey } from '../lib/youtube.js';
+import { sleep } from '../lib/utils.js';
 
 /**
  * Fetches tracks for playlists (provided by cleanEmptyPlaylists)
@@ -17,11 +17,11 @@ export async function fetchTracksFromPlaylist(targetPlaylists = []) {
   }
 
   for (const playlistId of targetPlaylists) {
-    const apiKey = getNextApiKey();
-    console.log(`[tracks] 🎵 Fetching tracks for playlist: ${playlistId} (API key ${apiKey})`);
+  const apiKey = getNextApiKey();
+  console.log(`[tracks] 🎵 Fetching tracks for playlist: ${playlistId} (API key ${apiKey || 'n/a'})`);
 
     try {
-      const items = await fetchPlaylistItems(playlistId, apiKey);
+  const items = await fetchPlaylistItems(playlistId);
 
       if (!items || items.length === 0) {
         console.warn(`[tracks] ⚠️ No tracks returned for playlist ${playlistId}`);
@@ -29,13 +29,13 @@ export async function fetchTracksFromPlaylist(targetPlaylists = []) {
       }
 
       // Prepare rows for tracks
-      const trackRows = items.map(video => ({
+      const trackRows = items.map(item => ({
         source: 'youtube',
-        external_id: video.id,
-        title: video.title,
-        artist: video.channelTitle,
-        duration: video.duration || null,
-        cover_url: video.thumbnail,
+        external_id: item.contentDetails?.videoId || item.snippet?.resourceId?.videoId,
+        title: item.snippet?.title || 'Untitled',
+        artist: item.snippet?.videoOwnerChannelTitle || item.snippet?.channelTitle || null,
+        duration: null,
+        cover_url: item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.default?.url || null,
         created_at: new Date().toISOString(),
         sync_status: 'synced'
       }));
