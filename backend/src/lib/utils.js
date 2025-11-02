@@ -1,7 +1,16 @@
-// ✅ FULL REWRITE v3.4 — Smart Region Prioritization + Core Utilities
+// ✅ FULL REWRITE v3.9 — Smart Region Prioritization (70 regions) + Core Utilities
 
 const REGION_POOL = [
-  'US','GB','IN','JP','VN','KR','RU','PH','BR','DE','FR','IT','ES','HU','RS','PL','TR','TH','ID','MY'
+  // 🌍 Americas
+  'US','CA','MX','BR','AR','CL','CO','PE','VE','EC','UY','PY',
+  // 🇪🇺 Europe
+  'GB','FR','DE','ES','IT','NL','PL','SE','NO','FI','PT','UA','CZ','HU','RO','GR','RS','HR','BG','CH','BE','DK','SK','IE','AT',
+  // 🌍 Middle East & Africa
+  'TR','SA','AE','EG','NG','KE','ZA','DZ','MA','TN','GH','IQ','IR','IL','ET','TZ',
+  // 🌏 Asia-Pacific
+  'IN','PK','BD','VN','PH','TH','MY','ID','KR','JP','HK','SG','TW','CN','LK','AU','NZ',
+  // 🌐 Global fallback
+  'GLOBAL'
 ];
 
 let regionScores = REGION_POOL.reduce((acc, r) => {
@@ -17,6 +26,12 @@ export function updateRegionScore(region, playlistsCount) {
   regionScores[region].score = Math.max(0.1, regionScores[region].success / total);
 }
 
+function weightedShuffle(arr) {
+  const weighted = arr.map(r => ({ r, w: regionScores[r]?.score || 0.5 }));
+  weighted.sort((a, b) => b.w - a.w);
+  return weighted.map(x => x.r);
+}
+
 export function nextKeyFactory(keys) {
   let i = -1;
   const safe = Array.isArray(keys) ? keys.filter(Boolean) : [];
@@ -27,4 +42,14 @@ export function nextKeyFactory(keys) {
   };
 }
 
-export const sleep = (ms) => new Promise(res => setTimeout(res, ms));
+export function pickTodayRegions(n = 10, now = new Date()) {
+  const dayIndex = Math.floor(now.getTime() / (24 * 3600 * 1000));
+  const shuffled = weightedShuffle(REGION_POOL);
+  const start = dayIndex % shuffled.length;
+  const selected = [];
+  for (let k = 0; k < n; k++) selected.push(shuffled[(start + k) % shuffled.length]);
+  if (!selected.includes('GLOBAL')) selected.push('GLOBAL');
+  return selected;
+}
+
+export const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
