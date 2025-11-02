@@ -1,19 +1,16 @@
-// ✅ FULL REWRITE v5.3 — Fixed Local-Time Scheduler (Europe/Budapest)
-// 🔹 Fetch playlists daily at 11:30 (local time)
-// 🔹 Clean empty playlists hourly at :55 from 12:55 → 21:55 (local time)
-// 🔹 Fetch tracks hourly at :00 from 13:00 → 22:00 (local time)
+// ✅ Fixed Europe/Budapest scheduler — start at 12:00 local time, rest unchanged
 
 import cron from 'node-cron';
 import { runFetchPlaylists } from '../jobs/fetchPlaylists.js';
 import { cleanEmptyPlaylists } from '../jobs/cleanEmptyPlaylists.js';
-import { runFetchTracks } from '../jobs/fetchTracksFromPlaylist.js';
+import { fetchTracksFromPlaylist } from '../jobs/fetchTracksFromPlaylist.js';
 
 const TZ = 'Europe/Budapest';
 
-// 📥 Daily playlist fetch — 11:30 local time
-const PLAYLIST_SCHEDULE = '30 11 * * *';
+// 📥 Daily playlists fetch: 12:00 local time
+const PLAYLIST_SCHEDULE = '0 12 * * *';
 
-// 🧹 Cleanup times — 12:55 → 21:55 local time
+// 🧹 Cleanup times (12:55 → 21:55 local)
 const CLEAN_SCHEDULES = [
   '55 12 * * *',
   '55 13 * * *',
@@ -27,7 +24,7 @@ const CLEAN_SCHEDULES = [
   '55 21 * * *',
 ];
 
-// 🎵 Track fetch times — 13:00 → 22:00 local time
+// 🎵 Track fetch times (13:00 → 22:00 local)
 const TRACK_SCHEDULES = [
   '0 13 * * *',
   '0 14 * * *',
@@ -42,51 +39,37 @@ const TRACK_SCHEDULES = [
 ];
 
 export function startFixedJobs() {
-  // 📥 Daily playlist discovery
-  cron.schedule(
-    PLAYLIST_SCHEDULE,
-    async () => {
-      console.log(`[scheduler] ${PLAYLIST_SCHEDULE} (${TZ}) → Fetch playlists (daily)`);
-      await runFetchPlaylists();
-    },
-    { timezone: TZ }
-  );
+  cron.schedule(PLAYLIST_SCHEDULE, async () => {
+    console.log(`[scheduler] ${PLAYLIST_SCHEDULE} (${TZ}) → Fetch playlists (daily)`);
+    await runFetchPlaylists();
+  }, { timezone: TZ });
 
-  // 🧹 Cleanup prior to track fetch
-  CLEAN_SCHEDULES.forEach((pattern) => {
-    cron.schedule(
-      pattern,
-      async () => {
-        console.log(`[scheduler] ${pattern} (${TZ}) → Clean empty playlists`);
-        const ids = await cleanEmptyPlaylists();
-        globalThis.__pm_emptyPlaylistIds = ids || [];
-        console.log(`[scheduler] Selected ${ids?.length || 0} empty playlists for next track fetch window.`);
-      },
-      { timezone: TZ }
-    );
+  CLEAN_SCHEDULES.forEach(pattern => {
+    cron.schedule(pattern, async () => {
+      console.log(`[scheduler] ${pattern} (${TZ}) → Clean empty playlists`);
+      const ids = await cleanEmptyPlaylists();
+      const count = Array.isArray(ids) ? ids.length : 0;
+      globalThis.__pm_emptyPlaylistIds = ids || [];
+      console.log(`[scheduler] Selected ${count} empty playlists for next track fetch window.`);
+    }, { timezone: TZ });
   });
 
-  // 🎵 Hourly track fetch
-  TRACK_SCHEDULES.forEach((pattern) => {
-    cron.schedule(
-      pattern,
-      async () => {
-        const target = Array.isArray(globalThis.__pm_emptyPlaylistIds)
-          ? globalThis.__pm_emptyPlaylistIds
-          : [];
-        console.log(`[scheduler] ${pattern} (${TZ}) → Fetch tracks (${target.length} playlists)`);
-        if (!target.length) {
-          console.log('[scheduler] No target playlists from last cleanup; skipping.');
-          return;
-        }
-        await runFetchTracks(target);
-      },
-      { timezone: TZ }
-    );
+  TRACK_SCHEDULES.forEach(pattern => {
+    cron.schedule(pattern, async () => {
+      const target = Array.isArray(globalThis.__pm_emptyPlaylistIds)
+        ? globalThis.__pm_emptyPlaylistIds
+        : [];
+      console.log(`[scheduler] ${pattern} (${TZ}) → Fetch tracks (${target.length} playlists)`);
+      if (!target.length) {
+        console.log('[scheduler] No target playlists from last cleanup; skipping.');
+        return;
+      }
+      await fetchTracksFromPlaylist(target);
+    }, { timezone: TZ });
   });
 
   console.log(`[scheduler] ✅ cron set (${TZ}):
-  - playlists@11:30
+  - playlists@12:00
   - cleanup@12:55→21:55
   - tracks@13:00→22:00`);
 }
