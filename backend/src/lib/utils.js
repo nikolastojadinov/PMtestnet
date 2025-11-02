@@ -3,6 +3,30 @@
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+export function startOfDay(d) {
+  const t = new Date(d);
+  t.setHours(0, 0, 0, 0);
+  return t;
+}
+
+export function parseYMD(s) {
+  const [y, m, d] = String(s).split('-').map(Number);
+  const dt = new Date(y, (m || 1) - 1, d || 1, 0, 0, 0, 0);
+  if (Number.isNaN(dt.getTime())) throw new Error(`Invalid CYCLE_START_DATE: ${s}`);
+  return dt;
+}
+
+// Return [from, to) UTC window boundaries for a given cycle day (1..29)
+export function dateWindowForCycleDay(day, now = new Date()) {
+  if (!day || day < 1 || day > 29) throw new Error('cycle day must be 1..29');
+  const startEnv = process.env.CYCLE_START_DATE || '2025-10-27';
+  const start = startOfDay(parseYMD(startEnv));
+  const base = new Date(start.getTime() + (day - 1) * 24 * 3600 * 1000);
+  const from = startOfDay(base).toISOString();
+  const to = new Date(startOfDay(base).getTime() + 24 * 3600 * 1000).toISOString();
+  return { from, to };
+}
+
 export const REGION_POOL = [
   'US','CA','MX','BR','AR','CL','CO','PE','VE','EC','UY','PY',
   'GB','FR','DE','ES','IT','NL','PL','SE','NO','FI','PT','UA','CZ','HU','RO','GR','RS','HR','BG','CH',

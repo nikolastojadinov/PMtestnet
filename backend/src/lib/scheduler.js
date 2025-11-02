@@ -1,27 +1,27 @@
 // backend/src/lib/scheduler.js
-// ✅ Fixed paths + fixed local timezone (Europe/Budapest)
-// ✅ Playlists @ 13:40 local; Cleanup @ 14:55→23:55; Tracks @ 15:00→00:00
+// ✅ Fixed UTC schedule for cloud runtimes
+// ✅ Playlists @ 09:05 UTC; Cleanup @ 12:45→21:45; Tracks @ 13:00→22:00
 
 import cron from 'node-cron';
 import { runFetchPlaylists } from '../jobs/fetchPlaylists.js';
 import { cleanEmptyPlaylists } from '../jobs/cleanEmptyPlaylists.js';
 import { fetchTracksFromPlaylist } from '../jobs/fetchTracksFromPlaylist.js';
 
-const TZ = 'Europe/Budapest';
+const TZ = 'UTC';
 
-// 📥 Daily playlists fetch: 13:40 local
-const PLAYLIST_SCHEDULE = '40 13 * * *';
+// 📥 Daily playlists fetch: 09:05 UTC
+const PLAYLIST_SCHEDULE = '5 9 * * *';
 
-// 🧹 Cleanup times (:55 from 14:55 → 23:55 local)
+// 🧹 Cleanup times (:45 from 12:45 → 21:45 UTC)
 const CLEAN_SCHEDULES = [
-  '55 14 * * *','55 15 * * *','55 16 * * *','55 17 * * *','55 18 * * *',
-  '55 19 * * *','55 20 * * *','55 21 * * *','55 22 * * *','55 23 * * *',
+  '45 12 * * *','45 13 * * *','45 14 * * *','45 15 * * *','45 16 * * *',
+  '45 17 * * *','45 18 * * *','45 19 * * *','45 20 * * *','45 21 * * *',
 ];
 
-// 🎵 Track fetch times (:00 from 15:00 → 00:00 local)
+// 🎵 Track fetch times (:00 from 13:00 → 22:00 UTC)
 const TRACK_SCHEDULES = [
-  '0 15 * * *','0 16 * * *','0 17 * * *','0 18 * * *','0 19 * * *',
-  '0 20 * * *','0 21 * * *','0 22 * * *','0 23 * * *','0 0 * * *',
+  '0 13 * * *','0 14 * * *','0 15 * * *','0 16 * * *','0 17 * * *',
+  '0 18 * * *','0 19 * * *','0 20 * * *','0 21 * * *','0 22 * * *',
 ];
 
 export function startFixedJobs() {
@@ -35,13 +35,13 @@ export function startFixedJobs() {
     { timezone: TZ }
   );
 
-  // Cleanup prije svakog track fetch prozora — bira prazne playliste (ne briše)
+  // Cleanup before track fetch window — select empty playlists (no delete)
   CLEAN_SCHEDULES.forEach((pattern) => {
     cron.schedule(
       pattern,
       async () => {
         console.log(`[scheduler] ${pattern} (${TZ}) → Clean empty playlists (select targets)`);
-        const ids = await cleanEmptyPlaylists(); // vraća array external_id
+  const ids = await cleanEmptyPlaylists(); // returns array of playlist UUIDs
         const count = Array.isArray(ids) ? ids.length : 0;
         globalThis.__pm_emptyPlaylistIds = ids || [];
         console.log(`[scheduler] Selected ${count} empty playlists for next track window.`);
@@ -70,7 +70,7 @@ export function startFixedJobs() {
   });
 
   console.log(`[scheduler] ✅ cron set (${TZ}):
-  - playlists@13:40
-  - cleanup@14:55→23:55
-  - tracks@15:00→00:00`);
+  - playlists@09:05
+  - cleanup@12:45→21:45
+  - tracks@13:00→22:00`);
 }

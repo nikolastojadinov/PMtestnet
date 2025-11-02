@@ -1,58 +1,94 @@
 // backend/src/jobs/fetchTracksFromPlaylist.js
-// ✅ Prima listu playlist ID-ova (external_id), skida do ~200 itema po listi i upsert u 'tracks'
-// ⚠️ Namerno ne postavljamo 'sync_status' da ne bismo kačili CHECK constraint.
+// ✅ Accepts playlist UUID ids, fetches ~200 items per list, upserts tracks, and links via playlist_tracks
 
 import supabase from '../lib/supabase.js';
 import { fetchPlaylistItems } from '../lib/youtube.js';
+import { sleep } from '../lib/utils.js';
 
 function mapItemToTrack(it) {
-  const vid = it?.contentDetails?.videoId;
+  const vid = it?.contentDetails?.videoId || it?.snippet?.resourceId?.videoId;
   const sn = it?.snippet;
   return {
     source: 'youtube',
     external_id: vid || null,
     title: sn?.title || 'Untitled',
     artist: sn?.videoOwnerChannelTitle || sn?.channelTitle || null,
-    duration: null, // može se naknadno dopuniti via videos.list (contentDetails.duration)
-    cover_url: sn?.thumbnails?.high?.url
-      || sn?.thumbnails?.medium?.url
-      || sn?.thumbnails?.default?.url
-      || null,
-    created_at: new Date().toISOString()
+    duration: null,
+    cover_url:
+      sn?.thumbnails?.high?.url ||
+      sn?.thumbnails?.medium?.url ||
+      sn?.thumbnails?.default?.url ||
+      null,
+    created_at: new Date().toISOString(),
   };
 }
 
-export async function fetchTracksFromPlaylist(targetPlaylistIds = []) {
-  if (!Array.isArray(targetPlaylistIds) || targetPlaylistIds.length === 0) {
+export async function fetchTracksFromPlaylist(targetPlaylistUUIDs = []) {
+  if (!Array.isArray(targetPlaylistUUIDs) || targetPlaylistUUIDs.length === 0) {
     console.log('[tracks] ⚠️ No target playlists provided.');
     return;
   }
 
-  for (const pid of targetPlaylistIds) {
-    console.log(`[tracks] Fetching tracks for playlist: ${pid}`);
-    try {
-      const items = await fetchPlaylistItems(pid, 4); // 4*50 = ~200
-      if (!items.length) {
-        console.log(`[tracks] ⚠️ No items for ${pid}`);
-        continue;
-      }
-      const rows = items.map(mapItemToTrack).filter(r => r.external_id);
-      if (!rows.length) {
-        console.log(`[tracks] ⚠️ No mappable items for ${pid}`);
-        continue;
-      }
-      const { error } = await supabase
-        .from('tracks')
-        .upsert(rows, { onConflict: 'external_id' });
-
-      if (error) {
-        console.error(`[tracks] ❌ Failed to upsert tracks for ${pid}: ${error.message}`);
-      } else {
-        console.log(`[tracks] ✅ Upserted ${rows.length} tracks for ${pid}`);
-      }
-    } catch (e) {
-      console.error(`[tracks] ❌ Error on ${pid}: ${e.message}`);
+  for (const playlistUUID of targetPlaylistUUIDs) {
+    // Lookup external_id for YouTube API
+    const { data: plRow, error: plErr } = await supabase
+      .from('playlists')
+      .select('id, external_id')
+      .eq('id', playlistUUID)
+      .single();
+    if (plErr || !plRow) {
+      console.warn('[tracks] ⚠️ Playlist not found for id:', playlistUUID);
+      continue;
     }
+
+    const ytPlaylistId = plRow.external_id;
+    console.log(`[tracks] Fetching tracks for playlist ${playlistUUID} (YT ${ytPlaylistId})`);
+    try {
+      const items = await fetchPlaylistItems(ytPlaylistId, 4); // 4*50 ≈ 200
+      if (!items.length) {
+        console.log(`[tracks] ⚠️ No items for ${ytPlaylistId}`);
+        continue;
+      }
+      const rows = items.map(mapItemToTrack).filter((r) => r.external_id);
+      if (!rows.length) {
+        console.log(`[tracks] ⚠️ No mappable items for ${ytPlaylistId}`);
+        continue;
+      }
+
+      // Upsert tracks and return ids
+      const { data: inserted, error: upErr } = await supabase
+        .from('tracks')
+        .upsert(rows, { onConflict: 'external_id' })
+        .select('id, external_id');
+      if (upErr) throw upErr;
+
+      const idByExternal = new Map((inserted || []).map((t) => [t.external_id, t.id]));
+      const rels = rows
+        .map((r, idx) => ({
+          playlist_id: plRow.id,
+          track_id: idByExternal.get(r.external_id),
+          added_at: new Date().toISOString(),
+          position: idx,
+        }))
+        .filter((x) => !!x.track_id);
+
+      const { error: relErr } = await supabase
+        .from('playlist_tracks')
+        .upsert(rels, { onConflict: 'playlist_id,track_id' });
+      if (relErr) throw relErr;
+
+      // Update playlist refreshed time
+      await supabase
+        .from('playlists')
+        .update({ last_refreshed_on: new Date().toISOString() })
+        .eq('id', plRow.id);
+
+      console.log(`[tracks] ✅ Linked ${rels.length} tracks to playlist ${playlistUUID}`);
+    } catch (e) {
+      console.error(`[tracks] ❌ Error on ${playlistUUID}: ${e.message}`);
+    }
+
+    await sleep(300);
   }
 
   console.log('[tracks] 🎵 All target playlists processed.');

@@ -1,143 +1,130 @@
 // backend/src/jobs/fetchPlaylists.js
-// ✅ FULL REWRITE — kompatibilno sa postojećom Supabase šemom
-// - NEMA onConflict; radimo client-side dedupe po external_id
-// - Ubacivanje u chunk-ovima da ne guši Supabase payload
-// - Cilj: do ~6000 playlisti dnevno (zavisi koliko vrati youtube.js)
-// - Koristi 70-region pool iz utils.js i bira današnji set regiona
+// ✅ Discovery (search) + validation (playlists.list) + promote to playlists
 
 import supabase from '../lib/supabase.js';
 import { pickTodayRegions, sleep } from '../lib/utils.js';
-import { fetchRegionPlaylists } from '../lib/youtube.js';
+import { searchPlaylists, validatePlaylists } from '../lib/youtube.js';
 
-// Koliko regiona danas obrađujemo (podešavanje po potrebi)
-// Napomena: youtube.js trenutno vraća ~25 po regionu.
-// Ako koristiš 40 regiona → ~1000; za 6000 treba proširen fetch u youtube.js.
-const REGIONS_PER_DAY = 40;
-
-// Hard limit dnevnog ubacivanja (bezbednosna zaštita)
+const REGIONS_PER_DAY = 10; // start conservative; scale up later
+const CATEGORIES_PER_DAY = 22; // pick a slice of categories
 const DAILY_PLAYLIST_CAP = 6000;
+const INSERT_CHUNK = 500;
 
-// Chunk veličine za SELECT/INSERT
-const SELECT_CHUNK = 900;   // .in() lista ID-jeva
-const INSERT_CHUNK = 500;   // batch insert
-
-function uniqueByExternalId(arr) {
+function uniqueBy(arr, keyFn) {
   const seen = new Set();
   const out = [];
   for (const it of arr) {
-    const id = it?.external_id;
-    if (!id) continue;
-    if (seen.has(id)) continue;
-    seen.add(id);
+    const k = keyFn(it);
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
     out.push(it);
   }
   return out;
 }
 
-async function fetchExistingIds(allIds) {
-  const existing = new Set();
-  // Supabase .in() bolje radi u chunkovima
-  for (let i = 0; i < allIds.length; i += SELECT_CHUNK) {
-    const batch = allIds.slice(i, i + SELECT_CHUNK);
-    const { data, error } = await supabase
-      .from('playlists')
-      .select('external_id')
-      .in('external_id', batch);
-
-    if (error) {
-      console.error('[playlists] ⚠️ Failed to read existing IDs:', error.message);
-      // u slučaju greške, ne prekidamo — radimo best-effort
-      continue;
-    }
-    for (const row of data || []) {
-      if (row?.external_id) existing.add(row.external_id);
-    }
-    // kratka pauza da izbegnemo ograničenja
-    await sleep(80);
-  }
-  return existing;
-}
-
-async function insertInChunks(rows) {
+async function insertChunks(table, rows) {
   let inserted = 0;
   for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
     const chunk = rows.slice(i, i + INSERT_CHUNK);
-    const { error } = await supabase.from('playlists').insert(chunk);
+    const { error } = await supabase.from(table).insert(chunk);
     if (error) {
-      console.error('[playlists] ❌ Insert chunk failed:', error.message);
-      // nastavljamo dalje — cilj je da ubacimo što više
+      console.error(`[fetch] ❌ Insert chunk into ${table} failed:`, error.message);
     } else {
       inserted += chunk.length;
     }
-    await sleep(100);
+    await sleep(80);
   }
   return inserted;
 }
 
 export async function runFetchPlaylists() {
-  console.log('[playlists] 🚀 Starting YouTube playlist fetch job...');
+  console.log('[fetch] 🚀 Starting discovery + validation');
 
-  // 1) Izbor regiona za današnji dan (deterministički + “GLOBAL” osiguran u utils)
+  // Regions (deterministic slice)
   const regions = pickTodayRegions(REGIONS_PER_DAY);
-  console.log('[youtube] 🌍 Fetching playlists for regions:', regions.join(', '));
+  // Categories from DB (first N, can later rotate deterministically)
+  const { data: cats } = await supabase
+    .from('categories')
+    .select('key')
+    .limit(CATEGORIES_PER_DAY);
+  const categories = (cats || []).map((c) => c.key);
+  if (!categories.length) categories.push('music');
 
-  // 2) Dohvat iz YouTube (preko youtube.js)
-  //    Ova funkcija vraća objekte { id, snippet, region }
-  const raw = await fetchRegionPlaylists(regions);
+  // 1) Discovery via search.list
+  let discovered = [];
+  for (const region of regions) {
+    for (const cat of categories) {
+      const items = await searchPlaylists({ query: `${cat} music`, regionCode: region, maxPages: 1 });
+      const mapped = (items || []).map((it) => ({
+        external_id: it.id?.playlistId,
+        title: it.snippet?.title,
+        description: it.snippet?.description,
+        channel_id: it.snippet?.channelId,
+        channel_title: it.snippet?.channelTitle,
+        region: region,
+        category: cat,
+        thumbnail_url: it.snippet?.thumbnails?.high?.url || it.snippet?.thumbnails?.default?.url || null,
+        fetched_on: new Date().toISOString(),
+        validated: false,
+        cycle_mode: 'FETCH',
+      })).filter((x) => !!x.external_id);
+      discovered.push(...mapped);
+      await sleep(120);
+      if (discovered.length > DAILY_PLAYLIST_CAP * 1.5) break;
+    }
+    if (discovered.length > DAILY_PLAYLIST_CAP * 1.5) break;
+  }
 
-  // 3) Mapiranje u našu Supabase šemu (bez kolona kojih nema u bazi)
-  const nowIso = new Date().toISOString();
-  const mapped = (raw || [])
-    .map((pl) => {
-      const externalId = pl?.id || pl?.playlistId || pl?.snippet?.playlistId;
-      if (!externalId) return null;
-
-      return {
-        external_id: String(externalId),
-        title: pl?.snippet?.title ?? 'Untitled Playlist',
-        description: pl?.snippet?.description ?? '',
-        cover_url:
-          pl?.snippet?.thumbnails?.maxres?.url ||
-          pl?.snippet?.thumbnails?.high?.url ||
-          pl?.snippet?.thumbnails?.medium?.url ||
-          pl?.snippet?.thumbnails?.default?.url ||
-          null,
-        region: pl?.region || 'GLOBAL',
-        category: 'music',
-        is_public: true,
-        created_at: nowIso, // ako već postoji, ovaj red se neće insertovati (skippovaćemo)
-        fetched_on: nowIso,
-      };
-    })
-    .filter(Boolean);
-
-  if (!mapped.length) {
-    console.log('[playlists] ⚠️ No playlists fetched from YouTube.');
+  if (!discovered.length) {
+    console.log('[fetch] ⚠️ Nothing discovered');
     return;
   }
 
-  // 4) Klijentska deduplikacija po external_id (pre upisa)
-  const dedupClient = uniqueByExternalId(mapped);
-  console.log(`[playlists] ✅ Deduplicated (client-side): ${dedupClient.length} playlists`);
+  // Dedup on external_id
+  const deduped = uniqueBy(discovered, (x) => x.external_id);
+  console.log(`[fetch] discovered=${discovered.length} deduped=${deduped.length}`);
 
-  // 5) Poštuj dnevni limit (cap)
-  const capped = dedupClient.slice(0, DAILY_PLAYLIST_CAP);
+  // 2) Validation via playlists.list
+  const ids = deduped.map((x) => x.external_id).slice(0, 10000);
+  const validated = await validatePlaylists(ids);
+  const validIds = new Set(validated.filter((v) => v.is_public && v.item_count > 0).map((v) => v.external_id));
 
-  // 6) Pročitaj koje ID-jeve već imamo u bazi i isključi ih iz inserta
-  const allIds = capped.map((x) => x.external_id);
-  const existing = await fetchExistingIds(allIds);
-  const toInsert = capped.filter((x) => !existing.has(x.external_id));
+  // 3) Store raw and promote valid
+  await insertChunks('playlists_raw', deduped.map((x) => ({ ...x, privacy_status: null }))); // lightweight store
 
-  console.log(
-    `[playlists] 📊 Existing in DB: ${existing.size} | New to insert: ${toInsert.length} (of ${capped.length} capped)`
-  );
+  const promote = deduped
+    .filter((x) => validIds.has(x.external_id))
+    .map((x) => ({
+      external_id: x.external_id,
+      title: x.title,
+      description: x.description,
+      channel_id: x.channel_id,
+      channel_title: x.channel_title,
+      cover_url: x.thumbnail_url,
+      region: x.region,
+      category: x.category,
+      is_public: true,
+      is_empty: false,
+      item_count: validated.find((v) => v.external_id === x.external_id)?.item_count || null,
+      fetched_on: x.fetched_on,
+      validated_on: new Date().toISOString(),
+      last_etag: validated.find((v) => v.external_id === x.external_id)?.etag || null,
+      cycle_day: null,
+      cycle_mode: 'FETCH',
+    }));
 
-  if (!toInsert.length) {
-    console.log('[playlists] ℹ️ Nothing to insert — DB already has these playlists.');
+  if (!promote.length) {
+    console.log('[fetch] ℹ️ No valid playlists to promote');
     return;
   }
 
-  // 7) Ubaci u chunkovima (bez onConflict)
-  const insertedCount = await insertInChunks(toInsert);
-  console.log(`[playlists] ✅ ${insertedCount} playlists inserted into Supabase.`);
+  // Upsert valid playlists
+  const { error: upErr } = await supabase
+    .from('playlists')
+    .upsert(promote, { onConflict: 'external_id' });
+  if (upErr) {
+    console.error('[fetch] ❌ Promote upsert failed:', upErr.message);
+  } else {
+    console.log(`[fetch] ✅ Promoted ${promote.length} playlists`);
+  }
 }

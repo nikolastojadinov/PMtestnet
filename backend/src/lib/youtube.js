@@ -77,7 +77,7 @@ export async function fetchRegionPlaylists(regions) {
 }
 
 // 📄 Fetch playlist items — up to 500 songs per playlist
-export async function fetchPlaylistItems(playlistId, maxPages = 10) {
+export async function fetchPlaylistItems(playlistId, maxPages = 1) {
   let pageToken = undefined;
   const items = [];
   for (let i = 0; i < maxPages; i++) {
@@ -103,4 +103,58 @@ export async function fetchPlaylistItems(playlistId, maxPages = 10) {
     }
   }
   return items.slice(0, 500);
+}
+
+// Search playlists by query and region using search.list
+export async function searchPlaylists({ query, regionCode, maxPages = 1 }) {
+  const items = [];
+  let pageToken = undefined;
+  for (let i = 0; i < maxPages; i++) {
+    try {
+      const j = await ytGet('search', {
+        part: 'snippet',
+        type: 'playlist',
+        q: query,
+        regionCode,
+        maxResults: 50,
+        pageToken,
+      });
+      items.push(...(j.items || []));
+      pageToken = j.nextPageToken;
+      if (!pageToken) break;
+      await sleep(150);
+    } catch (err) {
+      console.error('[youtube] ❌ searchPlaylists error:', err.message);
+      break;
+    }
+  }
+  return items;
+}
+
+// Validate playlists via playlists.list to get privacy and itemCount
+export async function validatePlaylists(externalIds = []) {
+  const out = [];
+  for (let i = 0; i < externalIds.length; i += 50) {
+    const batch = externalIds.slice(i, i + 50);
+    try {
+      const j = await ytGet('playlists', {
+        part: 'status,contentDetails,snippet',
+        id: batch.join(','),
+        maxResults: 50,
+      });
+      const items = j.items || [];
+      for (const it of items) {
+        out.push({
+          external_id: it.id,
+          is_public: it.status?.privacyStatus === 'public',
+          item_count: it.contentDetails?.itemCount ?? null,
+          etag: it.etag || null,
+          title: it.snippet?.title,
+        });
+      }
+    } catch (err) {
+      console.error('[youtube] ❌ validatePlaylists error:', err.message);
+    }
+  }
+  return out;
 }
