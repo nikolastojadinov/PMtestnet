@@ -1,7 +1,4 @@
-// ✅ FULL REWRITE v5.2 — Fetch tracks from playlists and sync to Supabase
-// 🔹 Uses new youtube.js export: fetchTracksFromPlaylist()
-// 🔹 Handles bulk track imports and Supabase upsert
-// 🔹 Compatible with updated scheduler times (11:05 local start)
+// ✅ FULL REWRITE v5.3 — Fetch tracks from playlists and sync to Supabase
 
 import { fetchTracksFromPlaylist } from '../lib/youtube.js';
 import supabase from '../lib/supabase.js';
@@ -49,8 +46,6 @@ export async function runFetchTracks(playlists = []) {
 
       console.log(`[tracks] ✅ ${formatted.length} tracks synced from playlist ${playlistId}`);
       totalTracks += formatted.length;
-
-      // Mali delay radi API stabilnosti
       await new Promise((res) => setTimeout(res, 1000));
     } catch (err) {
       console.error(`[tracks] ❌ Error fetching tracks from ${playlistId}:`, err.message);
