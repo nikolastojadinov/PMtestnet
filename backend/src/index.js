@@ -44,10 +44,10 @@ async function main() {
       console.log(`[startup] ✅ YouTube API key rotation active (${keyCount} keys)`);
     }
 
-    console.log('[startup] Scheduling fixed cron jobs...');
-    // Start scheduled jobs (UTC): playlists daily, cleanup hourly, tracks hourly
+  console.log('[startup] Scheduling fixed cron jobs...');
+  // Start scheduled jobs (local time): playlists daily, cleanup hourly, tracks hourly
     startFixedJobs();
-    console.log('[startup] ✅ Scheduler initialized (fixed UTC times)');
+  console.log('[startup] ✅ Scheduler initialized (local-time schedule)');
 
     // ======================================================
     // 🩺 Lightweight HTTP server (for /healthz and /info)
@@ -66,9 +66,9 @@ async function main() {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(response));
       } else if (req.url === '/info') {
-        // Mirror fixed UTC scheduler
-        const TZ = 'UTC';
-        const PLAYLIST_SCHEDULE = '5 9 * * *';
+        // Mirror scheduler configuration
+        const TZ = process.env.TZ || 'Europe/Budapest';
+        const PLAYLIST_SCHEDULE = '20 9 * * *';
         const CLEAN_SCHEDULES = [
           '45 12 * * *',
           '45 13 * * *',
@@ -94,7 +94,7 @@ async function main() {
           '0 22 * * *',
         ];
         const body = {
-          version: 'v5.1',
+          version: 'v5.2',
           cron: {
             timezone: TZ,
             playlists: PLAYLIST_SCHEDULE,

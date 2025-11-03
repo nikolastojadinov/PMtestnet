@@ -1,24 +1,25 @@
 // backend/src/lib/scheduler.js
-// ✅ Fixed UTC schedule for cloud runtimes
-// ✅ Playlists @ 09:05 UTC; Cleanup @ 12:45→21:45; Tracks @ 13:00→22:00
+// ✅ Fixed local-time schedule for cloud runtimes
+// ✅ Timezone: Europe/Budapest (can override with TZ env)
+// ✅ Playlists @ 09:20; Cleanup @ 12:45→21:45; Tracks @ 13:00→22:00 (all local time)
 
 import cron from 'node-cron';
 import { runFetchPlaylists } from '../jobs/fetchPlaylists.js';
 import { cleanEmptyPlaylists } from '../jobs/cleanEmptyPlaylists.js';
 import { fetchTracksFromPlaylist } from '../jobs/fetchTracksFromPlaylist.js';
 
-const TZ = 'UTC';
+const TZ = process.env.TZ || 'Europe/Budapest';
 
-// 📥 Daily playlists fetch: 09:05 UTC
-const PLAYLIST_SCHEDULE = '5 9 * * *';
+// 📥 Daily playlists fetch: 09:20 local time
+const PLAYLIST_SCHEDULE = '20 9 * * *';
 
-// 🧹 Cleanup times (:45 from 12:45 → 21:45 UTC)
+// 🧹 Cleanup times (:45 from 12:45 → 21:45 local time)
 const CLEAN_SCHEDULES = [
   '45 12 * * *','45 13 * * *','45 14 * * *','45 15 * * *','45 16 * * *',
   '45 17 * * *','45 18 * * *','45 19 * * *','45 20 * * *','45 21 * * *',
 ];
 
-// 🎵 Track fetch times (:00 from 13:00 → 22:00 UTC)
+// 🎵 Track fetch times (:00 from 13:00 → 22:00 local time)
 const TRACK_SCHEDULES = [
   '0 13 * * *','0 14 * * *','0 15 * * *','0 16 * * *','0 17 * * *',
   '0 18 * * *','0 19 * * *','0 20 * * *','0 21 * * *','0 22 * * *',
@@ -70,7 +71,7 @@ export function startFixedJobs() {
   });
 
   console.log(`[scheduler] ✅ cron set (${TZ}):
-  - playlists@09:05
+  - playlists@09:20
   - cleanup@12:45→21:45
   - tracks@13:00→22:00`);
 }
