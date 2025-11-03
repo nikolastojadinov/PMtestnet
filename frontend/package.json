@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "start": "vite preview --port 8888 --strictPort",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview"
