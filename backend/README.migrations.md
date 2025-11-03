@@ -8,6 +8,7 @@ This folder contains SQL you can run in the Supabase SQL editor (or psql) to ini
 2. `backend/sql/002_seed_regions.sql`
 3. `backend/sql/003_seed_categories.sql`
 4. `backend/sql/010_rpc.sql`
+5. `backend/sql/011_pit_schema_v5_3_1.sql` (optional additive migration: users/likes/statistics/cache, expanded playlists/tracks, and refreshed views)
 
 > Note: You can re-run seeds at any time; inserts use `on conflict do nothing`.
 
@@ -17,6 +18,7 @@ This folder contains SQL you can run in the Supabase SQL editor (or psql) to ini
 - Config: `settings`, `regions`, `categories`
 - Runs / quota: `fetch_runs`, `refresh_runs`, `api_usage`
 - Views: `v_playlists_public`, `v_playlist_track_counts`
+  - PIT v5.3.1 adds: `v_playlists_full` and refreshes `v_playlists_public`
 - RPCs: `get_empty_playlists(limit_count)`
 
 ## Applying the SQL
