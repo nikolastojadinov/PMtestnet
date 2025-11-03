@@ -26,6 +26,14 @@ async function ytGet(endpoint, params) {
   return res.json();
 }
 
+function normalizeRegion(regionCode) {
+  if (!regionCode) return undefined;
+  if (regionCode === 'GLOBAL') return 'US';
+  const rc = String(regionCode).toUpperCase();
+  // Only accept 2-letter ISO codes; otherwise omit to avoid INVALID_ARGUMENT
+  return rc.length === 2 ? rc : undefined;
+}
+
 // 🔎 Fetch playlists per region (music topic)
 export async function fetchRegionPlaylists(regions) {
   const all = [];
@@ -109,22 +117,24 @@ export async function fetchPlaylistItems(playlistId, maxPages = 1) {
 export async function searchPlaylists({ query, regionCode, maxPages = 1 }) {
   const items = [];
   let pageToken = undefined;
+  const safeRegion = normalizeRegion(regionCode);
   for (let i = 0; i < maxPages; i++) {
     try {
-      const j = await ytGet('search', {
+      const params = {
         part: 'snippet',
         type: 'playlist',
-        q: query,
-        regionCode,
+        q: query || 'music',
         maxResults: 50,
         pageToken,
-      });
+      };
+      if (safeRegion) params.regionCode = safeRegion;
+      const j = await ytGet('search', params);
       items.push(...(j.items || []));
       pageToken = j.nextPageToken;
       if (!pageToken) break;
       await sleep(150);
     } catch (err) {
-      console.error('[youtube] ❌ searchPlaylists error:', err.message);
+      console.error('[youtube] ❌ searchPlaylists error:', err.message, `query="${query}" region="${regionCode}"`);
       break;
     }
   }
