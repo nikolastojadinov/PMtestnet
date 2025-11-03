@@ -57,6 +57,7 @@ function getSearchKey() {
   idxSearch = (idxSearch + 1) % pool.length;
   const key = pool[idxSearch];
   console.warn('[quota] All search keys inactive — soft reset for the day');
+  console.log('[quota] active key set (search)');
   return key;
 }
 function getTrackKey() {
@@ -71,6 +72,7 @@ function getTrackKey() {
   idxTrack = (idxTrack + 1) % pool.length;
   const key = pool[idxTrack];
   console.warn('[quota] All track keys inactive — soft reset for the day');
+  console.log('[quota] active key set (track)');
   return key;
 }
 
