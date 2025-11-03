@@ -117,7 +117,7 @@ export async function fetchPlaylistItems(playlistId, maxPages = 1) {
 export async function searchPlaylists({ query, regionCode, maxPages = 1 }) {
   const items = [];
   let pageToken = undefined;
-  const safeRegion = normalizeRegion(regionCode);
+  let safeRegion = normalizeRegion(regionCode);
   for (let i = 0; i < maxPages; i++) {
     try {
       const params = {
@@ -134,7 +134,16 @@ export async function searchPlaylists({ query, regionCode, maxPages = 1 }) {
       if (!pageToken) break;
       await sleep(150);
     } catch (err) {
-      console.error('[youtube] ❌ searchPlaylists error:', err.message, `query="${query}" region="${regionCode}"`);
+      const msg = String(err.message || '');
+      if (msg.includes('invalidRegionCode') || msg.includes('regionCode parameter specifies an invalid region code')) {
+        // Retry once without region filter
+        console.warn(`[youtube] ↩️ Retrying search without regionCode due to invalidRegionCode. query="${query}" region="${regionCode}"`);
+        safeRegion = undefined;
+        i--; // retry same page without region
+        await sleep(100);
+        continue;
+      }
+      console.error('[youtube] ❌ searchPlaylists error:', msg, `query="${query}" region="${regionCode}"`);
       break;
     }
   }
