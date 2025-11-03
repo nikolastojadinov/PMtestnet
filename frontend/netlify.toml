@@ -1,13 +1,17 @@
 [build]
 base    = "frontend"
 command = "npm run build"
-publish = ".next"
+publish = "dist"
 
 # Do not set NEXT_PUBLIC_* variables to empty values in this file.
 # Configure real values in Netlify → Site settings → Environment variables.
 
-[[plugins]]
-package = "@netlify/plugin-nextjs"
+# Vite/SPA deploy (no Next.js plugin needed)
+
+[[redirects]]
+from = "/*"
+to = "/index.html"
+status = 200
 
 # Security headers (no CSP yet to avoid blocking YouTube IFrame)
 [[headers]]
