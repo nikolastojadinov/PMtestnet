@@ -13,17 +13,31 @@ const nextKey = nextKeyFactory(API_KEYS);
 
 const BASE = 'https://www.googleapis.com/youtube/v3';
 
-// Generic GET
+// Generic GET with API key rotation and quota retry
 async function ytGet(endpoint, params) {
-  const key = nextKey();
-  const qp = new URLSearchParams({ ...params, key });
-  const url = `${BASE}/${endpoint}?${qp.toString()}`;
-  const res = await fetch(url);
-  if (!res.ok) {
+  const attempts = Math.max(1, API_KEYS.length);
+  let lastErr = null;
+  for (let i = 0; i < attempts; i++) {
+    const key = nextKey();
+    const qp = new URLSearchParams({ ...params, key });
+    const url = `${BASE}/${endpoint}?${qp.toString()}`;
+    const res = await fetch(url);
+    if (res.ok) {
+      return res.json();
+    }
     const text = await res.text().catch(() => '');
-    throw new Error(`${endpoint} ${res.status}: ${text}`);
+    lastErr = new Error(`${endpoint} ${res.status}: ${text}`);
+    const isQuota = res.status === 403 && text && text.includes('quotaExceeded');
+    if (isQuota && i < attempts - 1) {
+      // Try next key after a short backoff
+      await sleep(300);
+      continue;
+    }
+    // For other errors or last attempt, throw immediately
+    throw lastErr;
   }
-  return res.json();
+  // Exhausted all keys with quota errors
+  throw lastErr || new Error('YouTube request failed: unknown error');
 }
 
 function normalizeRegion(regionCode) {
