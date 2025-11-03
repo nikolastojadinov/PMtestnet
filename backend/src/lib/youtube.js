@@ -1,36 +1,103 @@
 // backend/src/lib/youtube.js
-// ✅ YouTube helpers — exports used od strane jobs/*
+// ✅ YouTube helpers — quota-aware with key pools and caching
 // - fetchRegionPlaylists(regions)
 // - fetchPlaylistItems(playlistId, apiKeyOpt)
+// - searchPlaylists({ query, regionCode, maxPages })
 
-import { sleep, nextKeyFactory } from './utils.js';
+import { sleep } from './utils.js';
 
-const API_KEYS = (process.env.YOUTUBE_API_KEYS || '')
+const ALL_KEYS = (process.env.YOUTUBE_API_KEYS || '')
   .split(',')
-  .map(s => s.trim())
+  .map((s) => s.trim())
   .filter(Boolean);
-const nextKey = nextKeyFactory(API_KEYS);
+
+// Split key pools: half for search/playlists, half for playlistItems
+const half = Math.max(1, Math.floor(ALL_KEYS.length / 2));
+const SEARCH_KEYS = ALL_KEYS.slice(0, half);
+const TRACK_KEYS = ALL_KEYS.slice(half) .length ? ALL_KEYS.slice(half) : ALL_KEYS.slice(0, 1);
+
+// Quota tracking per key — if quotaExceeded 3x in a row, mark inactive for the day
+let quotaState = { date: new Date().toDateString(), keys: {} };
+function ensureQuotaState() {
+  const today = new Date().toDateString();
+  if (quotaState.date !== today) {
+    quotaState = { date: today, keys: {} };
+  }
+}
+function markQuotaError(key) {
+  ensureQuotaState();
+  const k = quotaState.keys[key] || { inactive: false, consecutive: 0 };
+  k.consecutive += 1;
+  if (k.consecutive >= 3) k.inactive = true;
+  quotaState.keys[key] = k;
+}
+function markSuccess(key) {
+  ensureQuotaState();
+  const k = quotaState.keys[key] || { inactive: false, consecutive: 0 };
+  k.consecutive = 0;
+  quotaState.keys[key] = k;
+}
+function isActive(key) {
+  ensureQuotaState();
+  return !(quotaState.keys[key]?.inactive);
+}
+
+let idxSearch = -1;
+let idxTrack = -1;
+function getSearchKey() {
+  const pool = SEARCH_KEYS.length ? SEARCH_KEYS : ALL_KEYS;
+  if (!pool.length) throw new Error('No API keys provided.');
+  for (let tries = 0; tries < pool.length; tries++) {
+    idxSearch = (idxSearch + 1) % pool.length;
+    const key = pool[idxSearch];
+    if (isActive(key)) return key;
+  }
+  // All inactive: reactivate lightly (soft reset) to avoid full outage next day
+  quotaState.keys = Object.fromEntries(Object.entries(quotaState.keys).map(([k, v]) => [k, { ...v, inactive: false }]));
+  idxSearch = (idxSearch + 1) % pool.length;
+  const key = pool[idxSearch];
+  console.warn('[quota] All search keys inactive — soft reset for the day');
+  return key;
+}
+function getTrackKey() {
+  const pool = TRACK_KEYS.length ? TRACK_KEYS : ALL_KEYS;
+  if (!pool.length) throw new Error('No API keys provided.');
+  for (let tries = 0; tries < pool.length; tries++) {
+    idxTrack = (idxTrack + 1) % pool.length;
+    const key = pool[idxTrack];
+    if (isActive(key)) return key;
+  }
+  quotaState.keys = Object.fromEntries(Object.entries(quotaState.keys).map(([k, v]) => [k, { ...v, inactive: false }]));
+  idxTrack = (idxTrack + 1) % pool.length;
+  const key = pool[idxTrack];
+  console.warn('[quota] All track keys inactive — soft reset for the day');
+  return key;
+}
 
 const BASE = 'https://www.googleapis.com/youtube/v3';
 
 // Generic GET with API key rotation and quota retry
-async function ytGet(endpoint, params) {
-  const attempts = Math.max(1, API_KEYS.length);
+async function ytGet(endpoint, params, keyType = 'search') {
+  const poolSize = keyType === 'track' ? Math.max(1, (TRACK_KEYS.length || ALL_KEYS.length)) : Math.max(1, (SEARCH_KEYS.length || ALL_KEYS.length));
+  const attempts = Math.max(1, poolSize);
   let lastErr = null;
   for (let i = 0; i < attempts; i++) {
-    const key = nextKey();
+    const key = keyType === 'track' ? getTrackKey() : getSearchKey();
     const qp = new URLSearchParams({ ...params, key });
     const url = `${BASE}/${endpoint}?${qp.toString()}`;
     const res = await fetch(url);
     if (res.ok) {
-      return res.json();
+      const json = await res.json();
+      markSuccess(key);
+      return json;
     }
     const text = await res.text().catch(() => '');
     lastErr = new Error(`${endpoint} ${res.status}: ${text}`);
     const isQuota = res.status === 403 && text && text.includes('quotaExceeded');
     if (isQuota && i < attempts - 1) {
+      markQuotaError(key);
       // Try next key after a short backoff
-      await sleep(300);
+      await sleep(150);
       continue;
     }
     // For other errors or last attempt, throw immediately
@@ -42,7 +109,7 @@ async function ytGet(endpoint, params) {
 
 function normalizeRegion(regionCode) {
   if (!regionCode) return undefined;
-  if (regionCode === 'GLOBAL') return 'US';
+  if (regionCode === 'GLOBAL') return undefined; // remove GLOBAL queries from API
   const rc = String(regionCode).toUpperCase();
   // Only accept 2-letter ISO codes; otherwise omit to avoid INVALID_ARGUMENT
   return rc.length === 2 ? rc : undefined;
@@ -59,10 +126,11 @@ export async function fetchRegionPlaylists(regions) {
         part: 'snippet',
         type: 'playlist',
         maxResults: 50,
-        regionCode: region === 'GLOBAL' ? 'US' : region,
+        // regionCode: skip GLOBAL, allow undefined
+        regionCode: normalizeRegion(region),
         topicId: '/m/04rlf',
         relevanceLanguage: 'en'
-      });
+      }, 'search');
       regionBatch = (j.items || []).map(it => ({
         id: it?.id?.playlistId,
         snippet: it?.snippet,
@@ -74,9 +142,9 @@ export async function fetchRegionPlaylists(regions) {
             part: 'snippet',
             type: 'playlist',
             maxResults: 50,
-            regionCode: region === 'GLOBAL' ? 'US' : region,
+            regionCode: normalizeRegion(region),
             q: t
-          });
+          }, 'search');
           const extra = (sj.items || []).map(it => ({
             id: it?.id?.playlistId,
             snippet: it?.snippet,
@@ -89,7 +157,7 @@ export async function fetchRegionPlaylists(regions) {
       }
       console.log(`[youtube] ✅ ${region}: ${regionBatch.length} playlists`);
       all.push(...regionBatch);
-      await sleep(200);
+      await sleep(150);
     } catch (e) {
       console.log(`[youtube] ⚠️ Region ${region} error: ${e.message}`);
     }
@@ -99,7 +167,21 @@ export async function fetchRegionPlaylists(regions) {
 }
 
 // 📄 Fetch playlist items — up to 500 songs per playlist
+// In-memory per-day cache for playlist items
+let playlistCache = { date: new Date().toDateString(), map: new Map() };
+function ensureCacheDay() {
+  const today = new Date().toDateString();
+  if (playlistCache.date !== today) {
+    playlistCache = { date: today, map: new Map() };
+  }
+}
+
 export async function fetchPlaylistItems(playlistId, maxPages = 1) {
+  ensureCacheDay();
+  if (playlistCache.map.has(playlistId)) {
+    console.log('[cache] hit playlistItems', playlistId);
+    return playlistCache.map.get(playlistId);
+  }
   let pageToken = undefined;
   const items = [];
   for (let i = 0; i < maxPages; i++) {
@@ -109,7 +191,7 @@ export async function fetchPlaylistItems(playlistId, maxPages = 1) {
         maxResults: 50,
         playlistId,
         pageToken
-      });
+      }, 'track');
       items.push(...(j.items || []));
       pageToken = j.nextPageToken;
       if (!pageToken) break;
@@ -124,6 +206,8 @@ export async function fetchPlaylistItems(playlistId, maxPages = 1) {
       }
     }
   }
+  // Store in daily cache
+  playlistCache.map.set(playlistId, items.slice(0, 500));
   return items.slice(0, 500);
 }
 
@@ -144,7 +228,7 @@ export async function searchPlaylists({ query, regionCode, maxPages = 1 }) {
         pageToken,
       };
       if (safeRegion) params.regionCode = safeRegion;
-      const j = await ytGet('search', params);
+      const j = await ytGet('search', params, 'search');
       items.push(...(j.items || []));
       pageToken = j.nextPageToken;
       if (!pageToken) break;
@@ -175,6 +259,11 @@ export async function searchPlaylists({ query, regionCode, maxPages = 1 }) {
       break;
     }
   }
+  // Skip low-yield queries (<10 results)
+  if (items.length < 10) {
+    console.log('[fetch] skipped low-yield query', { query, regionCode });
+    return [];
+  }
   return items;
 }
 
@@ -188,7 +277,7 @@ export async function validatePlaylists(externalIds = []) {
         part: 'status,contentDetails,snippet',
         id: batch.join(','),
         maxResults: 50,
-      });
+      }, 'search');
       const items = j.items || [];
       for (const it of items) {
         out.push({
@@ -205,3 +294,6 @@ export async function validatePlaylists(externalIds = []) {
   }
   return out;
 }
+
+// Expose key getters for logging/tests
+export { getSearchKey, getTrackKey };

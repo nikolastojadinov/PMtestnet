@@ -2,12 +2,12 @@
 // ✅ Discovery (search) + validation (playlists.list) + promote to playlists
 
 import supabase from '../lib/supabase.js';
-import { pickTodayRegions, sleep } from '../lib/utils.js';
+import { pickTodayRegions, sleep, selectCategoriesForDay, getCycleDay } from '../lib/utils.js';
 import { searchPlaylists, validatePlaylists } from '../lib/youtube.js';
 import { startFetchRun, finishFetchRun } from '../lib/metrics.js';
 
 const REGIONS_PER_DAY = 10; // start conservative; scale up later
-const CATEGORIES_PER_DAY = 22; // pick a slice of categories
+const CATEGORIES_PER_DAY = 22; // total categories; we'll choose a rotating slice of 12/day
 const DAILY_PLAYLIST_CAP = 6000;
 const INSERT_CHUNK = 500;
 
@@ -49,8 +49,11 @@ export async function runFetchPlaylists() {
     .from('categories')
     .select('key')
     .limit(CATEGORIES_PER_DAY);
-  const categories = (cats || []).map((c) => c.key);
-  if (!categories.length) categories.push('music');
+  const allCategories = (cats || []).map((c) => c.key);
+  if (!allCategories.length) allCategories.push('music');
+  const day = getCycleDay();
+  const categories = selectCategoriesForDay(allCategories, day);
+  console.log(`[fetch] categories/day=${categories.length} (day=${day})`);
 
   // 1) Discovery via search.list
   let discovered = [];
@@ -71,10 +74,13 @@ export async function runFetchPlaylists() {
         cycle_mode: 'FETCH',
       })).filter((x) => !!x.external_id);
       discovered.push(...mapped);
-      await sleep(120);
-      if (discovered.length > DAILY_PLAYLIST_CAP * 1.5) break;
+      await sleep(80);
+      if (discovered.length > DAILY_PLAYLIST_CAP * 1.2) {
+        console.log('[fetch] ⚠️ Early exit due to soft cap exceed');
+        break;
+      }
     }
-    if (discovered.length > DAILY_PLAYLIST_CAP * 1.5) break;
+    if (discovered.length > DAILY_PLAYLIST_CAP * 1.2) break;
   }
 
   if (!discovered.length) {

@@ -1,5 +1,7 @@
 // backend/src/lib/utils.js
-// ✅ Core utils + 70-region pool + key rotator
+// ✅ Core utils + region pool + key rotator + smarter selection helpers
+
+import { pickTodayPlan } from './monthlyCycle.js';
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -54,12 +56,44 @@ function weightedShuffle(arr) {
   return weighted.map(x => x.r);
 }
 
+// Return cycle day (1..29) from monthlyCycle plan
+export function getCycleDay(now = new Date()) {
+  const { currentDay } = pickTodayPlan(now);
+  return currentDay;
+}
+
+// Filter regions to top 40 by score; keep GLOBAL at the end as fallback
+export function filterTopRegions(regions, scoreMap = regionScores) {
+  const arr = (regions || []).filter(Boolean);
+  const globalIdx = arr.indexOf('GLOBAL');
+  const withoutGlobal = arr.filter((r) => r !== 'GLOBAL');
+  const scored = withoutGlobal.map((r) => ({ r, w: scoreMap[r]?.score ?? 0.5 }));
+  scored.sort((a, b) => b.w - a.w);
+  const top = scored.slice(0, 40).map((x) => x.r);
+  if (globalIdx >= 0) top.push('GLOBAL');
+  return top;
+}
+
+// Deterministically select 12 categories out of provided list for given day
+export function selectCategoriesForDay(allCategories = [], day = getCycleDay()) {
+  const N = 12;
+  const arr = Array.from(allCategories);
+  if (arr.length <= N) return arr;
+  const start = (day - 1) % arr.length;
+  const out = [];
+  for (let i = 0; i < N; i++) out.push(arr[(start + i) % arr.length]);
+  return out;
+}
+
 export function pickTodayRegions(n = 8, now = new Date()) {
   const dayIndex = Math.floor(now.getTime() / (24 * 3600 * 1000));
-  const shuffled = weightedShuffle(REGION_POOL);
+  // First filter to top regions by historical score
+  const candidate = filterTopRegions(REGION_POOL);
+  const shuffled = weightedShuffle(candidate);
   const start = dayIndex % shuffled.length;
   const selected = [];
   for (let k = 0; k < n; k++) selected.push(shuffled[(start + k) % shuffled.length]);
+  // Ensure GLOBAL is present once as fallback
   if (!selected.includes('GLOBAL')) selected.push('GLOBAL');
   return selected;
 }
