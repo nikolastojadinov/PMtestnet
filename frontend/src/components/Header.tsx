@@ -1,128 +1,55 @@
-import React, { useState } from 'react';
-import Link from 'next/link';
-import { useTranslation } from 'react-i18next';
-import { useUser } from '@/context/UserContext';
-import { supportedLngs } from '@/i18n/config';
-import { useTheme } from '@/context/ThemeContext';
-import { Monitor, Moon, Sun } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Music, User, Globe, Shield, FileText } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Link } from "react-router-dom";
 
-export default function Header() {
-  const [open, setOpen] = useState(false);
-  const { t } = useTranslation();
-  const { language, setLanguage } = useUser();
-
-  const languageNames: Record<string, string> = {
-    en: 'English', sr: 'Srpski', hu: 'Magyar', hi: 'हिन्दी',
-    vi: 'Tiếng Việt', ko: '한국어', am: 'Amharic', ng: 'Ndonga', id: 'Bahasa Indonesia',
-    fil: 'Filipino', ms: 'Bahasa Melayu', ur: 'اردو', bn: 'বাংলা', th: 'ไทย', ru: 'Русский',
-    pt: 'Português', tr: 'Türkçe', de: 'Deutsch', fr: 'Français', es: 'Español', it: 'Italiano',
-    nl: 'Nederlands', pl: 'Polski', cs: 'Čeština', el: 'Ελληνικά'
-  };
-
+const Header = () => {
   return (
-  <header className="fixed top-0 inset-x-0 z-50 w-full bg-[#121212] text-white border-b border-[#232323] shadow-sm">
-      <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="h-8 w-8 rounded-md bg-[#1f1f1f] border border-[#2a2a2a]" aria-hidden />
-          <h1 className="text-lg sm:text-xl font-semibold tracking-wide text-white">Music</h1>
-        </div>
+    <header className="fixed top-0 left-0 right-0 h-16 bg-background/80 backdrop-blur-md border-b border-border/50 z-50">
+      <div className="h-full px-4 md:px-6 flex items-center justify-between">
+        {/* Logo */}
+        <Link to="/" className="flex items-center gap-2 md:gap-3 group">
+          <div className="w-8 h-8 md:w-10 md:h-10 bg-gradient-to-br from-primary to-primary/70 rounded-lg flex items-center justify-center group-hover:scale-105 transition-transform">
+            <Music className="w-5 h-5 md:w-6 md:h-6 text-background" />
+          </div>
+          <span className="text-lg md:text-xl font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
+            Purple Music
+          </span>
+        </Link>
 
-        <div className="relative">
-          <button
-            type="button"
-            aria-haspopup="menu"
-            aria-expanded={open}
-            onClick={() => setOpen(!open)}
-            className="h-9 w-9 rounded-full bg-[#1f1f1f] border border-[#2a2a2a] flex items-center justify-center text-white hover:bg-[#222] focus:outline-none"
-          >
-            <span className="sr-only">Open profile menu</span>
-            {/* simple avatar dot */}
-            <div className="h-3 w-3 rounded-full bg-gray-300" />
-          </button>
-
-          <AnimatePresence>
-          {open && (
-            <motion.div
-              role="menu"
-              initial={{ opacity: 0, y: -6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.18 }}
-              className="absolute right-0 mt-2 w-72 rounded-md bg-[#181818] text-gray-200 border border-[#232323] shadow-2xl p-2 text-sm"
-            >
-              <div className="px-3 py-2 rounded items-center flex justify-between">
-                <span className="opacity-90">{t('header.signedInAs')}</span>
-                <span className="font-medium text-gray-200">{t('header.guest')}</span>
-              </div>
-              <div className="px-3 text-xs text-gray-400">Guest User (temporary session)</div>
-              <div className="my-2 h-px bg-[#232323]" />
-              <div className="px-3 py-2">
-                <label htmlFor="lang" className="block text-xs uppercase tracking-wider text-gray-400 mb-1">{t('header.language')}</label>
-                <select
-                  id="lang"
-                  value={String(language)}
-                  onChange={(e) => setLanguage(e.target.value)}
-                  className="w-full bg-transparent border border-[#2f2f2f] rounded px-2 py-1 focus:outline-none"
-                >
-                  {supportedLngs.map((lng) => (
-                    <option key={lng} className="bg-[#181818]" value={lng}>
-                      {languageNames[lng as string] || lng}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {/* Theme selector */}
-              <ThemeSelector />
-              <div className="my-2 h-px bg-[#232323]" />
-              <div className="px-3 py-2 text-gray-300">{t('header.goPremium')}</div>
-              <div className="my-2 h-px bg-[#232323]" />
-              <Link href="/privacy.html" className="block px-3 py-2 hover:bg-[#202020] rounded" role="menuitem">{t('header.privacy')}</Link>
-              <Link href="/terms.html" className="block px-3 py-2 hover:bg-[#202020] rounded" role="menuitem">{t('header.terms')}</Link>
-            </motion.div>
-          )}
-          </AnimatePresence>
-        </div>
+        {/* Profile Dropdown */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="w-9 h-9 md:w-10 md:h-10 bg-secondary hover:bg-secondary/80 rounded-full flex items-center justify-center transition-all hover:scale-105">
+              <User className="w-4 h-4 md:w-5 md:h-5 text-foreground" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56 bg-card border-border">
+            <DropdownMenuItem className="cursor-pointer py-3">
+              <User className="w-4 h-4 mr-3" />
+              <span>View profile</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem className="cursor-pointer py-3">
+              <Globe className="w-4 h-4 mr-3" />
+              <span>Choose language</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem className="cursor-pointer py-3">
+              <Shield className="w-4 h-4 mr-3" />
+              <span>Privacy policy</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem className="cursor-pointer py-3">
+              <FileText className="w-4 h-4 mr-3" />
+              <span>Terms of service</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </header>
   );
-}
+};
 
-function ThemeSelector() {
-  const { t } = useTranslation();
-  const { theme, setTheme } = useTheme();
-  return (
-    <div className="px-3 py-2" aria-label={t('theme.title')}>
-      <div className="block text-xs uppercase tracking-wider text-gray-400 mb-2">{t('theme.title')}</div>
-      <div className="grid grid-cols-3 gap-2">
-        <button
-          onClick={() => setTheme('system')}
-          className={`flex items-center justify-center gap-1 rounded px-2 py-1.5 border transition-colors duration-200
-            ${theme === 'system' ? 'border-white text-white' : 'border-[#2f2f2f] text-gray-300'}`}
-          aria-label={t('theme.system')}
-        >
-          <Monitor size={16} />
-          <span className="text-xs">{t('theme.system')}</span>
-        </button>
-        <button
-          onClick={() => setTheme('dark')}
-          className={`flex items-center justify-center gap-1 rounded px-2 py-1.5 border transition-colors duration-200
-            ${theme === 'dark' ? 'border-white text-white' : 'border-[#2f2f2f] text-gray-300'}`}
-          aria-label={t('theme.dark')}
-        >
-          <Moon size={16} />
-          <span className="text-xs">{t('theme.dark')}</span>
-        </button>
-        <button
-          onClick={() => setTheme('light')}
-          className={`flex items-center justify-center gap-1 rounded px-2 py-1.5 border transition-colors duration-200
-            ${theme === 'light' ? 'border-white text-white' : 'border-[#2f2f2f] text-gray-300'}`}
-          aria-label={t('theme.light')}
-        >
-          <Sun size={16} />
-          <span className="text-xs">{t('theme.light')}</span>
-        </button>
-      </div>
-    </div>
-  );
-}
+export default Header;

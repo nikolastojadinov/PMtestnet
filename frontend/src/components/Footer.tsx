@@ -1,47 +1,67 @@
-import React from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/router';
-import { Home as HomeIcon, Search, Heart, ListMusic } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
-import { motion } from 'framer-motion';
+import { Home, Search, Library, Plus, Heart } from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
+import { cn } from "@/lib/utils";
 
-const tabs = [
-  { href: '/', label: 'Home', icon: HomeIcon },
-  { href: '/search', label: 'Search', icon: Search },
-  { href: '/liked', label: 'Liked', icon: Heart },
-  { href: '/playlists', label: 'Playlists', icon: ListMusic },
-];
+const Footer = () => {
+  const location = useLocation();
+  const isActive = (path: string) => location.pathname === path;
 
-export default function Footer() {
-  const router = useRouter();
-  const pathname = router.pathname;
-  const { t } = useTranslation();
+  // Desktop navigation
+  const desktopNav = [
+    { name: "Početna", path: "/", icon: Home },
+    { name: "Pretraži", path: "/search", icon: Search },
+    { name: "Biblioteka", path: "/library", icon: Library },
+  ];
+
+  // Mobile navigation
+  const mobileNav = [
+    { name: "Početna", path: "/", icon: Home },
+    { name: "Napravi", path: "/create-playlist", icon: Plus },
+    { name: "Omiljene", path: "/favorites", icon: Heart },
+    { name: "Biblioteka", path: "/library", icon: Library },
+  ];
 
   return (
-    <nav className="fixed bottom-0 inset-x-0 z-50 bg-[#0a0014] border-t border-purple-900/40">
-      <ul className="mx-auto max-w-6xl px-4 py-3 grid grid-cols-4 gap-2 text-xs text-gray-300">
-        {tabs.map(({ href, label, icon: Icon }) => {
-          const active = pathname === href;
-          return (
-            <li key={href} className="flex justify-center">
-              <motion.a
-                href={href}
-                onClick={(e) => { e.preventDefault(); router.push(href); }}
-                className={`flex flex-col items-center gap-1 px-3 py-1 rounded-md transition-colors transition-transform ${
-                  active
-                    ? 'text-purple-400'
-                    : 'text-gray-400 hover:text-gray-200'
-                }`}
-                whileTap={{ scale: 0.96 }}
-                whileHover={{ scale: 1.05 }}
-              >
-                <Icon size={22} strokeWidth={1.75} />
-                <span>{t(`footer.${label.toLowerCase()}`)}</span>
-              </motion.a>
-            </li>
-          );
-        })}
-      </ul>
-    </nav>
+    <footer className="fixed bottom-0 left-0 right-0 bg-background/80 backdrop-blur-md border-t border-border/50 z-40">
+      {/* Desktop version */}
+      <div className="hidden md:flex items-center justify-start gap-2 px-8 py-4">
+        {desktopNav.map((item) => (
+          <Link
+            key={item.path}
+            to={item.path}
+            className={cn(
+              "flex items-center gap-3 px-4 py-2 rounded-lg transition-all duration-200",
+              isActive(item.path)
+                ? "bg-secondary text-primary font-semibold"
+                : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+            )}
+          >
+            <item.icon className="w-5 h-5" />
+            <span>{item.name}</span>
+          </Link>
+        ))}
+      </div>
+
+      {/* Mobile version */}
+      <div className="flex md:hidden items-center justify-around px-4 py-3">
+        {mobileNav.map((item) => (
+          <Link
+            key={item.path}
+            to={item.path}
+            className={cn(
+              "flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-all duration-200",
+              isActive(item.path)
+                ? "text-primary"
+                : "text-muted-foreground"
+            )}
+          >
+            <item.icon className="w-6 h-6" />
+            <span className="text-xs font-medium">{item.name}</span>
+          </Link>
+        ))}
+      </div>
+    </footer>
   );
-}
+};
+
+export default Footer;
