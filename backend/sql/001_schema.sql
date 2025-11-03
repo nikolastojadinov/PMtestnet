@@ -204,7 +204,10 @@ create table if not exists public.api_usage (
   error_message text
 );
 
--- VIEWS
+-- First drop potentially conflicting views to avoid replacement errors about column changes
+drop view if exists public.v_playlist_track_counts cascade;
+drop view if exists public.v_playlists_public cascade;
+
 create or replace view public.v_playlists_public as
 select
   id, external_id, title, description, cover_url,
