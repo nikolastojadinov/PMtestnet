@@ -132,6 +132,8 @@ export async function searchPlaylists({ query, regionCode, maxPages = 1 }) {
   const items = [];
   let pageToken = undefined;
   let safeRegion = normalizeRegion(regionCode);
+  let retriedWithoutRegion = false;
+  let retriedSanitizedQuery = false;
   for (let i = 0; i < maxPages; i++) {
     try {
       const params = {
@@ -149,12 +151,24 @@ export async function searchPlaylists({ query, regionCode, maxPages = 1 }) {
       await sleep(150);
     } catch (err) {
       const msg = String(err.message || '');
-      if (msg.includes('invalidRegionCode') || msg.includes('regionCode parameter specifies an invalid region code')) {
-        // Retry once without region filter
-        console.warn(`[youtube] ↩️ Retrying search without regionCode due to invalidRegionCode. query="${query}" region="${regionCode}"`);
+      // If region code might be the cause (generic 400 Invalid Argument), retry once without region
+      const isGeneric400 = msg.includes(' 400:') || msg.includes('"code": 400') || msg.toLowerCase().includes('invalid_argument') || msg.toLowerCase().includes('badrequest');
+      if (safeRegion && !retriedWithoutRegion && (isGeneric400 || msg.includes('invalidRegionCode') || msg.includes('regionCode parameter specifies an invalid region code'))) {
+        console.warn(`[youtube] ↩️ Retrying search without regionCode. query="${query}" region="${regionCode}"`);
         safeRegion = undefined;
+        retriedWithoutRegion = true;
         i--; // retry same page without region
-        await sleep(100);
+        await sleep(120);
+        continue;
+      }
+      // If query might be odd (underscores, etc.), retry once with sanitized query
+      if (!retriedSanitizedQuery && typeof query === 'string' && query.includes('_')) {
+        const sanitized = query.replace(/_/g, ' ');
+        console.warn(`[youtube] ↩️ Retrying search with sanitized query. from="${query}" to="${sanitized}"`);
+        query = sanitized;
+        retriedSanitizedQuery = true;
+        i--; // retry same page with sanitized query
+        await sleep(120);
         continue;
       }
       console.error('[youtube] ❌ searchPlaylists error:', msg, `query="${query}" region="${regionCode}"`);
