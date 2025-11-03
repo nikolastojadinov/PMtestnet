@@ -58,6 +58,9 @@ export async function runFetchPlaylists() {
   // 1) Discovery via search.list
   let discovered = [];
   for (const region of regions) {
+    if (region === 'GLOBAL') {
+      console.log('[fetch] skipped region filter for GLOBAL (search without regionCode)');
+    }
     for (const cat of categories) {
       const items = await searchPlaylists({ query: `${cat} music`, regionCode: region, maxPages: 1 });
       const mapped = (items || []).map((it) => ({
