@@ -74,4 +74,8 @@ export function startFixedJobs() {
   - playlists@09:45
   - cleanup@12:45→21:45
   - tracks@13:00→22:00`);
+
+  // Additional clarity logs
+  console.log(`[scheduler] ⏰ Playlist fetch job active at ${PLAYLIST_SCHEDULE} (${TZ})`);
+  console.log('[scheduler] ✅ YouTube key rotation system integrated and logging to api_usage table.');
 }
