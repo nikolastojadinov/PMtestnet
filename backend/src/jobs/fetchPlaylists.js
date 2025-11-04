@@ -3,6 +3,7 @@
 
 import { supabase } from '../lib/supabase.js';
 import { pickTodayRegions, sleep, selectCategoriesForDay, getCycleDay } from '../lib/utils.js';
+import { pickTodayPlan } from '../lib/monthlyCycle.js';
 import { searchPlaylists, validatePlaylists } from '../lib/youtube.js';
 import { startFetchRun, finishFetchRun } from '../lib/metrics.js';
 
@@ -40,6 +41,11 @@ async function insertChunks(table, rows) {
 
 export async function runFetchPlaylists() {
   console.log('[fetch] 🚀 Starting discovery + validation');
+  const plan = pickTodayPlan();
+  if (plan.mode !== 'FETCH') {
+    console.log(`[fetch] ⏭️ Skipping discovery — current cycle mode is ${plan.mode} (day ${plan.currentDay})`);
+    return;
+  }
   const runId = await startFetchRun({ day: null });
 
   // Regions (deterministic slice)
@@ -51,7 +57,7 @@ export async function runFetchPlaylists() {
     .limit(CATEGORIES_PER_DAY);
   const allCategories = (cats || []).map((c) => c.key);
   if (!allCategories.length) allCategories.push('music');
-  const day = getCycleDay();
+  const day = plan.currentDay || getCycleDay();
   const categories = selectCategoriesForDay(allCategories, day);
   console.log(`[fetch] categories/day=${categories.length} (day=${day})`);
 

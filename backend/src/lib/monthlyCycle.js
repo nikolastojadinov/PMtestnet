@@ -12,8 +12,9 @@ export function pickTodayPlan(now = new Date()) {
   const diffDays = Math.floor((startOfDay(now) - startOfDay(cycleStart)) / oneDay);
   // Safe modulo so negative diffs map correctly (e.g. -1 => 29)
   const day = ((diffDays % 29) + 29) % 29 + 1; // 1..29 always
+  const preStart = startOfDay(now) < startOfDay(cycleStart);
 
   // ⏱️ Prvih 29 dana FETCH, posle samo REFRESH
-  if (diffDays < 29) return { mode: 'FETCH', currentDay: day };
-  return { mode: 'REFRESH', currentDay: day, targetDay: day };
+  if (diffDays < 29) return { mode: 'FETCH', currentDay: day, preStart };
+  return { mode: 'REFRESH', currentDay: day, targetDay: day, preStart };
 }
