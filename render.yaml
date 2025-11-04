@@ -12,7 +12,7 @@ services:
       - key: TZ
         value: Europe/Budapest
       - key: NODE_VERSION
-        value: "22"
+        value: "20"
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE
