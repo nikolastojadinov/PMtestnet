@@ -3,6 +3,7 @@
 import http from 'http';
 import supabase from './lib/supabase.js';
 import { startFixedJobs } from './lib/scheduler.js';
+import { pickTodayPlan } from './lib/monthlyCycle.js';
 
 // ======================================================
 // 🚀 Purple Music Backend — Boot Summary
@@ -69,6 +70,8 @@ async function main() {
         // Mirror scheduler configuration
   const TZ = process.env.TZ || 'Europe/Budapest';
   const PLAYLIST_SCHEDULE = '30 8 * * *';
+    const cycleStart = process.env.CYCLE_START_DATE || '2025-10-27';
+    const plan = pickTodayPlan();
         const CLEAN_SCHEDULES = [
           '45 12 * * *',
           '45 13 * * *',
@@ -104,7 +107,9 @@ async function main() {
           env: {
             supabase: !!process.env.SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE,
             youtubeKeys: process.env.YOUTUBE_API_KEYS ? process.env.YOUTUBE_API_KEYS.split(',').length : 0,
+            cycleStartDate: cycleStart,
           },
+          cycle: plan,
           uptime: `${Math.round(process.uptime())}s`,
           timestamp: new Date().toISOString(),
         };

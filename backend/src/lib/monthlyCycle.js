@@ -8,8 +8,10 @@ import { startOfDay, parseYMD } from './utils.js';
 export function pickTodayPlan(now = new Date()) {
   const startEnv = process.env.CYCLE_START_DATE || '2025-10-27';
   const cycleStart = parseYMD(startEnv);
-  const diffDays = Math.floor((startOfDay(now) - startOfDay(cycleStart)) / (24 * 3600 * 1000));
-  const day = (diffDays % 29) + 1;
+  const oneDay = 24 * 3600 * 1000;
+  const diffDays = Math.floor((startOfDay(now) - startOfDay(cycleStart)) / oneDay);
+  // Safe modulo so negative diffs map correctly (e.g. -1 => 29)
+  const day = ((diffDays % 29) + 29) % 29 + 1; // 1..29 always
 
   // ⏱️ Prvih 29 dana FETCH, posle samo REFRESH
   if (diffDays < 29) return { mode: 'FETCH', currentDay: day };
