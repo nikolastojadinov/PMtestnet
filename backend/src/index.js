@@ -65,10 +65,10 @@ async function main() {
         };
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(response));
-      } else if (req.url === '/info') {
+  } else if (req.url === '/info') {
         // Mirror scheduler configuration
   const TZ = process.env.TZ || 'Europe/Budapest';
-  const PLAYLIST_SCHEDULE = '25 9 * * *';
+  const PLAYLIST_SCHEDULE = '45 9 * * *';
         const CLEAN_SCHEDULES = [
           '45 12 * * *',
           '45 13 * * *',
