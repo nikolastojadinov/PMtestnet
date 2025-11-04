@@ -1,7 +1,7 @@
 // backend/src/jobs/fetchPlaylists.js
 // ✅ Discovery (search) + validation (playlists.list) + promote to playlists
 
-import supabase from '../lib/supabase.js';
+import { supabase } from '../lib/supabase.js';
 import { pickTodayRegions, sleep, selectCategoriesForDay, getCycleDay } from '../lib/utils.js';
 import { searchPlaylists, validatePlaylists } from '../lib/youtube.js';
 import { startFetchRun, finishFetchRun } from '../lib/metrics.js';

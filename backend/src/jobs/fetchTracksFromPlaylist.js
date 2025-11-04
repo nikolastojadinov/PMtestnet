@@ -1,7 +1,7 @@
 // backend/src/jobs/fetchTracksFromPlaylist.js
 // ✅ Accepts playlist UUID ids, fetches ~200 items per list, upserts tracks, and links via playlist_tracks
 
-import supabase from '../lib/supabase.js';
+import { supabase } from '../lib/supabase.js';
 import { fetchPlaylistItems } from '../lib/youtube.js';
 import { sleep } from '../lib/utils.js';
 

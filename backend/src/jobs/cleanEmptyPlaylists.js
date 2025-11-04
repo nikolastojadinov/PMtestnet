@@ -1,7 +1,7 @@
 // backend/src/jobs/cleanEmptyPlaylists.js
 // ✅ Returns UUID ids of playlists with no linked tracks (uses RPC fallback)
 
-import supabase from '../lib/supabase.js';
+import { supabase } from '../lib/supabase.js';
 
 export async function cleanEmptyPlaylists(limit = 1000) {
   // Prefer RPC for efficient server-side selection

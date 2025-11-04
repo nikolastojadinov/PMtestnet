@@ -10,8 +10,7 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
   process.exit(1);
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
+export const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
   auth: { persistSession: false },
 });
-
 export default supabase;
