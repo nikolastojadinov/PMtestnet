@@ -5,6 +5,7 @@
 // - searchPlaylists({ query, regionCode, maxPages })
 
 import { sleep } from './utils.js';
+import { searchPlaylists } from './youtube/fetchPlaylists.js';
 
 const ALL_KEYS = (process.env.YOUTUBE_API_KEYS || '')
   .split(',')
@@ -214,60 +215,8 @@ export async function fetchPlaylistItems(playlistId, maxPages = 1) {
 }
 
 // Search playlists by query and region using search.list
-export async function searchPlaylists({ query, regionCode, maxPages = 1 }) {
-  const items = [];
-  let pageToken = undefined;
-  let safeRegion = normalizeRegion(regionCode);
-  let retriedWithoutRegion = false;
-  let retriedSanitizedQuery = false;
-  for (let i = 0; i < maxPages; i++) {
-    try {
-      const params = {
-        part: 'snippet',
-        type: 'playlist',
-        q: query || 'music',
-        maxResults: 50,
-        pageToken,
-      };
-      if (safeRegion) params.regionCode = safeRegion;
-      const j = await ytGet('search', params, 'search');
-      items.push(...(j.items || []));
-      pageToken = j.nextPageToken;
-      if (!pageToken) break;
-      await sleep(150);
-    } catch (err) {
-      const msg = String(err.message || '');
-      // If region code might be the cause (generic 400 Invalid Argument), retry once without region
-      const isGeneric400 = msg.includes(' 400:') || msg.includes('"code": 400') || msg.toLowerCase().includes('invalid_argument') || msg.toLowerCase().includes('badrequest');
-      if (safeRegion && !retriedWithoutRegion && (isGeneric400 || msg.includes('invalidRegionCode') || msg.includes('regionCode parameter specifies an invalid region code'))) {
-        console.warn(`[youtube] ↩️ Retrying search without regionCode. query="${query}" region="${regionCode}"`);
-        safeRegion = undefined;
-        retriedWithoutRegion = true;
-        i--; // retry same page without region
-        await sleep(120);
-        continue;
-      }
-      // If query might be odd (underscores, etc.), retry once with sanitized query
-      if (!retriedSanitizedQuery && typeof query === 'string' && query.includes('_')) {
-        const sanitized = query.replace(/_/g, ' ');
-        console.warn(`[youtube] ↩️ Retrying search with sanitized query. from="${query}" to="${sanitized}"`);
-        query = sanitized;
-        retriedSanitizedQuery = true;
-        i--; // retry same page with sanitized query
-        await sleep(120);
-        continue;
-      }
-      console.error('[youtube] ❌ searchPlaylists error:', msg, `query="${query}" region="${regionCode}"`);
-      break;
-    }
-  }
-  // Skip low-yield queries (<10 results)
-  if (items.length < 10) {
-    console.log('[fetch] skipped low-yield query', { query, regionCode });
-    return [];
-  }
-  return items;
-}
+// Re-export searchPlaylists from the dedicated module for playlist discovery
+export { searchPlaylists };
 
 // Validate playlists via playlists.list to get privacy and itemCount
 export async function validatePlaylists(externalIds = []) {

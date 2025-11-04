@@ -10,8 +10,8 @@ import { fetchTracksFromPlaylist } from '../jobs/fetchTracksFromPlaylist.js';
 
 const TZ = process.env.TZ || 'Europe/Budapest';
 
-// 📥 Daily playlists fetch: 09:05 local time
-const PLAYLIST_SCHEDULE = '5 9 * * *';
+// 📥 Daily playlists fetch: 09:25 local time
+const PLAYLIST_SCHEDULE = '25 9 * * *';
 
 // 🧹 Cleanup times (:45 from 12:45 → 21:45 local time)
 const CLEAN_SCHEDULES = [
@@ -71,7 +71,7 @@ export function startFixedJobs() {
   });
 
   console.log(`[scheduler] ✅ cron set (${TZ}):
-  - playlists@09:05
+  - playlists@09:25
   - cleanup@12:45→21:45
   - tracks@13:00→22:00`);
 }
