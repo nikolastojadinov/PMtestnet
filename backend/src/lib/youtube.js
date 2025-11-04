@@ -40,7 +40,7 @@ export const searchPlaylists = searchPlaylistsModule;
 // 🔎 Fetch playlists per region (music topic)
 // Legacy fetchRegionPlaylists removed (not used)
 
-// 📄 Fetch playlist items — up to 500 songs per playlist
+// 📄 Fetch playlist items — limit to 200 songs per playlist
 // In-memory per-day cache for playlist items
 let playlistCache = { date: new Date().toDateString(), map: new Map() };
 function ensureCacheDay() {
@@ -56,6 +56,7 @@ export async function fetchPlaylistItems(playlistId, maxPages = 1) {
     console.log('[cache] hit playlistItems', playlistId);
     return playlistCache.map.get(playlistId);
   }
+  const LIMIT = 200; // songs per playlist cap
   let pageToken = undefined;
   const items = [];
   for (let page = 0; page < maxPages; page++) {
@@ -73,6 +74,12 @@ export async function fetchPlaylistItems(playlistId, maxPages = 1) {
         });
         const j = res?.data || {};
         items.push(...(j.items || []));
+        if (items.length >= LIMIT) {
+          // truncate and stop further paging
+          fetched = true;
+          pageToken = undefined;
+          break;
+        }
         pageToken = j.nextPageToken;
         fetched = true;
         break;
@@ -98,7 +105,7 @@ export async function fetchPlaylistItems(playlistId, maxPages = 1) {
     if (!pageToken) break;
     await sleep(150);
   }
-  const out = items.slice(0, 500);
+  const out = items.slice(0, LIMIT);
   playlistCache.map.set(playlistId, out);
   return out;
 }

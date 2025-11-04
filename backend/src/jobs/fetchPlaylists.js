@@ -8,7 +8,7 @@ import { startFetchRun, finishFetchRun } from '../lib/metrics.js';
 
 const REGIONS_PER_DAY = 10; // start conservative; scale up later
 const CATEGORIES_PER_DAY = 22; // total categories; we'll choose a rotating slice of 12/day
-const DAILY_PLAYLIST_CAP = 6000;
+const DAILY_PLAYLIST_CAP = 2000;
 const INSERT_CHUNK = 500;
 
 function uniqueBy(arr, keyFn) {
@@ -57,6 +57,7 @@ export async function runFetchPlaylists() {
 
   // 1) Discovery via search.list
   let discovered = [];
+  const discoveredIds = new Set();
   for (const region of regions) {
     if (region === 'GLOBAL') {
       console.log('[fetch] skipped region filter for GLOBAL (search without regionCode)');
@@ -75,15 +76,17 @@ export async function runFetchPlaylists() {
         fetched_on: new Date().toISOString(),
         validated: false,
         cycle_mode: 'FETCH',
-      })).filter((x) => !!x.external_id);
-      discovered.push(...mapped);
-      await sleep(80);
-      if (discovered.length > DAILY_PLAYLIST_CAP * 1.2) {
-        console.log('[fetch] ⚠️ Early exit due to soft cap exceed');
-        break;
+      })).filter((x) => !!x.external_id && !discoveredIds.has(x.external_id));
+      // On-the-fly dedupe and cap enforcement
+      for (const m of mapped) {
+        discoveredIds.add(m.external_id);
+        discovered.push(m);
+        if (discovered.length >= DAILY_PLAYLIST_CAP) break;
       }
+      await sleep(80);
+      if (discovered.length >= DAILY_PLAYLIST_CAP) { console.log('[fetch] ⛔ Reached playlist cap; breaking category loop'); break; }
     }
-    if (discovered.length > DAILY_PLAYLIST_CAP * 1.2) break;
+    if (discovered.length >= DAILY_PLAYLIST_CAP) { console.log('[fetch] ⛔ Reached playlist cap; breaking region loop'); break; }
   }
 
   if (!discovered.length) {
