@@ -85,3 +85,19 @@ export async function finishRefreshRun(id, updates = {}) {
       .eq('id', id);
   } catch {}
 }
+
+// Best-effort quota error logger; safe to call even without table present
+export async function logQuotaError(apiKey, endpoint, err) {
+  const prefix = apiKey ? apiKey.slice(0, 8) : 'unknown';
+  const message = (err && (err.message || JSON.stringify(err))) || 'quota error';
+  try {
+    await supabase.from('api_usage').insert({
+      api_key_hash: prefix,
+      endpoint,
+      quota_cost: null,
+      status: 'error',
+      error_code: 'quota',
+      error_message: message,
+    });
+  } catch {}
+}
