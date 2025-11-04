@@ -5,7 +5,6 @@
 // - searchPlaylists({ query, regionCode, maxPages })
 
 import { sleep } from './utils.js';
-import { searchPlaylists } from './youtube/fetchPlaylists.js';
 
 const ALL_KEYS = (process.env.YOUTUBE_API_KEYS || '')
   .split(',')
@@ -116,6 +115,126 @@ function normalizeRegion(regionCode) {
   const rc = String(regionCode).toUpperCase();
   // Only accept 2-letter ISO codes; otherwise omit to avoid INVALID_ARGUMENT
   return rc.length === 2 ? rc : undefined;
+}
+
+// === Playlist search with improved key rotation and quota handling ===
+// Notes:
+// - Sanitize unsupported params (regionCode, videoCategoryId) BEFORE key selection
+// - Maintain round-robin across active keys; rotate on quotaExceeded/userRateLimitExceeded
+// - Short delay between rotations; cap attempts to avoid infinite loops
+// - Keep low-yield logic (return [] if < 10 items)
+export async function searchPlaylists({ query, regionCode, maxPages = 1 }) {
+  const pool = (SEARCH_KEYS.length ? SEARCH_KEYS : ALL_KEYS);
+  if (!pool.length) throw new Error('No API keys provided.');
+
+  const items = [];
+  let pageToken = undefined;
+  let retriedSanitizedQuery = false;
+
+  // Per-key usage count (resets per invocation)
+  const usageCount = new Map();
+
+  const baseQuery = (typeof query === 'string' ? query.trim() : '') || 'music';
+  let currentQuery = baseQuery;
+  if (regionCode) {
+    // Informative log: we will strip unsupported params for playlist search
+    console.warn('[youtube] ⚠️ Removing regionCode + videoCategoryId from playlist search (unsupported params)');
+  }
+
+  for (let page = 0; page < maxPages; page++) {
+    // Try up to pool.length different keys for this page before aborting
+    let pageFetched = false;
+    for (let attempt = 0; attempt < pool.length; attempt++) {
+      // Build params and sanitize BEFORE selecting key
+      const params = {
+        part: 'snippet',
+        type: 'playlist',
+        q: currentQuery,
+        maxResults: 50,
+        pageToken,
+      };
+      // Explicitly do not include regionCode/videoCategoryId for playlist searches
+      // (sanitized already by not setting them)
+
+      // Select key using round-robin across active keys
+      const key = getSearchKey();
+      const keyIndex = (SEARCH_KEYS.length ? SEARCH_KEYS : ALL_KEYS).indexOf(key);
+      const hash = (key || '').slice(0, 8);
+      usageCount.set(key, (usageCount.get(key) || 0) + 1);
+      const use = usageCount.get(key);
+      console.log(`[key-usage] using key ${keyIndex} (${hash}...) → total ${use}`);
+
+      // Early rotate if same key used too often in a row (defensive)
+      if (use > 25) {
+        console.warn(`[rotation] key ${keyIndex} used 25x → rotating early`);
+        // move to next key and retry
+        await sleep(1500);
+        continue;
+      }
+
+      try {
+        const qp = new URLSearchParams({ ...params, key });
+        const url = `${BASE}/search?${qp.toString()}`;
+        const res = await fetch(url);
+        if (res.ok) {
+          const j = await res.json();
+          const got = j.items || [];
+          items.push(...got);
+          pageToken = j.nextPageToken;
+          pageFetched = true;
+          // success resets quota error streak for this key
+          markSuccess(key);
+          break; // break attempt loop, continue to next page
+        }
+
+        const text = await res.text().catch(() => '');
+        const isQuota = res.status === 403 && text && (text.includes('quotaExceeded') || text.includes('userRateLimitExceeded'));
+        if (isQuota) {
+          console.warn(`[quota] key ${keyIndex} exceeded, rotating...`);
+          markQuotaError(key);
+          await sleep(2000);
+          continue; // try next key
+        }
+
+        // Handle 400 invalid argument/bad request: optional query sanitization
+        const is400 = res.status === 400 && (text.toLowerCase().includes('invalid') || text.toLowerCase().includes('bad'));
+        if (is400 && !retriedSanitizedQuery && currentQuery.includes('_')) {
+          const sanitized = currentQuery.replace(/_/g, ' ');
+          console.warn(`[youtube] ↩️ Retrying search with sanitized query. from="${currentQuery}" to="${sanitized}"`);
+          // mutate baseQuery-like variable by shadowing in params next loop
+          // quick sleep to respect pacing
+          await sleep(1000);
+          // Update for subsequent attempts/pages
+          currentQuery = sanitized;
+          retriedSanitizedQuery = true;
+          continue; // re-attempt with same key rotation flow
+        }
+
+        // Other errors: log and stop trying further keys for this page
+        console.error('[youtube] ❌ searchPlaylists error:', `${res.status}: ${text}`);
+        break;
+      } catch (err) {
+        const msg = String(err?.message || err || '');
+        console.error('[youtube] ❌ searchPlaylists fetch error:', msg);
+        break;
+      }
+    }
+
+    if (!pageFetched) {
+      // All keys failed for this page; abort to avoid infinite loops
+      console.error('[youtube] 🛑 All keys failed for this page — aborting search');
+      break;
+    }
+
+    if (!pageToken) break; // no more pages
+    await sleep(150); // pacing between pages
+  }
+
+  if (items.length < 10) {
+    console.log('[fetch] skipped low-yield query', { query, regionCode });
+    return [];
+  }
+  return items;
 }
 
 // 🔎 Fetch playlists per region (music topic)
