@@ -19,6 +19,8 @@ function mapItemToTrack(it) {
       sn?.thumbnails?.medium?.url ||
       sn?.thumbnails?.default?.url ||
       null,
+    // Some DBs have a CHECK constraint on sync_status; provide valid default
+    sync_status: 'fetched',
     created_at: new Date().toISOString(),
   };
 }
