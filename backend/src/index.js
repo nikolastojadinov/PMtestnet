@@ -69,7 +69,7 @@ async function main() {
   } else if (req.url === '/info') {
         // Mirror scheduler configuration
   const TZ = process.env.TZ || 'Europe/Budapest';
-  const PLAYLIST_SCHEDULE = '30 8 * * *';
+  const PLAYLIST_SCHEDULE = '5 9 * * *';
     const cycleStart = process.env.CYCLE_START_DATE || '2025-10-27';
     const plan = pickTodayPlan();
         const CLEAN_SCHEDULES = [
