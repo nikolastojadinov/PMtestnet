@@ -4,6 +4,7 @@
 
 import { google } from 'googleapis';
 import { searchPlaylists as searchPlaylistsModule } from './youtube/fetchPlaylists.js';
+import { KeyPool, COST_TABLE } from './keyPool.js';
 
 // Basic sleep utility (exported for convenience)
 export const sleep = (ms = 1000) => new Promise((res) => setTimeout(res, ms));
@@ -15,24 +16,14 @@ if (rawKeys.length === 0) {
   throw new Error('Missing YOUTUBE_API_KEYS in environment');
 }
 
-// Simple round-robin rotation manager
-class KeyRotation {
-  constructor(keys) { this.keys = keys; this.pointer = 0; }
-  current() { return this.keys[this.pointer]; }
-  index() { return this.pointer + 1; }
-  next() { this.pointer = (this.pointer + 1) % this.keys.length; console.log(`[rotation] 🔁 Switched to key #${this.index()} (${this.current().slice(0, 8)}...)`); return this.current(); }
-  reset() { this.pointer = 0; console.log('[rotation] 🔄 Reset to first key'); }
-  total() { return this.keys.length; }
-}
+// Proportional key pool (replaces simple round-robin)
+export const keyPool = new KeyPool(rawKeys, { dailyLimit: 10000 });
 
-export const keyRotation = new KeyRotation(rawKeys);
+export const youtube = google.youtube({ version: 'v3', auth: rawKeys[0] });
+console.log(`[youtube] ✅ Initialized YouTube API client with ${keyPool.size()} keys.`);
 
-export const youtube = google.youtube({ version: 'v3', auth: keyRotation.current() });
-console.log(`[youtube] ✅ Initialized YouTube API client with ${keyRotation.total()} keys.`);
-console.log(`[youtube] Starting from key #${keyRotation.index()} (${keyRotation.current().slice(0, 8)}...)`);
-
-// Optional: daily reset of rotation pointer
-setInterval(() => keyRotation.reset(), 24 * 60 * 60 * 1000);
+// Optional: midnight daily reset of usage (scheduler also triggers at 09:05)
+setInterval(() => keyPool.resetDaily(), 24 * 60 * 60 * 1000);
 
 // Re-export definitive playlist discovery implementation
 export const searchPlaylists = searchPlaylistsModule;
@@ -61,9 +52,10 @@ export async function fetchPlaylistItems(playlistId, maxPages = 1) {
   const items = [];
   for (let page = 0; page < maxPages; page++) {
     let fetched = false;
-    const attempts = Math.max(1, keyRotation.total());
+    const attempts = Math.max(1, keyPool.size());
     for (let attempt = 0; attempt < attempts; attempt++) {
-      const key = keyRotation.current();
+      const keyObj = await keyPool.selectKey('playlistItems.list');
+      const key = keyObj.key;
       try {
         const res = await youtube.playlistItems.list({
           part: 'snippet,contentDetails',
@@ -74,6 +66,7 @@ export async function fetchPlaylistItems(playlistId, maxPages = 1) {
         });
         const j = res?.data || {};
         items.push(...(j.items || []));
+        keyPool.markUsage(key, 'playlistItems.list', true);
         if (items.length >= LIMIT) {
           // truncate and stop further paging
           fetched = true;
@@ -86,8 +79,8 @@ export async function fetchPlaylistItems(playlistId, maxPages = 1) {
       } catch (err) {
         const reason = err?.errors?.[0]?.reason || err?.response?.data?.error?.errors?.[0]?.reason || '';
         if (reason === 'quotaExceeded' || reason === 'userRateLimitExceeded') {
-          console.warn(`[quota] playlistItems key #${keyRotation.index()} exceeded → rotating`);
-          keyRotation.next();
+          console.warn(`[quota] playlistItems key ${String(key).slice(0,8)} exceeded → cooldown`);
+          keyPool.setCooldown(key, 60);
           await sleep(1000);
           continue;
         }
@@ -115,10 +108,11 @@ export async function validatePlaylists(externalIds = []) {
   const out = [];
   for (let i = 0; i < externalIds.length; i += 50) {
     const batch = externalIds.slice(i, i + 50);
-    const attempts = Math.max(1, keyRotation.total());
+    const attempts = Math.max(1, keyPool.size());
     let ok = false;
     for (let a = 0; a < attempts; a++) {
-      const key = keyRotation.current();
+      const keyObj = await keyPool.selectKey('playlists.list');
+      const key = keyObj.key;
       try {
         const res = await youtube.playlists.list({
           part: 'status,contentDetails,snippet',
@@ -136,13 +130,14 @@ export async function validatePlaylists(externalIds = []) {
             title: it.snippet?.title,
           });
         }
+        keyPool.markUsage(key, 'playlists.list', true);
         ok = true;
         break;
       } catch (err) {
         const reason = err?.errors?.[0]?.reason || err?.response?.data?.error?.errors?.[0]?.reason || '';
         if (reason === 'quotaExceeded' || reason === 'userRateLimitExceeded') {
-          console.warn(`[quota] playlists.list key #${keyRotation.index()} exceeded → rotating`);
-          keyRotation.next();
+          console.warn(`[quota] playlists.list key ${String(key).slice(0,8)} exceeded → cooldown`);
+          keyPool.setCooldown(key, 60);
           await sleep(1000);
           continue;
         }

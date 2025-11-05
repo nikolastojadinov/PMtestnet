@@ -7,6 +7,8 @@ import cron from 'node-cron';
 import { runFetchPlaylists } from '../jobs/fetchPlaylists.js';
 import { cleanEmptyPlaylists } from '../jobs/cleanEmptyPlaylists.js';
 import { fetchTracksFromPlaylist } from '../jobs/fetchTracksFromPlaylist.js';
+import { keyPool } from './youtube.js';
+import { logApiUsage } from './metrics.js';
 
 const TZ = process.env.TZ || 'Europe/Budapest';
 
@@ -31,6 +33,9 @@ export function startFixedJobs() {
     PLAYLIST_SCHEDULE,
     async () => {
       console.log(`[scheduler] ${PLAYLIST_SCHEDULE} (${TZ}) → Fetch playlists (daily)`);
+      // Daily init/reset window
+      keyPool.resetDaily();
+      await logApiUsage({ endpoint: 'daily_init', status: 'ok' });
       await runFetchPlaylists();
     },
     { timezone: TZ }
@@ -78,4 +83,19 @@ export function startFixedJobs() {
   // Additional clarity logs
   console.log(`[scheduler] ⏰ Playlist fetch job active at ${PLAYLIST_SCHEDULE} (${TZ})`);
   console.log('[scheduler] ✅ YouTube key rotation system integrated and logging to api_usage table.');
+
+  // Daily usage report at 12:40 local time
+  cron.schedule(
+    '40 12 * * *',
+    async () => {
+      try {
+        const report = keyPool.report();
+        await logApiUsage({ endpoint: 'daily_report', status: 'ok', errorMessage: JSON.stringify({ report }) });
+        console.log('[scheduler] 📊 Daily key usage report stored.');
+      } catch (e) {
+        console.warn('[scheduler] ⚠️ Failed to store daily key usage report:', e?.message || String(e));
+      }
+    },
+    { timezone: TZ }
+  );
 }

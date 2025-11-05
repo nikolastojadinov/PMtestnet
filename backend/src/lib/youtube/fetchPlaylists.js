@@ -4,8 +4,8 @@
 // - Balanced key rotation with per-key usage counters and quota/rate-limit handling
 // - Keeps retry with sanitized query and low-yield guard intact
 
-import { youtube, keyRotation, sleep } from '../youtube.js';
-import { logQuotaError } from '../metrics.js';
+import { youtube, keyPool, sleep } from '../youtube.js';
+import { logQuotaError, logApiUsage } from '../metrics.js';
 
 // Keep the export signature used across the codebase
 // Args: { query, regionCode, maxPages }
@@ -15,12 +15,12 @@ export async function searchPlaylists({ query, regionCode, maxPages = 1 }) {
   let currentQuery = (typeof query === 'string' ? query.trim() : '') || 'music';
   if (currentQuery.includes('_')) currentQuery = currentQuery.replace(/_/g, ' ');
 
-  // Defensive: track per-key usage to avoid long bursts on a single key
-  const usageMap = new Map();
+  // Stats for this run
+  const localStats = { pages: 0 };
 
   for (let page = 0; page < maxPages; page++) {
     let fetchedThisPage = false;
-    const attempts = Math.max(1, keyRotation.total ? keyRotation.total() : 3);
+  const attempts = Math.max(1, keyPool.size ? keyPool.size() : 3);
 
     for (let i = 0; i < attempts; i++) {
       // Build params and sanitize BEFORE key selection (we simply don't include unsupported fields)
@@ -36,18 +36,8 @@ export async function searchPlaylists({ query, regionCode, maxPages = 1 }) {
         console.warn('[youtube] ⚠️ Removing regionCode + videoCategoryId from playlist search (unsupported params)');
       }
 
-      const currentKey = keyRotation.current();
-      const keyIndex = keyRotation.index();
-      usageMap.set(currentKey, (usageMap.get(currentKey) || 0) + 1);
-      const usageCount = usageMap.get(currentKey);
-      console.log(`[key-usage] using key #${keyIndex}: ${currentKey.slice(0, 8)}..., total ${usageCount}`);
-
-      if (usageCount > 25) {
-        console.warn(`[rotation] key ${keyIndex} used 25x → rotating early`);
-        keyRotation.next();
-        await sleep(1500);
-        continue;
-      }
+      const keyObj = await keyPool.selectKey('search.list');
+      const currentKey = keyObj.key;
 
       try {
         const res = await youtube.search.list({
@@ -58,6 +48,8 @@ export async function searchPlaylists({ query, regionCode, maxPages = 1 }) {
         items.push(...got);
         pageToken = res?.data?.nextPageToken;
         fetchedThisPage = true;
+        keyPool.markUsage(currentKey, 'search.list', true);
+        try { await logApiUsage({ apiKey: currentKey, endpoint: 'search.list', quotaCost: 100, status: 'ok' }); } catch {}
         break; // success for this page
       } catch (err) {
         const reason = err?.errors?.[0]?.reason || err?.response?.data?.error?.errors?.[0]?.reason || '';
@@ -67,8 +59,8 @@ export async function searchPlaylists({ query, regionCode, maxPages = 1 }) {
 
         if (reason === 'quotaExceeded' || reason === 'userRateLimitExceeded') {
           try { await logQuotaError(currentKey, 'search.list', err); } catch {}
-          console.warn(`[quota] key ${keyIndex} exceeded → rotating key...`);
-          keyRotation.next();
+          console.warn(`[quota] key ${String(currentKey).slice(0,8)} exceeded → cooldown`);
+          keyPool.setCooldown(currentKey, 60);
           await sleep(2000);
           continue; // try next key for this page
         }

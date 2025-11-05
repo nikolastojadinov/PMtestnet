@@ -50,6 +50,25 @@ export async function logQuotaError(apiKey, endpoint, err) {
   if (apiKey) console.warn(`[quota] Logged quota error for key ${String(apiKey).slice(0, 8)}... → ${reason}`);
 }
 
+// Optional: log a structured daily report into api_usage table as a single row
+export async function logDailyReport(data) {
+  try {
+    const payload = {
+      ts: new Date().toISOString(),
+      api_key_hash: null,
+      endpoint: 'daily_report',
+      quota_cost: null,
+      status: 'ok',
+      error_code: null,
+      error_message: JSON.stringify(data || {}),
+    };
+    const { error } = await supabase.from('api_usage').insert(payload);
+    if (error) console.warn('[metrics] ⚠️ Failed to log daily report:', error.message);
+  } catch (err) {
+    console.error('[metrics] ❌ Error logging daily report:', err?.message || String(err));
+  }
+}
+
 // Compatibility no-ops (legacy callers). These functions intentionally do nothing.
 export async function startFetchRun() { return null; }
 export async function finishFetchRun() { return; }
