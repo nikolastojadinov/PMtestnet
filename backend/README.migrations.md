@@ -9,6 +9,7 @@ This folder contains SQL you can run in the Supabase SQL editor (or psql) to ini
 3. `backend/sql/003_seed_categories.sql`
 4. `backend/sql/010_rpc.sql`
 5. `backend/sql/011_pit_schema_v5_3_1.sql` (optional additive migration: users/likes/statistics/cache, expanded playlists/tracks, and refreshed views)
+6. `backend/sql/020_sync_status_api_usage.sql` (align `tracks.sync_status` with app enum and fix `api_usage` permissions)
 
 > Note: You can re-run seeds at any time; inserts use `on conflict do nothing`.
 
@@ -25,6 +26,10 @@ This folder contains SQL you can run in the Supabase SQL editor (or psql) to ini
 
 - Open Supabase project → SQL → Run new query → paste file contents in order.
 - Alternatively, use `psql` with your project connection string.
+
+Tip: If you already ran earlier migrations in production, you can run only `020_sync_status_api_usage.sql` to:
+- replace legacy `tracks_sync_status_check` with a stable enum (`track_sync_status`) and set default to `'fetched'`
+- ensure `api_usage` accepts inserts from the backend's service role
 
 ## Next steps
 
