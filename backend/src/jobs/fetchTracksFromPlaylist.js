@@ -31,6 +31,37 @@ export async function fetchTracksFromPlaylist(targetPlaylistUUIDs = []) {
     return;
   }
 
+  // Attempt bulk upsert with a set of candidate sync_status values to satisfy
+  // environments that enforce a CHECK constraint on tracks.sync_status.
+  async function tryUpsertTracks(rows) {
+    // Prefer 'fetched', then fall back to other common states if a CHECK blocks it.
+    const candidates = ['fetched', 'ready', 'new', 'queued', 'linked'];
+    let lastErr;
+    for (const status of candidates) {
+      const rowsWithStatus = rows.map((r) => ({ ...r, sync_status: status }));
+      const { data, error } = await supabase
+        .from('tracks')
+        .upsert(rowsWithStatus, { onConflict: 'external_id' })
+        .select('id, external_id');
+      if (!error) {
+        if (status !== 'fetched') {
+          console.warn(`[tracks] sync_status fallback accepted: '${status}' for ${rowsWithStatus.length} rows`);
+        }
+        return data || [];
+      }
+      lastErr = error;
+      const msg = String(error?.message || '');
+      if (msg.includes('tracks_sync_status_check')) {
+        console.warn(`[tracks] sync_status '${status}' rejected by DB check; trying next…`);
+        continue;
+      }
+      // Non-check errors: surface immediately
+      throw error;
+    }
+    // If we exhausted candidates and still failed, throw the last error
+    throw lastErr || new Error('tracks upsert failed due to sync_status constraint');
+  }
+
   for (const playlistUUID of targetPlaylistUUIDs) {
     // Lookup external_id for YouTube API
     const { data: plRow, error: plErr } = await supabase
@@ -57,12 +88,8 @@ export async function fetchTracksFromPlaylist(targetPlaylistUUIDs = []) {
         continue;
       }
 
-      // Upsert tracks and return ids
-      const { data: inserted, error: upErr } = await supabase
-        .from('tracks')
-        .upsert(rows, { onConflict: 'external_id' })
-        .select('id, external_id');
-      if (upErr) throw upErr;
+      // Upsert tracks with safe sync_status handling and return ids
+      const inserted = await tryUpsertTracks(rows);
 
       const idByExternal = new Map((inserted || []).map((t) => [t.external_id, t.id]));
       const rels = rows

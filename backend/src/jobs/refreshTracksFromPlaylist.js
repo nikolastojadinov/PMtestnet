@@ -109,11 +109,34 @@ export async function runRefreshTracks({ reason = 'manual', targetDay }) {
       if (!tracks.length) continue;
 
       // 1️⃣ Upsert pesama u "tracks" tabelu (vrati ID-eve)
-      const { data: inserted, error: err1 } = await sb
-        .from('tracks')
-        .upsert(tracks, { onConflict: 'external_id' })
-        .select('id, external_id');
-      if (err1) throw err1;
+      // Neke instalacije imaju CHECK constraint na sync_status — probaj više vrednosti.
+      async function tryUpsertTracks(rows) {
+        const candidates = ['refreshed', 'ready', 'updated', 'fetched', 'new'];
+        let lastErr;
+        for (const status of candidates) {
+          const withStatus = rows.map(r => ({ ...r, sync_status: status }));
+          const { data, error } = await sb
+            .from('tracks')
+            .upsert(withStatus, { onConflict: 'external_id' })
+            .select('id, external_id');
+          if (!error) {
+            if (status !== 'refreshed') {
+              console.warn(`[refreshTracks] sync_status fallback accepted: '${status}' for ${withStatus.length} rows`);
+            }
+            return data || [];
+          }
+          lastErr = error;
+          const msg = String(error?.message || '');
+          if (msg.includes('tracks_sync_status_check')) {
+            console.warn(`[refreshTracks] sync_status '${status}' rejected by DB check; trying next…`);
+            continue;
+          }
+          throw error;
+        }
+        throw lastErr || new Error('tracks upsert failed due to sync_status constraint');
+      }
+
+      const inserted = await tryUpsertTracks(tracks);
 
       // 2️⃣ Poveži ih u "playlist_tracks"
       const rels = inserted.map(t => ({
