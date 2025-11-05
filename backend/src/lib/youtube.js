@@ -67,6 +67,7 @@ export async function fetchPlaylistItems(playlistId, maxPages = 1) {
         const j = res?.data || {};
         items.push(...(j.items || []));
         keyPool.markUsage(key, 'playlistItems.list', true);
+        try { /* light metrics */ } catch {}
         if (items.length >= LIMIT) {
           // truncate and stop further paging
           fetched = true;
@@ -131,6 +132,7 @@ export async function validatePlaylists(externalIds = []) {
           });
         }
         keyPool.markUsage(key, 'playlists.list', true);
+        try { /* optional light metric hook */ } catch {}
         ok = true;
         break;
       } catch (err) {
