@@ -8,6 +8,18 @@
 import crypto from 'crypto';
 import { supabase } from './supabase.js';
 
+function localIso(timeZone = 'Europe/Budapest') {
+  const dt = new Date();
+  const fmt = new Intl.DateTimeFormat('sv-SE', {
+    timeZone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false
+  });
+  const parts = fmt.format(dt).replace(' ', 'T');
+  return parts;
+}
+
 export function hashKey(key) {
   if (!key) return null;
   try {
@@ -20,7 +32,7 @@ export function hashKey(key) {
 export async function logApiUsage(info = {}) {
   try {
     const payload = {
-      ts: new Date().toISOString(),
+      ts: localIso(),
       api_key_hash: hashKey(info.apiKey),
       endpoint: info.endpoint || 'unknown',
       quota_cost: info.quotaCost ?? null,
@@ -54,7 +66,7 @@ export async function logQuotaError(apiKey, endpoint, err) {
 export async function logDailyReport(data) {
   try {
     const payload = {
-      ts: new Date().toISOString(),
+      ts: localIso(),
       api_key_hash: null,
       endpoint: 'daily_report',
       quota_cost: null,

@@ -2,8 +2,8 @@
 
 import http from 'http';
 import supabase from './lib/supabase.js';
-import { startFixedJobs, stopAllJobs, saveTracksCursor } from './lib/scheduler.js';
-import { pickTodayPlan } from './lib/monthlyCycle.js';
+import { startFixedJobs, stopAllJobs } from './lib/scheduler.js';
+import { pickDailyList } from './lib/searchSeedsGenerator.js';
 
 // ======================================================
 // 🚀 Purple Music Backend — Boot Summary
@@ -67,49 +67,19 @@ async function main() {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(response));
   } else if (req.url === '/info') {
-        // Mirror scheduler configuration
-  const TZ = process.env.TZ || 'Europe/Budapest';
-  const PLAYLIST_SCHEDULE = '5 9 * * *';
-    const cycleStart = process.env.CYCLE_START_DATE || '2025-10-27';
-    const plan = pickTodayPlan();
-        const CLEAN_SCHEDULES = [
-          '45 12 * * *',
-          '45 13 * * *',
-          '45 14 * * *',
-          '45 15 * * *',
-          '45 16 * * *',
-          '45 17 * * *',
-          '45 18 * * *',
-          '45 19 * * *',
-          '45 20 * * *',
-          '45 21 * * *',
-        ];
-        const TRACK_SCHEDULES = [
-          '0 13 * * *',
-          '0 14 * * *',
-          '0 15 * * *',
-          '0 16 * * *',
-          '0 17 * * *',
-          '0 18 * * *',
-          '0 19 * * *',
-          '0 20 * * *',
-          '0 21 * * *',
-          '0 22 * * *',
-        ];
+        const TZ = process.env.TZ || 'Europe/Budapest';
         const body = {
-          version: 'v5.2',
+          version: 'v6.0-seeds',
           cron: {
             timezone: TZ,
-            playlists: PLAYLIST_SCHEDULE,
-            cleanup: CLEAN_SCHEDULES,
-            tracks: TRACK_SCHEDULES,
+            seedSlots: '20 slots @ :00/:30 13:00→22:30',
           },
           env: {
             supabase: !!process.env.SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE,
             youtubeKeys: process.env.YOUTUBE_API_KEYS ? process.env.YOUTUBE_API_KEYS.split(',').length : 0,
-            cycleStartDate: cycleStart,
+            cycleStartDate: process.env.CYCLE_START_DATE || '2025-10-27',
           },
-          cycle: plan,
+          seeds: { perDay: 2000, totalCycle: 58000, sampleDay1Count: pickDailyList(1).length },
           uptime: `${Math.round(process.uptime())}s`,
           timestamp: new Date().toISOString(),
         };
@@ -117,7 +87,7 @@ async function main() {
         res.end(JSON.stringify(body));
       } else {
         res.writeHead(200, { 'Content-Type': 'text/plain' });
-        res.end('Purple Music Backend running.\n');
+  res.end('Purple Music Backend (58K search seeds mode) running.\n');
       }
     });
 
@@ -166,16 +136,7 @@ async function main() {
         .catch(() => {});
       clearInterval(heartbeat);
 
-      // Persist any last-known cursor from memory if present
-      const cursor = globalThis.__pm_lastFetchCursor || null;
-      if (cursor) {
-        try {
-          await saveTracksCursor(cursor);
-          console.log('[shutdown] Cursor flushed to job_cursor.');
-        } catch (e) {
-          console.warn('[shutdown] Failed to flush cursor:', e?.message || String(e));
-        }
-      }
+      // Seeds-only mode: no cursor persistence
 
       // Give a brief window for in-flight ops (best effort)
       await new Promise((r) => setTimeout(r, 500));

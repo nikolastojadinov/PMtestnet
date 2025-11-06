@@ -1,7 +1,7 @@
 // backend/src/lib/utils.js
 // ✅ Core utils + region pool + key rotator + smarter selection helpers
 
-import { pickTodayPlan } from './monthlyCycle.js';
+// monthlyCycle removed in seeds-only architecture; compute cycle day locally
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -58,8 +58,10 @@ function weightedShuffle(arr) {
 
 // Return cycle day (1..29) from monthlyCycle plan
 export function getCycleDay(now = new Date()) {
-  const { currentDay } = pickTodayPlan(now);
-  return currentDay;
+  const startEnv = process.env.CYCLE_START_DATE || '2025-10-27';
+  const start = startOfDay(parseYMD(startEnv));
+  const diffDays = Math.floor((startOfDay(now) - start) / (24 * 3600 * 1000));
+  return ((diffDays % 29) + 29) % 29 + 1;
 }
 
 // Filter regions to top 40 by score; keep GLOBAL at the end as fallback

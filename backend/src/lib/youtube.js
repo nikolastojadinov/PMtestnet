@@ -3,8 +3,8 @@
 // - Exports: youtube, keyRotation, sleep, searchPlaylists, fetchPlaylistItems, validatePlaylists
 
 import { google } from 'googleapis';
-import { searchPlaylists as searchPlaylistsModule } from './youtube/fetchPlaylists.js';
 import { KeyPool, COST_TABLE } from './keyPool.js';
+import { pickDaySlotList } from './searchSeedsGenerator.js';
 
 // Basic sleep utility (exported for convenience)
 export const sleep = (ms = 1000) => new Promise((res) => setTimeout(res, ms));
@@ -25,8 +25,22 @@ console.log(`[youtube] ✅ Initialized YouTube API client with ${keyPool.size()}
 // Optional: midnight daily reset of usage (scheduler also triggers at 09:05)
 setInterval(() => keyPool.resetDaily(), 24 * 60 * 60 * 1000);
 
-// Re-export definitive playlist discovery implementation
-export const searchPlaylists = searchPlaylistsModule;
+// Discovery now based on pre-generated seeds; provide stub accessor
+export function searchPlaylists({ day, slot } = {}) {
+  const now = new Date();
+  const cycleStart = process.env.CYCLE_START_DATE || '2025-10-27';
+  const dayIndex = computeCycleDay(now, cycleStart);
+  const useDay = day || dayIndex;
+  if (typeof slot === 'number') return { day: useDay, slot, queries: pickDaySlotList(useDay, slot) };
+  return { day: useDay, slots: Array.from({ length: 20 }, (_, s) => pickDaySlotList(useDay, s)) };
+}
+
+function computeCycleDay(now = new Date(), start = '2025-10-27') {
+  const [y,m,d] = start.split('-').map(Number);
+  const s = new Date(y,(m||1)-1,d||1);
+  const diffDays = Math.floor((Date.UTC(now.getFullYear(),now.getMonth(),now.getDate()) - Date.UTC(s.getFullYear(),s.getMonth(),s.getDate()))/(24*3600*1000));
+  return ((diffDays % 29)+29)%29 + 1;
+}
 
 // 🔎 Fetch playlists per region (music topic)
 // Legacy fetchRegionPlaylists removed (not used)

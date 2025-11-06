@@ -4,12 +4,7 @@
 // ✅ Playlists @ 09:05; Pre-fetch selection @ 23:15→08:15; Tracks @ 23:30→08:30 (all local time)
 
 import cron from 'node-cron';
-import { runFetchPlaylists } from '../jobs/fetchPlaylists.js';
-import { selectEmptyPlaylists } from '../jobs/selectEmptyPlaylists.js';
-import { runFetchTracksWindow } from '../jobs/fetchTracksFromPlaylists.js';
-import { keyPool } from './youtube.js';
-import { logDailyReport } from './metrics.js';
-import { getJobState, getJobCursor, setJobCursor } from './persistence.js';
+import { pickDaySlotList } from './searchSeedsGenerator.js';
 
 const TZ = process.env.TZ || 'Europe/Budapest';
 
@@ -28,26 +23,21 @@ const PLAYLIST_CRON_TIMES = [
 ];
 
 // ⏳ Pre-fetch selection times (15 past the hour from 23:15 → 08:15 local time)
-const CLEAN_SCHEDULES = [
-  '15 23 * * *','15 0 * * *','15 1 * * *','15 2 * * *','15 3 * * *',
-  '15 4 * * *','15 5 * * *','15 6 * * *','15 7 * * *','15 8 * * *',
-];
+const CLEAN_SCHEDULES = [];
 
 // 🎵 Track fetch times (30 past the hour from 23:30 → 08:30 local time)
-const TRACK_SCHEDULES = [
-  '30 23 * * *','30 0 * * *','30 1 * * *','30 2 * * *','30 3 * * *',
-  '30 4 * * *','30 5 * * *','30 6 * * *','30 7 * * *','30 8 * * *',
-];
+const TRACK_SCHEDULES = [];
 
 export function startFixedJobs() {
   const tasks = [];
   // Playlist fetch windows (20 runs/day at :00 and :30 from 13:00 → 22:30)
-  PLAYLIST_CRON_TIMES.forEach((pattern) => {
+  PLAYLIST_CRON_TIMES.forEach((pattern, slotIndex) => {
     tasks.push(cron.schedule(
       pattern,
       async () => {
-        console.log(`[scheduler] ${pattern} (${TZ}) → Fetch playlists (window)`);
-        await runFetchPlaylists();
+        const day = getCycleDay();
+        const queries = pickDaySlotList(day, slotIndex);
+        console.log(`[scheduler] ${pattern} (${TZ}) → Seeds window (day=${day}, slot=${slotIndex}, queries=${queries.length})`);
       },
       { timezone: TZ }
     ));
@@ -55,86 +45,30 @@ export function startFixedJobs() {
   });
 
   // Pre-fetch selection before track fetch window — select empty playlists (no delete)
-  CLEAN_SCHEDULES.forEach((pattern) => {
-    tasks.push(cron.schedule(
-      pattern,
-      async () => {
-        console.log(`[scheduler] ${pattern} (${TZ}) → Pre-fetch selection (persisted job_state)`);
-        const ids = await selectEmptyPlaylists();
-        const count = Array.isArray(ids) ? ids.length : 0;
-        console.log(`[scheduler] Pre-fetch persisted (${count} ids).`);
-      },
-      { timezone: TZ }
-    ));
-  });
+  // No prefetch selection or track windows in seeds-only cleanup mode
 
   // Track fetch windows
-  TRACK_SCHEDULES.forEach((pattern) => {
-    tasks.push(cron.schedule(
-      pattern,
-      async () => {
-        // Load persisted selection and cursor; do not re-select here
-        const state = await getJobState('tracks_window_selection');
-        const items = Array.isArray(state?.items) ? state.items : [];
-        const cur = await getJobCursor('fetch_tracks');
-        const pos = cur?.index ?? 0;
-        console.log(`[scheduler] ${pattern} (${TZ}) → Fetch tracks (selection=${items.length}, resumeAt=${pos})`);
-        if (!items.length && !cur) {
-          console.log('[scheduler] No selection and no cursor; skipping this window.');
-          return;
-        }
-        await runFetchTracksWindow();
-      },
-      { timezone: TZ }
-    ));
-  });
+  // No tracks windows scheduled
 
   console.log(`[scheduler] ✅ cron set (${TZ}):
-  - playlists@13:00→22:30 (every :00 and :30)
-  - prefetch@23:15→08:15
-  - tracks@23:30→08:30`);
+  - seeds@13:00→22:30 (every :00 and :30)`);
 
   // Additional clarity logs
   // Playlist job activations logged above per pattern.
   console.log('[scheduler] ✅ YouTube key rotation system integrated and logging to api_usage table.');
 
-  // Daily usage report at 12:40 local time
-  tasks.push(cron.schedule(
-    '40 12 * * *',
-    async () => {
-      try {
-        const phase = keyPool.phaseReport();
-        const date = new Date().toISOString().slice(0,10);
-        const payload = { date, totalKeys: keyPool.size(), ...phase, status: 'OK' };
-        await logDailyReport(payload);
-        console.log('[scheduler] 📊 Daily key usage report stored.');
-      } catch (e) {
-        console.warn('[scheduler] ⚠️ Failed to store daily key usage report:', e?.message || String(e));
-      }
-    },
-    { timezone: TZ }
-  ));
+  // Daily usage report removed for cleanup mode
 
   // Expose simple helpers
   startFixedJobs._tasks = tasks;
 }
 
-export async function loadTracksSelection() {
-  const state = await getJobState('tracks_window_selection');
-  return Array.isArray(state?.items) ? state.items : [];
-}
-
-export async function loadTracksCursor() {
-  return (await getJobCursor('fetch_tracks')) || null;
-}
-
-export async function saveTracksCursor(cursor) {
-  return setJobCursor('fetch_tracks', cursor);
-}
-
-export function markWindowDone() {
-  // lifecycle of selection is managed by the selector job; nothing to do here
-  return true;
+export function getCycleDay(now = new Date()) {
+  const start = process.env.CYCLE_START_DATE || '2025-10-27';
+  const [y,m,d] = start.split('-').map(Number);
+  const s = new Date(y,(m||1)-1,d||1);
+  const diffDays = Math.floor((Date.UTC(now.getFullYear(),now.getMonth(),now.getDate()) - Date.UTC(s.getFullYear(),s.getMonth(),s.getDate()))/(24*3600*1000));
+  return ((diffDays % 29)+29)%29 + 1;
 }
 
 export function stopAllJobs() {
