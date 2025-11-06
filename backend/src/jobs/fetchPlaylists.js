@@ -1,7 +1,7 @@
 // backend/src/jobs/fetchPlaylists.js
 // ✅ Discovery (search) + validation (playlists.list) + promote to playlists
 
-import { supabase } from '../lib/supabase.js';
+import { createClient } from '@supabase/supabase-js';
 import { pickTodayRegions, sleep, selectCategoriesForDay, getCycleDay } from '../lib/utils.js';
 import { verifyPlaylistsRawRLS } from '../utils/verifyRLS.js';
 import { pickTodayPlan } from '../lib/monthlyCycle.js';
@@ -25,11 +25,25 @@ function uniqueBy(arr, keyFn) {
   return out;
 }
 
-async function insertChunks(table, rows) {
+// One-time, memoized service-role client to guarantee privileged writes
+function getServiceClient() {
+  if (globalThis.__pm_serviceSb) return globalThis.__pm_serviceSb;
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE;
+  if (!url || !key) {
+    throw new Error('[supabase] ❌ Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE');
+  }
+  const sb = createClient(url, key, { auth: { persistSession: false } });
+  globalThis.__pm_serviceSb = sb;
+  console.log('[supabase] 🔑 service_role client initialized successfully');
+  return sb;
+}
+
+async function insertChunks(sb, table, rows) {
   let inserted = 0;
   for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
     const chunk = rows.slice(i, i + INSERT_CHUNK);
-    const { error } = await supabase.from(table).insert(chunk);
+    const { error } = await sb.from(table).insert(chunk);
     if (error) {
       console.error(`[fetch] ❌ Insert chunk into ${table} failed:`, error.message);
     } else {
@@ -52,12 +66,13 @@ export async function runFetchPlaylists() {
     return;
   }
   const runId = await startFetchRun({ day: null });
+  const sb = getServiceClient();
 
   // Regions (deterministic slice)
   const regions = pickTodayRegions(REGIONS_PER_DAY);
   const usedGlobal = Array.isArray(regions) && regions.includes('GLOBAL');
   // Categories from DB (first N, can later rotate deterministically)
-  const { data: cats } = await supabase
+  const { data: cats } = await sb
     .from('categories')
     .select('key')
     .limit(CATEGORIES_PER_DAY);
@@ -123,7 +138,7 @@ export async function runFetchPlaylists() {
   const validIds = new Set(validated.filter((v) => v.is_public && v.item_count > 0).map((v) => v.external_id));
 
   // 3) Store raw and promote valid
-  await insertChunks('playlists_raw', deduped.map((x) => ({ ...x, privacy_status: null }))); // lightweight store
+  await insertChunks(sb, 'playlists_raw', deduped.map((x) => ({ ...x, privacy_status: null }))); // lightweight store
 
   const promote = deduped
     .filter((x) => validIds.has(x.external_id))
@@ -166,7 +181,7 @@ export async function runFetchPlaylists() {
   }
 
   // Upsert valid playlists
-  const { error: upErr } = await supabase
+  const { error: upErr } = await sb
     .from('playlists')
     .upsert(promote, { onConflict: 'external_id' });
   if (upErr) {
@@ -193,7 +208,7 @@ export async function runFetchPlaylists() {
   // Run RLS checks once per process
   if (!globalThis.__pm_rlsChecked) {
     try {
-      await verifyPlaylistsRawRLS(supabase);
+      await verifyPlaylistsRawRLS(sb);
       globalThis.__pm_rlsChecked = true;
     } catch (e) {
       console.warn('[rls-check] Failed to verify RLS automatically:', e?.message || String(e));
