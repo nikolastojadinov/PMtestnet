@@ -3,6 +3,7 @@
 
 import { supabase } from '../lib/supabase.js';
 import { pickTodayRegions, sleep, selectCategoriesForDay, getCycleDay } from '../lib/utils.js';
+import { verifyPlaylistsRawRLS } from '../utils/verifyRLS.js';
 import { pickTodayPlan } from '../lib/monthlyCycle.js';
 import { searchPlaylists, validatePlaylists } from '../lib/youtube.js';
 import { startFetchRun, finishFetchRun } from '../lib/metrics.js';
@@ -188,6 +189,17 @@ export async function runFetchPlaylists() {
   const fix = hasServiceRole
     ? 'Using service_role client for playlists_raw and playlists writes; muted unsupported-param warnings.'
     : 'Please configure SUPABASE_SERVICE_ROLE; warnings for unsupported params are muted.';
+
+  // Run RLS checks once per process
+  if (!globalThis.__pm_rlsChecked) {
+    try {
+      await verifyPlaylistsRawRLS(supabase);
+      globalThis.__pm_rlsChecked = true;
+    } catch (e) {
+      console.warn('[rls-check] Failed to verify RLS automatically:', e?.message || String(e));
+    }
+  }
+
   console.log(`[report] Fetched playlists: N=${promote.length}, promoted successfully.`);
   console.log(`[report] Region filter ${usedGlobal ? 'skipped for GLOBAL, search without regionCode' : 'applied for regional queries'} (playlist search API ignores regionCode/videoCategoryId).`);
   console.log(`[report] Root cause of permission issue: ${rootCause}`);

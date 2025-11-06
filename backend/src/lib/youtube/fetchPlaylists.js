@@ -33,7 +33,11 @@ export async function searchPlaylists({ query, regionCode, maxPages = 1 }) {
       };
 
       // Silent sanitization: regionCode and videoCategoryId are unsupported for type='playlist'.
-      // We intentionally do not include them in params and avoid log spam here.
+      // We intentionally do not include them in params and avoid log spam; emit a one-time summary.
+      if (regionCode && !globalThis.__pm_youtubeSilentWarned) {
+        console.log('[youtube] Skipped unsupported params: regionCode + videoCategoryId (silent mode active)');
+        globalThis.__pm_youtubeSilentWarned = true;
+      }
 
       const keyObj = await keyPool.selectKey('search.list');
       const currentKey = keyObj.key;
