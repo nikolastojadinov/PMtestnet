@@ -5,10 +5,11 @@
 
 import cron from 'node-cron';
 import { runFetchPlaylists } from '../jobs/fetchPlaylists.js';
-import { cleanEmptyPlaylists } from '../jobs/cleanEmptyPlaylists.js';
-import { fetchTracksFromPlaylist } from '../jobs/fetchTracksFromPlaylist.js';
+import { selectEmptyPlaylists } from '../jobs/selectEmptyPlaylists.js';
+import { runFetchTracksWindow } from '../jobs/fetchTracksFromPlaylists.js';
 import { keyPool } from './youtube.js';
 import { logDailyReport } from './metrics.js';
+import { getJobState, getJobCursor, setJobCursor } from './persistence.js';
 
 const TZ = process.env.TZ || 'Europe/Budapest';
 
@@ -28,8 +29,9 @@ const TRACK_SCHEDULES = [
 ];
 
 export function startFixedJobs() {
+  const tasks = [];
   // Daily playlist discovery
-  cron.schedule(
+  tasks.push(cron.schedule(
     PLAYLIST_SCHEDULE,
     async () => {
       console.log(`[scheduler] ${PLAYLIST_SCHEDULE} (${TZ}) → Fetch playlists (daily)`);
@@ -38,40 +40,41 @@ export function startFixedJobs() {
       await runFetchPlaylists();
     },
     { timezone: TZ }
-  );
+  ));
 
   // Cleanup before track fetch window — select empty playlists (no delete)
   CLEAN_SCHEDULES.forEach((pattern) => {
-    cron.schedule(
+    tasks.push(cron.schedule(
       pattern,
       async () => {
-        console.log(`[scheduler] ${pattern} (${TZ}) → Clean empty playlists (select targets)`);
-  const ids = await cleanEmptyPlaylists(); // returns array of playlist UUIDs
+        console.log(`[scheduler] ${pattern} (${TZ}) → Select empty playlists (persisted job_state)`);
+        const ids = await selectEmptyPlaylists();
         const count = Array.isArray(ids) ? ids.length : 0;
-        globalThis.__pm_emptyPlaylistIds = ids || [];
-        console.log(`[scheduler] Selected ${count} empty playlists for next track window.`);
+        console.log(`[scheduler] Selection persisted (${count} ids).`);
       },
       { timezone: TZ }
-    );
+    ));
   });
 
   // Track fetch windows
   TRACK_SCHEDULES.forEach((pattern) => {
-    cron.schedule(
+    tasks.push(cron.schedule(
       pattern,
       async () => {
-        const target = Array.isArray(globalThis.__pm_emptyPlaylistIds)
-          ? globalThis.__pm_emptyPlaylistIds
-          : [];
-        console.log(`[scheduler] ${pattern} (${TZ}) → Fetch tracks (${target.length} playlists)`);
-        if (!target.length) {
-          console.log('[scheduler] No selected empty playlists; skipping this window.');
+        // Load persisted selection and cursor; do not re-select here
+        const state = await getJobState('tracks_window_selection');
+        const items = Array.isArray(state?.items) ? state.items : [];
+        const cur = await getJobCursor('fetch_tracks');
+        const pos = cur?.index ?? 0;
+        console.log(`[scheduler] ${pattern} (${TZ}) → Fetch tracks (selection=${items.length}, resumeAt=${pos})`);
+        if (!items.length && !cur) {
+          console.log('[scheduler] No selection and no cursor; skipping this window.');
           return;
         }
-        await fetchTracksFromPlaylist(target);
+        await runFetchTracksWindow();
       },
       { timezone: TZ }
-    );
+    ));
   });
 
   console.log(`[scheduler] ✅ cron set (${TZ}):
@@ -84,7 +87,7 @@ export function startFixedJobs() {
   console.log('[scheduler] ✅ YouTube key rotation system integrated and logging to api_usage table.');
 
   // Daily usage report at 12:40 local time
-  cron.schedule(
+  tasks.push(cron.schedule(
     '40 12 * * *',
     async () => {
       try {
@@ -98,5 +101,34 @@ export function startFixedJobs() {
       }
     },
     { timezone: TZ }
-  );
+  ));
+
+  // Expose simple helpers
+  startFixedJobs._tasks = tasks;
+}
+
+export async function loadTracksSelection() {
+  const state = await getJobState('tracks_window_selection');
+  return Array.isArray(state?.items) ? state.items : [];
+}
+
+export async function loadTracksCursor() {
+  return (await getJobCursor('fetch_tracks')) || null;
+}
+
+export async function saveTracksCursor(cursor) {
+  return setJobCursor('fetch_tracks', cursor);
+}
+
+export function markWindowDone() {
+  // lifecycle of selection is managed by the selector job; nothing to do here
+  return true;
+}
+
+export function stopAllJobs() {
+  if (Array.isArray(startFixedJobs._tasks)) {
+    for (const t of startFixedJobs._tasks) {
+      try { t.stop(); } catch {}
+    }
+  }
 }

@@ -2,7 +2,7 @@
 
 import http from 'http';
 import supabase from './lib/supabase.js';
-import { startFixedJobs } from './lib/scheduler.js';
+import { startFixedJobs, stopAllJobs, saveTracksCursor } from './lib/scheduler.js';
 import { pickTodayPlan } from './lib/monthlyCycle.js';
 
 // ======================================================
@@ -53,7 +53,7 @@ async function main() {
     // ======================================================
     // 🩺 Lightweight HTTP server (for /healthz and /info)
     // ======================================================
-    const server = http.createServer((req, res) => {
+  const server = http.createServer((req, res) => {
   if (req.url === '/healthz') {
         const response = {
           status: 'ok',
@@ -147,10 +147,44 @@ async function main() {
     // ======================================================
     // 🧹 Log rotation cleanup
     // ======================================================
-    setInterval(() => {
+    const heartbeat = setInterval(() => {
       if (global.gc) global.gc();
       console.log('[maintenance] 🧹 Log heartbeat — uptime', Math.round(process.uptime()), 's');
     }, 10 * 60 * 1000);
+
+    // ======================================================
+    // 🛑 Graceful shutdown
+    // ======================================================
+    async function shutdown(signal) {
+      console.log(`[shutdown] Received ${signal}. Stopping scheduler and server...`);
+      try {
+        stopAllJobs();
+      } catch {}
+
+      // Close server to stop accepting new connections
+      await new Promise((resolve) => server.close(() => resolve()))
+        .catch(() => {});
+      clearInterval(heartbeat);
+
+      // Persist any last-known cursor from memory if present
+      const cursor = globalThis.__pm_lastFetchCursor || null;
+      if (cursor) {
+        try {
+          await saveTracksCursor(cursor);
+          console.log('[shutdown] Cursor flushed to job_cursor.');
+        } catch (e) {
+          console.warn('[shutdown] Failed to flush cursor:', e?.message || String(e));
+        }
+      }
+
+      // Give a brief window for in-flight ops (best effort)
+      await new Promise((r) => setTimeout(r, 500));
+      console.log('[shutdown] Exiting now.');
+      process.exit(0);
+    }
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
   } catch (err) {
     console.error('[startup] ❌ Fatal error during backend boot:', err);
     process.exit(1);
