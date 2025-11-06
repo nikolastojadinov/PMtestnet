@@ -5,6 +5,7 @@
 
 import cron from 'node-cron';
 import { pickDaySlotList } from './searchSeedsGenerator.js';
+import { runSeedDiscovery } from './youtube.js';
 
 const TZ = process.env.TZ || 'Europe/Budapest';
 
@@ -38,6 +39,8 @@ export function startFixedJobs() {
         const day = getCycleDay();
         const queries = pickDaySlotList(day, slotIndex);
         console.log(`[scheduler] ${pattern} (${TZ}) → Seeds window (day=${day}, slot=${slotIndex}, queries=${queries.length})`);
+        const summary = await runSeedDiscovery(day, slotIndex);
+        console.log(`[seedDiscovery] 🟣 slot=${slotIndex} discovered=${summary.discovered} inserted=${summary.inserted} promoted=${summary.promoted} tracks=${summary.tracks} ✅ completed.`);
       },
       { timezone: TZ }
     ));

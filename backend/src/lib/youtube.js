@@ -4,7 +4,10 @@
 
 import { google } from 'googleapis';
 import { KeyPool, COST_TABLE } from './keyPool.js';
-import { pickDaySlotList } from './searchSeedsGenerator.js';
+import { getDaySlotSeeds, pickDaySlotList } from './searchSeedsGenerator.js';
+import { supabase } from './supabase.js';
+import { logApiUsage } from './metrics.js';
+import { setJobCursor } from './persistence.js';
 
 // Basic sleep utility (exported for convenience)
 export const sleep = (ms = 1000) => new Promise((res) => setTimeout(res, ms));
@@ -171,3 +174,202 @@ export async function validatePlaylists(externalIds = []) {
 
 // Keep default export for compatibility
 export default youtube;
+
+// -----------------------------
+// Seed discovery implementation
+// -----------------------------
+
+function localIso(timeZone = 'Europe/Budapest') {
+  const dt = new Date();
+  const fmt = new Intl.DateTimeFormat('hu-HU', {
+    timeZone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+  });
+  return fmt.format(dt).replace(' ', 'T');
+}
+
+function mapSearchItemToRaw(it, tags) {
+  return {
+    external_id: it.id?.playlistId,
+    title: it.snippet?.title || null,
+    description: it.snippet?.description || null,
+    channel_id: it.snippet?.channelId || null,
+    channel_title: it.snippet?.channelTitle || null,
+    region: tags?.region || null,
+    category: tags?.category || null,
+    thumbnail_url: it.snippet?.thumbnails?.high?.url || it.snippet?.thumbnails?.default?.url || null,
+    fetched_on: localIso(),
+    validated: false,
+    cycle_mode: 'SEEDS',
+  };
+}
+
+async function insertChunks(table, rows, chunkSize = 500) {
+  let inserted = 0;
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const chunk = rows.slice(i, i + chunkSize);
+    const { error } = await supabase.from(table).insert(chunk);
+    if (!error) inserted += chunk.length; else console.warn(`[seeds] ⚠️ insert ${table} chunk failed:`, error.message);
+  }
+  return inserted;
+}
+
+async function upsertPlaylists(rows) {
+  if (!rows.length) return 0;
+  const { error } = await supabase
+    .from('playlists')
+    .upsert(rows, { onConflict: 'external_id' });
+  if (error) console.warn('[seeds] ⚠️ upsert playlists failed:', error.message);
+  return rows.length;
+}
+
+async function upsertTracksAndLinks(playlistId, playlistUuid, items) {
+  // items: YouTube playlistItems objects
+  // Map tracks
+  const tracks = [];
+  const links = [];
+  let pos = 0;
+  for (const it of items) {
+    const videoId = it.contentDetails?.videoId;
+    if (!videoId) continue;
+    const title = it.snippet?.title || null;
+    const channel = it.snippet?.videoOwnerChannelTitle || it.snippet?.channelTitle || null;
+    const cover = it.snippet?.thumbnails?.high?.url || it.snippet?.thumbnails?.default?.url || null;
+    tracks.push({ source: 'youtube', external_id: videoId, title, artist: channel, cover_url: cover });
+    links.push({ playlist_id: playlistUuid, track_ext: videoId, position: pos++ });
+  }
+  // Upsert tracks by external_id
+  for (let i = 0; i < tracks.length; i += 500) {
+    const chunk = tracks.slice(i, i + 500);
+    const { error } = await supabase.from('tracks').upsert(chunk, { onConflict: 'external_id' });
+    if (error) console.warn('[seeds] ⚠️ upsert tracks failed:', error.message);
+  }
+  // Resolve track ids
+  if (links.length) {
+    const extIds = Array.from(new Set(links.map(l => l.track_ext)));
+    const { data, error } = await supabase
+      .from('tracks')
+      .select('id, external_id')
+      .in('external_id', extIds);
+    if (error) { console.warn('[seeds] ⚠️ fetch tracks ids failed:', error.message); return { tracksUpserted: tracks.length, linksUpserted: 0 }; }
+    const map = new Map((data || []).map(r => [r.external_id, r.id]));
+    const linkRows = links.map(l => ({ playlist_id: playlistUuid, track_id: map.get(l.track_ext), position: l.position }))
+      .filter(r => !!r.track_id);
+    for (let i = 0; i < linkRows.length; i += 500) {
+      const chunk = linkRows.slice(i, i + 500);
+      const { error: e2 } = await supabase.from('playlist_tracks').upsert(chunk, { onConflict: 'playlist_id,track_id' });
+      if (e2) console.warn('[seeds] ⚠️ upsert playlist_tracks failed:', e2.message);
+    }
+    return { tracksUpserted: tracks.length, linksUpserted: linkRows.length };
+  }
+  return { tracksUpserted: tracks.length, linksUpserted: 0 };
+}
+
+/**
+ * Run discovery for a given day/slot using pre-generated search seeds.
+ * - Uses search.list (type=playlist) for each seed query (maxResults=50)
+ * - Validates public playlists via playlists.list
+ * - Inserts into playlists_raw; promotes into playlists; optionally stores tracks
+ * - Writes job_cursor when completed
+ */
+export async function runSeedDiscovery(day, slot) {
+  const seeds = getDaySlotSeeds(day, slot);
+  console.log(`[seedDiscovery] 🟣 Starting slot ${slot} (day=${day}, TZ=${process.env.TZ||'Europe/Budapest'})`);
+  const seenIds = new Set();
+  const rawRows = [];
+  const apiKeyCount = keyPool.size();
+  let apiCalls = 0;
+
+  for (const seed of seeds) {
+    const q = seed.query;
+    let lastErr = null;
+    // rotate across keys on failure
+    for (let attempt = 0; attempt < Math.max(1, apiKeyCount); attempt++) {
+      const keyObj = await keyPool.selectKey('search.list');
+      const key = keyObj.key;
+      try {
+        const res = await youtube.search.list({
+          part: 'snippet',
+          type: 'playlist',
+          q,
+          maxResults: 50,
+          auth: key,
+        });
+        apiCalls++;
+        keyPool.markUsage(key, 'search.list', true);
+        await logApiUsage({ apiKey: key, endpoint: 'search.list', quotaCost: 100, status: 'ok' });
+        const items = res?.data?.items || [];
+        for (const it of items) {
+          const pid = it.id?.playlistId;
+          if (!pid || seenIds.has(pid)) continue;
+          seenIds.add(pid);
+          rawRows.push(mapSearchItemToRaw(it, seed.tags));
+        }
+        break; // success
+      } catch (err) {
+        lastErr = err;
+        const reason = err?.errors?.[0]?.reason || err?.response?.data?.error?.errors?.[0]?.reason || '';
+        if (reason === 'quotaExceeded' || reason === 'userRateLimitExceeded') {
+          console.warn(`[quota] search.list key ${String(key).slice(0,8)} exceeded → cooldown`);
+          keyPool.setCooldown(key, 60);
+          await logApiUsage({ apiKey: key, endpoint: 'search.list', quotaCost: 100, status: 'error', errorCode: reason, errorMessage: err?.message || String(err) });
+          await sleep(300);
+          continue;
+        }
+        console.warn('[youtube] ⚠️ search.list error:', err?.message || String(err));
+        await logApiUsage({ apiKey: key, endpoint: 'search.list', quotaCost: 100, status: 'error', errorCode: reason || 'unknown', errorMessage: err?.message || String(err) });
+        break;
+      }
+    }
+  }
+
+  const discovered = rawRows.length;
+  if (!discovered) {
+    await setJobCursor('seed_discovery', { day, slot, finished_at: localIso(), discovered: 0, inserted: 0, promoted: 0 });
+    console.log(`[seedDiscovery] 💤 No playlists discovered (day=${day} slot=${slot})`);
+    return { discovered: 0, inserted: 0, promoted: 0, tracks: 0 };
+  }
+
+  const ids = Array.from(seenIds);
+  // Validate visibility + counts
+  const validated = await validatePlaylists(ids);
+  const validIds = new Set(validated.filter(v => v.is_public && (v.item_count ?? 0) > 0).map(v => v.external_id));
+  const promote = rawRows.filter(x => validIds.has(x.external_id)).map((x) => ({
+    external_id: x.external_id,
+    title: x.title,
+    description: x.description,
+    channel_id: x.channel_id,
+    channel_title: x.channel_title,
+    cover_url: x.thumbnail_url,
+    region: x.region,
+    category: x.category,
+    is_public: true,
+    is_empty: false,
+    item_count: validated.find(v => v.external_id === x.external_id)?.item_count || null,
+    fetched_on: x.fetched_on,
+    last_refreshed_on: localIso(),
+  }));
+
+  const insertedRaw = await insertChunks('playlists_raw', rawRows);
+  const upserted = await upsertPlaylists(promote);
+
+  // Optionally fetch tracks for promoted playlists
+  let trackOps = 0;
+  for (const p of promote.slice(0, 50)) { // cap to 50 playlists per slot for tracks to control cost
+    try {
+      const items = await fetchPlaylistItems(p.external_id, 2);
+      // Resolve playlist id
+      const { data: plist, error } = await supabase.from('playlists').select('id').eq('external_id', p.external_id).maybeSingle();
+      if (error || !plist?.id) continue;
+      const stats = await upsertTracksAndLinks(p.external_id, plist.id, items || []);
+      trackOps += (stats?.tracksUpserted || 0);
+    } catch (e) {
+      console.warn('[seeds] ⚠️ track fetch error:', e?.message || String(e));
+    }
+  }
+
+  await setJobCursor('seed_discovery', { day, slot, finished_at: localIso(), discovered, inserted: insertedRaw, promoted: upserted, trackOps });
+  console.log(`[seedDiscovery] 🟣 slot=${slot} discovered=${discovered} inserted=${insertedRaw} promoted=${upserted} tracks=${trackOps} ✅ completed.`);
+  return { discovered, inserted: insertedRaw, promoted: upserted, tracks: trackOps };
+}
