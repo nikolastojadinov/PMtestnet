@@ -1,7 +1,7 @@
 // backend/src/lib/scheduler.js
 // ✅ Fixed local-time schedule for cloud runtimes
 // ✅ Timezone: Europe/Budapest (can override with TZ env)
-// ✅ Playlists @ 10:10; Cleanup @ 12:45→21:45; Tracks @ 13:00→22:00 (all local time)
+// ✅ Playlists @ 09:05; Pre-fetch selection @ 23:15→08:15; Tracks @ 23:30→08:30 (all local time)
 
 import cron from 'node-cron';
 import { runFetchPlaylists } from '../jobs/fetchPlaylists.js';
@@ -13,44 +13,56 @@ import { getJobState, getJobCursor, setJobCursor } from './persistence.js';
 
 const TZ = process.env.TZ || 'Europe/Budapest';
 
-// 📥 Daily playlists fetch: 09:05 local time
-const PLAYLIST_SCHEDULE = '5 9 * * *';
-
-// 🧹 Cleanup times (:45 from 12:45 → 21:45 local time)
-const CLEAN_SCHEDULES = [
-  '45 12 * * *','45 13 * * *','45 14 * * *','45 15 * * *','45 16 * * *',
-  '45 17 * * *','45 18 * * *','45 19 * * *','45 20 * * *','45 21 * * *',
+// 📥 Playlist fetch windows — every 30 min from 13:00 → 22:30 local time
+const PLAYLIST_CRON_TIMES = [
+  '0 13 * * *','30 13 * * *',
+  '0 14 * * *','30 14 * * *',
+  '0 15 * * *','30 15 * * *',
+  '0 16 * * *','30 16 * * *',
+  '0 17 * * *','30 17 * * *',
+  '0 18 * * *','30 18 * * *',
+  '0 19 * * *','30 19 * * *',
+  '0 20 * * *','30 20 * * *',
+  '0 21 * * *','30 21 * * *',
+  '0 22 * * *','30 22 * * *',
 ];
 
-// 🎵 Track fetch times (:00 from 13:00 → 22:00 local time)
+// ⏳ Pre-fetch selection times (15 past the hour from 23:15 → 08:15 local time)
+const CLEAN_SCHEDULES = [
+  '15 23 * * *','15 0 * * *','15 1 * * *','15 2 * * *','15 3 * * *',
+  '15 4 * * *','15 5 * * *','15 6 * * *','15 7 * * *','15 8 * * *',
+];
+
+// 🎵 Track fetch times (30 past the hour from 23:30 → 08:30 local time)
 const TRACK_SCHEDULES = [
-  '0 13 * * *','0 14 * * *','0 15 * * *','0 16 * * *','0 17 * * *',
-  '0 18 * * *','0 19 * * *','0 20 * * *','0 21 * * *','0 22 * * *',
+  '30 23 * * *','30 0 * * *','30 1 * * *','30 2 * * *','30 3 * * *',
+  '30 4 * * *','30 5 * * *','30 6 * * *','30 7 * * *','30 8 * * *',
 ];
 
 export function startFixedJobs() {
   const tasks = [];
-  // Daily playlist discovery
-  tasks.push(cron.schedule(
-    PLAYLIST_SCHEDULE,
-    async () => {
-      console.log(`[scheduler] ${PLAYLIST_SCHEDULE} (${TZ}) → Fetch playlists (daily)`);
-      // Daily init/reset window
-      keyPool.resetDaily();
-      await runFetchPlaylists();
-    },
-    { timezone: TZ }
-  ));
+  // Playlist fetch windows (20 runs/day at :00 and :30 from 13:00 → 22:30)
+  PLAYLIST_CRON_TIMES.forEach((pattern) => {
+    tasks.push(cron.schedule(
+      pattern,
+      async () => {
+        console.log(`[scheduler] ${pattern} (${TZ}) → Fetch playlists (window)`);
+        await runFetchPlaylists();
+      },
+      { timezone: TZ }
+    ));
+    console.log(`[scheduler] ⏰ Playlist fetch job active at ${pattern} (${TZ})`);
+  });
 
-  // Cleanup before track fetch window — select empty playlists (no delete)
+  // Pre-fetch selection before track fetch window — select empty playlists (no delete)
   CLEAN_SCHEDULES.forEach((pattern) => {
     tasks.push(cron.schedule(
       pattern,
       async () => {
-        console.log(`[scheduler] ${pattern} (${TZ}) → Select empty playlists (persisted job_state)`);
+        console.log(`[scheduler] ${pattern} (${TZ}) → Pre-fetch selection (persisted job_state)`);
         const ids = await selectEmptyPlaylists();
         const count = Array.isArray(ids) ? ids.length : 0;
-        console.log(`[scheduler] Selection persisted (${count} ids).`);
+        console.log(`[scheduler] Pre-fetch persisted (${count} ids).`);
       },
       { timezone: TZ }
     ));
@@ -78,12 +90,12 @@ export function startFixedJobs() {
   });
 
   console.log(`[scheduler] ✅ cron set (${TZ}):
-  - playlists@09:05
-  - cleanup@12:45→21:45
-  - tracks@13:00→22:00`);
+  - playlists@13:00→22:30 (every :00 and :30)
+  - prefetch@23:15→08:15
+  - tracks@23:30→08:30`);
 
   // Additional clarity logs
-  console.log(`[scheduler] ⏰ Playlist fetch job active at ${PLAYLIST_SCHEDULE} (${TZ})`);
+  // Playlist job activations logged above per pattern.
   console.log('[scheduler] ✅ YouTube key rotation system integrated and logging to api_usage table.');
 
   // Daily usage report at 12:40 local time
