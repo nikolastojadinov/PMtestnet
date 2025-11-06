@@ -32,9 +32,8 @@ export async function searchPlaylists({ query, regionCode, maxPages = 1 }) {
         pageToken,
       };
 
-      if (regionCode) {
-        console.warn('[youtube] ⚠️ Removing regionCode + videoCategoryId from playlist search (unsupported params)');
-      }
+      // Silent sanitization: regionCode and videoCategoryId are unsupported for type='playlist'.
+      // We intentionally do not include them in params and avoid log spam here.
 
       const keyObj = await keyPool.selectKey('search.list');
       const currentKey = keyObj.key;
