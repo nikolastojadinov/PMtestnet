@@ -143,8 +143,10 @@ export async function runFetchTracksWindow(batchSize = 15) {
         console.error(`[tracks] ❌ Error on ${playlistUUID}: ${e.message}`);
       }
 
-      // Persist cursor after each playlist
-      await setJobCursor(CURSOR_NAME, { job_name: CURSOR_NAME, index: (idx + 1), last_playlist_id: playlistUUID, updated_at: new Date().toISOString() });
+  // Persist cursor after each playlist
+  const cursorObj = { job_name: CURSOR_NAME, index: (idx + 1), last_playlist_id: playlistUUID, updated_at: new Date().toISOString() };
+  await setJobCursor(CURSOR_NAME, cursorObj);
+  globalThis.__pm_lastFetchCursor = cursorObj;
     }
   }
 
