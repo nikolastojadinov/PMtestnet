@@ -8,17 +8,12 @@
 import crypto from 'crypto';
 import { supabase } from './supabase.js';
 
-function localIso(timeZone = 'Europe/Budapest') {
-  const dt = new Date();
-  const fmt = new Intl.DateTimeFormat('sv-SE', {
-    timeZone,
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-    hour12: false
-  });
-  const parts = fmt.format(dt).replace(' ', 'T');
-  return parts;
+// Generate ISO 8601 timestamps compatible with PostgreSQL timestamptz
+function isoNow() {
+  return new Date().toISOString();
 }
+
+let printedOnce = false;
 
 export function hashKey(key) {
   if (!key) return null;
@@ -32,7 +27,7 @@ export function hashKey(key) {
 export async function logApiUsage(info = {}) {
   try {
     const payload = {
-      ts: localIso(),
+      ts: isoNow(),
       api_key_hash: hashKey(info.apiKey),
       endpoint: info.endpoint || 'unknown',
       quota_cost: info.quotaCost ?? null,
@@ -40,6 +35,12 @@ export async function logApiUsage(info = {}) {
       error_code: info.errorCode || null,
       error_message: info.errorMessage || null,
     };
+
+    // One-time verification log to confirm ISO format generation
+    if (!printedOnce) {
+      console.log(`[timestamp-test] generated ISO timestamp: ${payload.ts}`);
+      printedOnce = true;
+    }
 
     const { error } = await supabase.from('api_usage').insert(payload);
     if (error) console.warn('[metrics] ⚠️ Failed to log API usage:', error.message);
@@ -66,7 +67,7 @@ export async function logQuotaError(apiKey, endpoint, err) {
 export async function logDailyReport(data) {
   try {
     const payload = {
-      ts: localIso(),
+      ts: isoNow(),
       api_key_hash: null,
       endpoint: 'daily_report',
       quota_cost: null,

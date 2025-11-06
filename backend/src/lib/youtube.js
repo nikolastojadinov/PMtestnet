@@ -179,14 +179,8 @@ export default youtube;
 // Seed discovery implementation
 // -----------------------------
 
-function localIso(timeZone = 'Europe/Budapest') {
-  const dt = new Date();
-  const fmt = new Intl.DateTimeFormat('hu-HU', {
-    timeZone,
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
-  });
-  return fmt.format(dt).replace(' ', 'T');
+function isoNow() {
+  return new Date().toISOString();
 }
 
 function mapSearchItemToRaw(it, tags) {
@@ -198,8 +192,8 @@ function mapSearchItemToRaw(it, tags) {
     channel_title: it.snippet?.channelTitle || null,
     region: tags?.region || null,
     category: tags?.category || null,
-    thumbnail_url: it.snippet?.thumbnails?.high?.url || it.snippet?.thumbnails?.default?.url || null,
-    fetched_on: localIso(),
+  thumbnail_url: it.snippet?.thumbnails?.high?.url || it.snippet?.thumbnails?.default?.url || null,
+  fetched_on: isoNow(),
     validated: false,
     cycle_mode: 'SEEDS',
   };
@@ -326,7 +320,7 @@ export async function runSeedDiscovery(day, slot) {
 
   const discovered = rawRows.length;
   if (!discovered) {
-    await setJobCursor('seed_discovery', { day, slot, finished_at: localIso(), discovered: 0, inserted: 0, promoted: 0 });
+    await setJobCursor('seed_discovery', { day, slot, finished_at: isoNow(), discovered: 0, inserted: 0, promoted: 0 });
     console.log(`[seedDiscovery] 💤 No playlists discovered (day=${day} slot=${slot})`);
     return { discovered: 0, inserted: 0, promoted: 0, tracks: 0 };
   }
@@ -348,7 +342,7 @@ export async function runSeedDiscovery(day, slot) {
     is_empty: false,
     item_count: validated.find(v => v.external_id === x.external_id)?.item_count || null,
     fetched_on: x.fetched_on,
-    last_refreshed_on: localIso(),
+    last_refreshed_on: isoNow(),
   }));
 
   const insertedRaw = await insertChunks('playlists_raw', rawRows);
@@ -369,7 +363,7 @@ export async function runSeedDiscovery(day, slot) {
     }
   }
 
-  await setJobCursor('seed_discovery', { day, slot, finished_at: localIso(), discovered, inserted: insertedRaw, promoted: upserted, trackOps });
+  await setJobCursor('seed_discovery', { day, slot, finished_at: isoNow(), discovered, inserted: insertedRaw, promoted: upserted, trackOps });
   console.log(`[seedDiscovery] 🟣 slot=${slot} discovered=${discovered} inserted=${insertedRaw} promoted=${upserted} tracks=${trackOps} ✅ completed.`);
   return { discovered, inserted: insertedRaw, promoted: upserted, tracks: trackOps };
 }

@@ -5,14 +5,8 @@
 
 import { supabase } from './supabase.js';
 
-function localIso(timeZone = 'Europe/Budapest') {
-  const dt = new Date();
-  const fmt = new Intl.DateTimeFormat('sv-SE', {
-    timeZone,
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
-  });
-  return fmt.format(dt).replace(' ', 'T');
+function isoNow() {
+  return new Date().toISOString();
 }
 
 const STATE_TABLE = 'job_state';
@@ -29,7 +23,7 @@ export async function getJobState(key) {
 }
 
 export async function setJobState(key, value) {
-  const payload = { key, value, updated_at: localIso() };
+  const payload = { key, value, updated_at: isoNow() };
   const { error } = await supabase
     .from(STATE_TABLE)
     .upsert(payload, { onConflict: 'key' });
@@ -57,7 +51,7 @@ export async function setJobCursor(job_name, cursorObject) {
     if (error) throw error;
     return true;
   }
-  const payload = { job_name, cursor: cursorObject, updated_at: localIso() };
+  const payload = { job_name, cursor: cursorObject, updated_at: isoNow() };
   const { error } = await supabase
     .from(CURSOR_TABLE)
     .upsert(payload, { onConflict: 'job_name' });
