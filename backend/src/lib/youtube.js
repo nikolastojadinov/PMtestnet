@@ -7,7 +7,7 @@ import { KeyPool, COST_TABLE } from './keyPool.js';
 import { getDaySlotSeeds, pickDaySlotList } from './searchSeedsGenerator.js';
 import { supabase } from './supabase.js';
 import { logApiUsage } from './metrics.js';
-import { setJobCursor, upsertTracksSafe, upsertPlaylistTracksSafe } from './persistence.js';
+import { setJobCursor } from './persistence.js';
 
 // Basic sleep utility (exported for convenience)
 export const sleep = (ms = 1000) => new Promise((res) => setTimeout(res, ms));
@@ -218,39 +218,7 @@ async function upsertPlaylists(rows) {
   return rows.length;
 }
 
-async function upsertTracksAndLinks(playlistId, playlistUuid, items) {
-  // items: YouTube playlistItems objects
-  // Map tracks
-  const tracks = [];
-  const links = [];
-  let pos = 0;
-  for (const it of items) {
-    const videoId = it.contentDetails?.videoId;
-    if (!videoId) continue;
-    const title = it.snippet?.title || null;
-    const channel = it.snippet?.videoOwnerChannelTitle || it.snippet?.channelTitle || null;
-    const cover = it.snippet?.thumbnails?.high?.url || it.snippet?.thumbnails?.default?.url || null;
-    tracks.push({ source: 'youtube', external_id: videoId, title, artist: channel, cover_url: cover });
-    links.push({ playlist_id: playlistUuid, track_ext: videoId, position: pos++ });
-  }
-  // Upsert tracks by external_id (safe, deduped)
-  await upsertTracksSafe(tracks, 500);
-  // Resolve track ids
-  if (links.length) {
-    const extIds = Array.from(new Set(links.map(l => l.track_ext)));
-    const { data, error } = await supabase
-      .from('tracks')
-      .select('id, external_id')
-      .in('external_id', extIds);
-    if (error) { console.warn('[seeds] ⚠️ fetch tracks ids failed:', error.message); return { tracksUpserted: tracks.length, linksUpserted: 0 }; }
-    const map = new Map((data || []).map(r => [r.external_id, r.id]));
-    const linkRows = links.map(l => ({ playlist_id: playlistUuid, track_id: map.get(l.track_ext), position: l.position }))
-      .filter(r => !!r.track_id);
-    await upsertPlaylistTracksSafe(linkRows, 500);
-    return { tracksUpserted: tracks.length, linksUpserted: linkRows.length };
-  }
-  return { tracksUpserted: tracks.length, linksUpserted: 0 };
-}
+// Track writing removed for metadata-only seed discovery mode.
 
 /**
  * Run discovery for a given day/slot using pre-generated search seeds.
@@ -340,22 +308,8 @@ export async function runSeedDiscovery(day, slot) {
   const insertedRaw = await insertChunks('playlists_raw', rawRows);
   const upserted = await upsertPlaylists(promote);
 
-  // Optionally fetch tracks for promoted playlists
-  let trackOps = 0;
-  for (const p of promote.slice(0, 50)) { // cap to 50 playlists per slot for tracks to control cost
-    try {
-      const items = await fetchPlaylistItems(p.external_id, 2);
-      // Resolve playlist id
-      const { data: plist, error } = await supabase.from('playlists').select('id').eq('external_id', p.external_id).maybeSingle();
-      if (error || !plist?.id) continue;
-      const stats = await upsertTracksAndLinks(p.external_id, plist.id, items || []);
-      trackOps += (stats?.tracksUpserted || 0);
-    } catch (e) {
-      console.warn('[seeds] ⚠️ track fetch error:', e?.message || String(e));
-    }
-  }
-
-  await setJobCursor('seed_discovery', { day, slot, finished_at: isoNow(), discovered, inserted: insertedRaw, promoted: upserted, trackOps });
-  console.log(`[seedDiscovery] 🟣 slot=${slot} discovered=${discovered} inserted=${insertedRaw} promoted=${upserted} tracks=${trackOps} ✅ completed.`);
-  return { discovered, inserted: insertedRaw, promoted: upserted, tracks: trackOps };
+  // Metadata-only: no track/item fetch during seed discovery
+  await setJobCursor('seed_discovery', { day, slot, finished_at: isoNow(), discovered, inserted: insertedRaw, promoted: upserted, tracks: 0 });
+  console.log(`[seedDiscovery] metadata-only: discovered=${discovered} inserted_raw=${insertedRaw} promoted=${upserted} (no tracks written)`);
+  return { discovered, inserted: insertedRaw, promoted: upserted, tracks: 0 };
 }

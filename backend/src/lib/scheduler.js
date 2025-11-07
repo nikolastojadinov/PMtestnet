@@ -8,7 +8,7 @@
 
 import cron from 'node-cron';
 import { pickDaySlotList } from './searchSeedsGenerator.js';
-import { runSeedDiscovery, runTrackFetchCycle, runWarmupCycle } from './jobs.js';
+import { runSeedDiscovery, runTrackFetchCycle, runWarmupCycle, runPurgeTracks } from './jobs.js';
 import { loadJobCursor as loadCursor, saveJobCursor as saveCursor } from './persistence.js';
 
 const TZ = process.env.TZ || 'Europe/Budapest';
@@ -174,6 +174,14 @@ export function startFixedJobs() {
     }, { timezone: TZ }));
     console.log(`[scheduler] ⏰ Track-fetch job active at ${pattern} (${TZ})`);
   });
+
+  // Purge-tracks daily at 19:00 (cron-only)
+  const purgePattern = '0 19 * * *';
+  tasks.push(cron.schedule(purgePattern, async () => {
+    console.log(`[scheduler] 🧹 purge-tracks job triggered (${purgePattern} Europe/Budapest)`);
+    try { await runPurgeTracks(); } catch (e) { console.warn('[purge-tracks] ⚠️ error:', e?.message || String(e)); }
+  }, { timezone: TZ }));
+  console.log(`[scheduler] ⏰ Purge-tracks job active at ${purgePattern} (${TZ})`);
 
   console.log(`[scheduler] ✅ cron set (${TZ}):\n  - playlists@09:05→18:35 (every 30 min)\n  - warm-up@19:15→04:15 (every 60 min)\n  - tracks@19:30→04:30 (every 60 min)`);
   console.log('[scheduler] 🔒 No auto-start after deploy — waiting for cron signals only.');
