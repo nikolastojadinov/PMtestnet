@@ -208,3 +208,12 @@ export function stopAllJobs() {
     }
   }
 }
+
+// 6) Backward-compatible cycle day helper (needed by index.js for initial seed trigger)
+export function getCycleDay(now = new Date()) {
+  const startEnv = process.env.CYCLE_START_DATE || '2025-10-27';
+  const [y, m, d] = startEnv.split('-').map(Number);
+  const start = new Date(y, (m || 1) - 1, d || 1);
+  const diffDays = Math.floor((Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) - Date.UTC(start.getFullYear(), start.getMonth(), start.getDate())) / (24 * 3600 * 1000));
+  return ((diffDays % 29) + 29) % 29 + 1; // 1..29
+}
