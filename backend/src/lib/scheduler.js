@@ -8,8 +8,8 @@
 
 import cron from 'node-cron';
 import { pickDaySlotList } from './searchSeedsGenerator.js';
-import { runSeedDiscovery } from './youtube.js';
-import { supabase } from './supabase.js';
+import { runSeedDiscovery, runTrackFetchCycle, runWarmupCycle } from './jobs.js';
+import { loadJobCursor as loadCursor, saveJobCursor as saveCursor } from './persistence.js';
 
 const TZ = process.env.TZ || 'Europe/Budapest';
 process.env.TZ = TZ; // enforce timezone
@@ -45,7 +45,6 @@ const trackFetchSlots = [
 ];
 
 // 2) Persistence helpers
-const JOB_NAME = 'playlist_scheduler';
 let cursor = { day: 1, slot: 0 };
 let cursorReady = false;
 let running = false;
@@ -54,17 +53,12 @@ function isoNow() { return new Date().toISOString(); }
 
 export async function loadJobCursor() {
   try {
-    const { data, error } = await supabase
-      .from('job_cursor')
-      .select('cursor')
-      .eq('job_name', JOB_NAME)
-      .maybeSingle();
-    if (error) throw error;
-    if (data?.cursor && typeof data.cursor.day === 'number' && typeof data.cursor.slot === 'number') {
-      cursor = { day: data.cursor.day, slot: data.cursor.slot };
+    const c = await loadCursor('playlist_scheduler');
+    if (c && typeof c.day === 'number' && typeof c.slot === 'number') {
+      cursor = { day: c.day, slot: c.slot };
       console.log(`[cursor] resumed day=${cursor.day} slot=${cursor.slot} after restart`);
     } else {
-      await updateJobCursor(1, 0);
+      await saveCursor({ day: 1, slot: 0, last_run: isoNow() }, 'playlist_scheduler');
       console.log('[cursor] initialized day=1 slot=0');
     }
     cursorReady = true;
@@ -75,15 +69,7 @@ export async function loadJobCursor() {
 }
 
 export async function updateJobCursor(day, slot) {
-  const payload = {
-    job_name: JOB_NAME,
-    cursor: { day, slot, last_run: isoNow() },
-    updated_at: isoNow(),
-  };
-  const { error } = await supabase
-    .from('job_cursor')
-    .upsert(payload, { onConflict: 'job_name' });
-  if (error) throw error;
+  await saveCursor({ day, slot, last_run: isoNow() }, 'playlist_scheduler');
   cursor = { day, slot };
 }
 
@@ -151,7 +137,7 @@ export function startFixedJobs() {
   // Load cursor on startup without changing index.js signature
   (async () => { await loadJobCursor(); })();
 
-  // Playlists — persistent day/slot progression
+  // Playlists — persistent day/slot progression (cron-only, no auto-run on startup)
   playlistSlots.forEach((pattern) => {
     tasks.push(cron.schedule(pattern, async () => {
       if (!cursorReady) await loadJobCursor();
@@ -164,8 +150,6 @@ export function startFixedJobs() {
       try {
         const summary = await runSeedDiscovery(day, slot);
         console.log(`[seedDiscovery] ✅ slot=${slot} discovered=${summary.discovered} inserted=${summary.inserted} promoted=${summary.promoted} tracks=${summary.tracks}`);
-        // Post-step: categorize any unlabeled playlists
-        await categorizeUnlabeledPlaylists(200);
         // Advance cursor deterministically
         const nextSlot = (slot + 1) % 20;
         const nextDay = nextSlot === 0 ? ((day % 29) + 1) : day;
@@ -179,25 +163,26 @@ export function startFixedJobs() {
     console.log(`[scheduler] ⏰ Playlist fetch job active at ${pattern} (${TZ})`);
   });
 
-  // Warm-up
+  // Warm-up (cron-only)
   warmupSlots.forEach((pattern) => {
     tasks.push(cron.schedule(pattern, async () => {
       console.log(`[scheduler] 🔸 Warm-up job triggered (${pattern} Europe/Budapest)`);
-      try { await runPrecheckTasks(); } catch (e) { console.warn('[warmup] ⚠️ precheck error:', e?.message || String(e)); }
+      try { await runWarmupCycle(cursor.day, cursor.slot); } catch (e) { console.warn('[warmup] ⚠️ precheck error:', e?.message || String(e)); }
     }, { timezone: TZ }));
     console.log(`[scheduler] ⏰ Warm-up job active at ${pattern} (${TZ})`);
   });
 
-  // Tracks
+  // Tracks (cron-only)
   trackFetchSlots.forEach((pattern) => {
     tasks.push(cron.schedule(pattern, async () => {
       console.log(`[scheduler] 🎵 Track-fetch job triggered (${pattern} Europe/Budapest)`);
-      try { await runTrackFetchCycle(); console.log(`[scheduler] ✅ Track-fetch completed for ${pattern}`); } catch (e) { console.warn('[tracks] ⚠️ track-fetch error:', e?.message || String(e)); }
+      try { await runTrackFetchCycle(cursor.day, cursor.slot); console.log(`[scheduler] ✅ Track-fetch completed for ${pattern}`); } catch (e) { console.warn('[tracks] ⚠️ track-fetch error:', e?.message || String(e)); }
     }, { timezone: TZ }));
     console.log(`[scheduler] ⏰ Track-fetch job active at ${pattern} (${TZ})`);
   });
 
   console.log(`[scheduler] ✅ cron set (${TZ}):\n  - playlists@09:05→18:35 (every 30 min)\n  - warm-up@19:15→04:15 (every 60 min)\n  - tracks@19:30→04:30 (every 60 min)`);
+  console.log('[scheduler] 🔒 No auto-start after deploy — waiting for cron signals only.');
   startFixedJobs._tasks = tasks;
 }
 

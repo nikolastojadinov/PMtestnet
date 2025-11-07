@@ -146,6 +146,19 @@ export async function setJobCursor(job_name, cursorObject) {
   return true;
 }
 
+// Convenience wrappers for playlist scheduler cursor
+export async function loadJobCursor(jobName = 'playlist_scheduler') {
+  try {
+    return await getJobCursor(jobName);
+  } catch {
+    return null;
+  }
+}
+
+export async function saveJobCursor(cursorObject, jobName = 'playlist_scheduler') {
+  return setJobCursor(jobName, cursorObject);
+}
+
 export default {
   dedupeTracks,
   dedupePlaylistTracks,
@@ -156,4 +169,6 @@ export default {
   setJobState,
   getJobCursor,
   setJobCursor,
+  loadJobCursor,
+  saveJobCursor,
 };

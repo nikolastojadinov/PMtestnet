@@ -4,7 +4,6 @@ import http from 'http';
 import supabase from './lib/supabase.js';
 import { startFixedJobs, stopAllJobs, getCycleDay } from './lib/scheduler.js';
 import { verifySupabaseSchema } from './lib/persistence.js';
-import { runSeedDiscovery } from './lib/youtube.js';
 import { pickDailyList } from './lib/searchSeedsGenerator.js';
 
 // ======================================================
@@ -55,27 +54,9 @@ async function main() {
     }
 
   console.log('[startup] Scheduling fixed cron jobs...');
-  // Start scheduled jobs (local time): playlists daily, cleanup hourly, tracks hourly
+  // Start scheduled jobs (local time): playlists daily, warm-up hourly, tracks hourly
     startFixedJobs();
   console.log('[startup] ✅ Scheduler initialized (local-time schedule)');
-
-    // Kick off an initial discovery for the current day/slot immediately
-    try {
-      const now = new Date();
-      const tz = process.env.TZ || 'Europe/Budapest';
-      const fmt = new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false });
-      const [hStr, mStr] = fmt.format(now).split(':');
-      const hour = parseInt(hStr, 10);
-      const minute = parseInt(mStr, 10);
-      let slot;
-      if (hour < 13) slot = 0; else if (hour > 22 || (hour === 22 && minute > 30)) slot = 19; else slot = (hour - 13) * 2 + (minute >= 30 ? 1 : 0);
-      const day = getCycleDay(now);
-      console.log(`[startup] 🔁 Initial seed discovery started (day=${day}, slot=${slot})`);
-      // Fire and forget; no await to avoid blocking boot too long
-      runSeedDiscovery(day, slot).catch((e) => console.warn('[startup] initial runSeedDiscovery failed:', e?.message || String(e)));
-    } catch (e) {
-      console.warn('[startup] ⚠️ Could not trigger initial seed discovery:', e?.message || String(e));
-    }
 
     // ======================================================
     // 🩺 Lightweight HTTP server (for /healthz and /info)
@@ -99,7 +80,7 @@ async function main() {
           version: 'v6.0-seeds',
           cron: {
             timezone: TZ,
-            seedSlots: '20 slots @ :00/:30 13:00→22:30',
+            seedSlots: '20 slots @ :05/:35 09:05→18:35',
           },
           env: {
             supabase: !!process.env.SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE,
