@@ -123,13 +123,7 @@ async function categorizeUnlabeledPlaylists(limit = 200) {
   }
 }
 
-// 4) Warm-up and track stubs (kept simple)
-async function runPrecheckTasks() {
-  console.log('[warmup] 🔸 Precheck tasks executed');
-}
-async function runTrackFetchCycle() {
-  console.log('[tracks] 🎵 Track fetch cycle executed (stub)');
-}
+// 4) Warm-up and track jobs are imported from ./jobs.js
 
 // 5) Start scheduler
 export function startFixedJobs() {
