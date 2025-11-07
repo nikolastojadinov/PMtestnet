@@ -7,7 +7,7 @@ import { KeyPool, COST_TABLE } from './keyPool.js';
 import { getDaySlotSeeds, pickDaySlotList } from './searchSeedsGenerator.js';
 import { supabase } from './supabase.js';
 import { logApiUsage } from './metrics.js';
-import { setJobCursor } from './persistence.js';
+import { setJobCursor, upsertTracksSafe, upsertPlaylistTracksSafe } from './persistence.js';
 
 // Basic sleep utility (exported for convenience)
 export const sleep = (ms = 1000) => new Promise((res) => setTimeout(res, ms));
@@ -233,12 +233,8 @@ async function upsertTracksAndLinks(playlistId, playlistUuid, items) {
     tracks.push({ source: 'youtube', external_id: videoId, title, artist: channel, cover_url: cover });
     links.push({ playlist_id: playlistUuid, track_ext: videoId, position: pos++ });
   }
-  // Upsert tracks by external_id
-  for (let i = 0; i < tracks.length; i += 500) {
-    const chunk = tracks.slice(i, i + 500);
-    const { error } = await supabase.from('tracks').upsert(chunk, { onConflict: 'external_id' });
-    if (error) console.warn('[seeds] ⚠️ upsert tracks failed:', error.message);
-  }
+  // Upsert tracks by external_id (safe, deduped)
+  await upsertTracksSafe(tracks, 500);
   // Resolve track ids
   if (links.length) {
     const extIds = Array.from(new Set(links.map(l => l.track_ext)));
@@ -250,11 +246,7 @@ async function upsertTracksAndLinks(playlistId, playlistUuid, items) {
     const map = new Map((data || []).map(r => [r.external_id, r.id]));
     const linkRows = links.map(l => ({ playlist_id: playlistUuid, track_id: map.get(l.track_ext), position: l.position }))
       .filter(r => !!r.track_id);
-    for (let i = 0; i < linkRows.length; i += 500) {
-      const chunk = linkRows.slice(i, i + 500);
-      const { error: e2 } = await supabase.from('playlist_tracks').upsert(chunk, { onConflict: 'playlist_id,track_id' });
-      if (e2) console.warn('[seeds] ⚠️ upsert playlist_tracks failed:', e2.message);
-    }
+    await upsertPlaylistTracksSafe(linkRows, 500);
     return { tracksUpserted: tracks.length, linksUpserted: linkRows.length };
   }
   return { tracksUpserted: tracks.length, linksUpserted: 0 };

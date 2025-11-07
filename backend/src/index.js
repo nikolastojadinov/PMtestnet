@@ -3,6 +3,7 @@
 import http from 'http';
 import supabase from './lib/supabase.js';
 import { startFixedJobs, stopAllJobs, getCycleDay } from './lib/scheduler.js';
+import { verifySupabaseSchema } from './lib/persistence.js';
 import { runSeedDiscovery } from './lib/youtube.js';
 import { pickDailyList } from './lib/searchSeedsGenerator.js';
 
@@ -38,6 +39,13 @@ async function main() {
       process.exit(1);
     }
     console.log('[startup] ✅ Supabase client ready');
+
+    // Verify/ensure unique constraints before any upsert occurs
+    try {
+      await verifySupabaseSchema();
+    } catch (e) {
+      console.warn('[startup] ⚠️ Schema verification skipped:', e?.message || String(e));
+    }
 
     if (!process.env.YOUTUBE_API_KEYS) {
       console.warn('[startup] ⚠️ Missing YOUTUBE_API_KEYS — YouTube fetch jobs will be skipped.');
