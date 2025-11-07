@@ -14,7 +14,7 @@ import cron from 'node-cron';
 import supabase from './supabase.js';
 import { pickDaySlotList } from './searchSeedsGenerator.js';
 import { runSeedDiscovery, runPurgeTracks } from './jobs.js';
-import { loadJobCursor as loadCursor, saveJobCursor as saveCursor, upsertTracksSafe, upsertPlaylistTracksSafe } from './persistence.js';
+import { loadJobCursor as loadCursor, saveJobCursor as saveCursor, upsertTracksSafe, upsertPlaylistTracksSafe, setJobState } from './persistence.js';
 import { fetchPlaylistItems, sleep } from './youtube.js';
 
 const TZ = process.env.TZ || 'Europe/Budapest';
@@ -48,19 +48,17 @@ let running = false;
 
 function isoNow() { return new Date().toISOString(); }
 
+// Playlist cursor retained ONLY for daytime playlist discovery; do not resume old slot after restart
 export async function loadJobCursor() {
   try {
-    const c = await loadCursor('playlist_scheduler');
-    if (c && typeof c.day === 'number' && typeof c.slot === 'number') {
-      cursor = { day: c.day, slot: c.slot };
-      console.log(`[cursor] resumed day=${cursor.day} slot=${cursor.slot} after restart`);
-    } else {
-      await saveCursor({ day: 1, slot: 0, last_run: isoNow() }, 'playlist_scheduler');
-      console.log('[cursor] initialized day=1 slot=0');
-    }
+    // Always recompute cycle day fresh; start slot at 0 daily
+    const day = getCycleDay(new Date());
+    cursor = { day, slot: 0 };
+    await saveCursor({ day, slot: 0, last_run: isoNow() }, 'playlist_scheduler');
+    console.log(`[cursor] fresh init day=${day} slot=0 (no resume)`);
     cursorReady = true;
   } catch (e) {
-    console.warn('[cursor] ⚠️ failed to load job_cursor — defaulting to day=1 slot=0:', e?.message || String(e));
+    console.warn('[cursor] ⚠️ cursor init failed — using defaults:', e?.message || String(e));
     cursorReady = true;
   }
 }
@@ -192,7 +190,7 @@ async function processStatelessTrackSlot(now = new Date()) {
   try { await supabase.from('job_state').upsert({ key: `track_slot_${slotId}`, value: { started_at: now.toISOString() } }, { onConflict: 'key' }); } catch {}
 
   // 1. Warm-up target selection (RPC then fallback)
-  const targetLimit = randInt(3000, 3500);
+  const targetLimit = 3500; // request upper bound; RPC will internally apply least(p_limit,3500)
   let targets = await rpcPrepareWarmup(targetLimit);
   if (!targets) targets = await fallbackSelectWarmup(targetLimit);
   if (!targets || !targets.length) {
@@ -201,6 +199,8 @@ async function processStatelessTrackSlot(now = new Date()) {
     return;
   }
   console.log(`[warmup] 🎯 prepared ${targets.length} playlists for slot ${slotId} (tracks=0)`);
+  // Persist target summary for observability/debug (non-lock)
+  try { await setJobState(`warmup_summary_${slotId}`, { count: targets.length, generated_at: isoNow() }); } catch {}
 
   // 2. Track fetch & persistence (stateless workers)
   const total = targets.length;
