@@ -7,9 +7,11 @@
 // - Persistence: day/slot resume via job_cursor
 
 import cron from 'node-cron';
+import supabase from './supabase.js';
 import { pickDaySlotList } from './searchSeedsGenerator.js';
-import { runSeedDiscovery, runTrackFetchCycle, runWarmupCycle, runPurgeTracks } from './jobs.js';
-import { loadJobCursor as loadCursor, saveJobCursor as saveCursor } from './persistence.js';
+import { runSeedDiscovery, runPurgeTracks } from './jobs.js';
+import { loadJobCursor as loadCursor, saveJobCursor as saveCursor, setJobState, getJobState, upsertTracksSafe, upsertPlaylistTracksSafe } from './persistence.js';
+import { fetchPlaylistItems, sleep } from './youtube.js';
 
 const TZ = process.env.TZ || 'Europe/Budapest';
 process.env.TZ = TZ; // enforce timezone
@@ -28,20 +30,25 @@ const playlistSlots = [
   '5 18 * * *', '35 18 * * *',
 ];
 
+// Nightly warm-up and track-fetch (balanced 30-min cadence)
+// warm-up: 19:25, 19:55, ... 03:55, 04:25 (not 04:55)
 const warmupSlots = [
-  '15 19 * * *', '15 20 * * *',
-  '15 21 * * *', '15 22 * * *',
-  '15 23 * * *', '15 0 * * *',
-  '15 1 * * *',  '15 2 * * *',
-  '15 3 * * *',  '15 4 * * *',
+  // :25 for 19..04
+  '25 19 * * *', '25 20 * * *', '25 21 * * *', '25 22 * * *', '25 23 * * *',
+  '25 0 * * *',  '25 1 * * *',  '25 2 * * *',  '25 3 * * *',  '25 4 * * *',
+  // :55 for 19..03 only (04:55 excluded)
+  '55 19 * * *', '55 20 * * *', '55 21 * * *', '55 22 * * *', '55 23 * * *',
+  '55 0 * * *',  '55 1 * * *',  '55 2 * * *',  '55 3 * * *',
 ];
 
+// track-fetch: starts 5 min after warm-up → 19:30, 20:00, ... 04:30
 const trackFetchSlots = [
-  '30 19 * * *', '30 20 * * *',
-  '30 21 * * *', '30 22 * * *',
-  '30 23 * * *', '30 0 * * *',
-  '30 1 * * *',  '30 2 * * *',
-  '30 3 * * *',  '30 4 * * *',
+  // :30 for 19..04
+  '30 19 * * *', '30 20 * * *', '30 21 * * *', '30 22 * * *', '30 23 * * *',
+  '30 0 * * *',  '30 1 * * *',  '30 2 * * *',  '30 3 * * *',  '30 4 * * *',
+  // :00 for 20..04 (19:00 excluded)
+  '0 20 * * *',  '0 21 * * *',  '0 22 * * *',  '0 23 * * *', '0 0 * * *',
+  '0 1 * * *',   '0 2 * * *',   '0 3 * * *',   '0 4 * * *',
 ];
 
 // 2) Persistence helpers
@@ -123,7 +130,190 @@ async function categorizeUnlabeledPlaylists(limit = 200) {
   }
 }
 
-// 4) Warm-up and track jobs are imported from ./jobs.js
+// 4) Warm-up preparation and track-fetch orchestration (balanced nightly cadence)
+
+function slotLabelFromDate(d) {
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+function nextTrackSlotLabel(now = new Date()) {
+  const m = now.getMinutes();
+  const base = new Date(now);
+  base.setSeconds(0, 0);
+  if (m < 30) { base.setMinutes(30); } else { base.setMinutes(60); }
+  return slotLabelFromDate(base);
+}
+
+function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+
+async function selectPlaylistsWithoutTracks(target) {
+  // Strategy: fetch a large recent sample, then filter out those with any playlist_tracks
+  const LIMIT_POOL = Math.max(5000, Math.min(12000, target * 3));
+  const { data: pool, error } = await supabase
+    .from('playlists')
+    .select('id,external_id')
+    .eq('is_public', true)
+    .gte('item_count', 1)
+    .order('last_refreshed_on', { ascending: true, nullsFirst: true })
+    .limit(LIMIT_POOL);
+  if (error) { console.warn('[warmup] ⚠️ pool select failed:', error.message); return []; }
+  if (!pool?.length) return [];
+  // Shuffle pool (Fisher-Yates)
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  const ids = pool.map(p => p.id);
+  const existing = new Set();
+  const BATCH = 500;
+  for (let i = 0; i < ids.length; i += BATCH) {
+    const chunk = ids.slice(i, i + BATCH);
+    const { data, error: e2 } = await supabase
+      .from('playlist_tracks')
+      .select('playlist_id')
+      .in('playlist_id', chunk)
+      .limit(1);
+    if (!e2 && data) {
+      for (const r of data) existing.add(r.playlist_id);
+    }
+    await sleep(60);
+  }
+  const candidates = [];
+  for (const p of pool) {
+    if (!existing.has(p.id)) candidates.push(p);
+    if (candidates.length >= target) break;
+  }
+  return candidates;
+}
+
+async function prepareWarmupSlot(now = new Date()) {
+  const slot = nextTrackSlotLabel(now);
+  const target = randInt(3000, 3500);
+  const candidates = await selectPlaylistsWithoutTracks(target);
+  const payload = {
+    slot,
+    created_at: isoNow(),
+    target,
+    count: candidates.length,
+    playlists: candidates, // [{id, external_id}]
+  };
+  await setJobState(`track_targets_${slot}`, payload);
+  console.log(`[warmup] 🎯 prepared ${payload.count} playlists for slot ${slot} (tracks=0)`);
+}
+
+function mapItemToTrackAndLink(plId, item, pos) {
+  const videoId = item?.contentDetails?.videoId || item?.snippet?.resourceId?.videoId || null;
+  if (!videoId) return null;
+  const track = {
+    external_id: videoId,
+    title: item?.snippet?.title || null,
+    artist: item?.snippet?.videoOwnerChannelTitle || item?.snippet?.channelTitle || null,
+    cover_url: item?.snippet?.thumbnails?.high?.url || item?.snippet?.thumbnails?.default?.url || null,
+  };
+  const link = { playlist_id: plId, track_id: null, position: pos };
+  return { track, link };
+}
+
+async function processTrackFetchSlot(now = new Date()) {
+  const slot = slotLabelFromDate(now);
+  const key = `track_targets_${slot}`;
+  const prepared = await getJobState(key);
+  let list = prepared?.playlists || [];
+  let target = prepared?.target || 0;
+  if (!list?.length) {
+    // Fallback: prepare immediately with 3000 baseline
+    target = 3000;
+    list = await selectPlaylistsWithoutTracks(target);
+  }
+  const total = Math.min(target || list.length, list.length);
+  console.log(`[tracks] 🎬 slot ${slot} started (target=${total})`);
+
+  const start = Date.now();
+  const deadline = start + 20 * 60 * 1000; // 20m cap
+  const workers = Math.min(12, Math.max(10, Math.round(total / 300)));
+  const chunkSize = Math.ceil(total / workers);
+  let processed = 0;
+  let apiCalls = 0;
+  let stopped = false;
+
+  const tasks = [];
+  for (let w = 0; w < workers; w++) {
+    const slice = list.slice(w * chunkSize, Math.min((w + 1) * chunkSize, total));
+    tasks.push((async () => {
+      const tracksBuf = [];
+      const linksBuf = [];
+      let localCalls = 0;
+      for (let i = 0; i < slice.length; i++) {
+        if (Date.now() > deadline) { stopped = true; break; }
+        const pl = slice[i];
+        // natural pacing 180–220ms
+        await sleep(180 + Math.floor(Math.random() * 41));
+        try {
+          const items = await fetchPlaylistItems(pl.external_id, 1);
+          localCalls += 1; // approx one API call per playlist (1 page)
+          const MAX_ITEMS = 200;
+          for (let k = 0; k < Math.min(items.length, MAX_ITEMS); k++) {
+            const mapped = mapItemToTrackAndLink(pl.id, items[k], k + 1);
+            if (mapped) {
+              tracksBuf.push(mapped.track);
+              // We'll set link.track_id by later join after upsert (not available here). For now, persistence will rely on unique external_id to map.
+              linksBuf.push({ playlist_id: pl.id, external_id: mapped.track.external_id, position: mapped.link.position });
+            }
+          }
+        } catch (e) {
+          // continue on errors
+        }
+        processed++;
+        apiCalls++;
+        if (processed % 1000 === 0) {
+          console.log(`[tracks] ⏱ progress: ${processed}/${total} playlists fetched`);
+        }
+        if (localCalls % 300 === 0) {
+          await sleep(2000 + Math.floor(Math.random() * 1001));
+        }
+        // Periodic flush to DB for this worker
+        if (tracksBuf.length >= 1000 || i === slice.length - 1 || stopped) {
+          if (tracksBuf.length) {
+            await upsertTracksSafe(tracksBuf, 500);
+            // Resolve external_id→id mapping for links, then upsert playlist_tracks
+            const ids = Array.from(new Set(linksBuf.map(l => l.external_id)));
+            const map = new Map();
+            // Resolve in chunks
+            for (let t = 0; t < ids.length; t += 500) {
+              const chunk = ids.slice(t, t + 500);
+              const { data, error } = await supabase
+                .from('tracks')
+                .select('id,external_id')
+                .in('external_id', chunk);
+              if (!error && data) {
+                for (const r of data) map.set(r.external_id, r.id);
+              }
+              await sleep(50);
+            }
+            const linkRows = linksBuf
+              .map(l => ({ playlist_id: l.playlist_id, track_id: map.get(l.external_id), position: l.position }))
+              .filter(x => x.track_id);
+            if (linkRows.length) await upsertPlaylistTracksSafe(linkRows, 500);
+          }
+          tracksBuf.length = 0;
+          linksBuf.length = 0;
+        }
+      }
+    })());
+  }
+
+  await Promise.allSettled(tasks);
+  const ms = Date.now() - start;
+  const mm = Math.floor(ms / 60000);
+  const ss = Math.floor((ms % 60000) / 1000);
+  const unitCost = apiCalls; // approx calls
+  if (stopped) {
+    console.log(`[tracks] ⏹ early-stop: exceeded 20m window at ${processed}/${total}`);
+  }
+  console.log(`[tracks] ✅ slot ${slot} done in ${mm}m ${ss}s (unitCost=${unitCost})`);
+}
 
 // 5) Start scheduler
 export function startFixedJobs() {
@@ -160,8 +350,8 @@ export function startFixedJobs() {
   // Warm-up (cron-only)
   warmupSlots.forEach((pattern) => {
     tasks.push(cron.schedule(pattern, async () => {
-      console.log(`[scheduler] 🔸 Warm-up job triggered (${pattern} Europe/Budapest)`);
-      try { await runWarmupCycle(cursor.day, cursor.slot); } catch (e) { console.warn('[warmup] ⚠️ precheck error:', e?.message || String(e)); }
+      console.log(`[scheduler] 🔸 Warm-up job triggered (${pattern} ${TZ})`);
+      try { await prepareWarmupSlot(new Date()); } catch (e) { console.warn('[warmup] ⚠️ prepare error:', e?.message || String(e)); }
     }, { timezone: TZ }));
     console.log(`[scheduler] ⏰ Warm-up job active at ${pattern} (${TZ})`);
   });
@@ -169,8 +359,8 @@ export function startFixedJobs() {
   // Tracks (cron-only)
   trackFetchSlots.forEach((pattern) => {
     tasks.push(cron.schedule(pattern, async () => {
-      console.log(`[scheduler] 🎵 Track-fetch job triggered (${pattern} Europe/Budapest)`);
-      try { await runTrackFetchCycle(cursor.day, cursor.slot); console.log(`[scheduler] ✅ Track-fetch completed for ${pattern}`); } catch (e) { console.warn('[tracks] ⚠️ track-fetch error:', e?.message || String(e)); }
+      console.log(`[scheduler] 🎵 Track-fetch job triggered (${pattern} ${TZ})`);
+      try { await processTrackFetchSlot(new Date()); } catch (e) { console.warn('[tracks] ⚠️ track-fetch error:', e?.message || String(e)); }
     }, { timezone: TZ }));
     console.log(`[scheduler] ⏰ Track-fetch job active at ${pattern} (${TZ})`);
   });
@@ -184,6 +374,7 @@ export function startFixedJobs() {
   console.log(`[scheduler] ⏰ Purge-tracks job active at ${purgePattern} (${TZ})`);
 
   console.log(`[scheduler] ✅ cron set (${TZ}):\n  - playlists@09:05→18:35 (every 30 min)\n  - warm-up@19:15→04:15 (every 60 min)\n  - tracks@19:30→04:30 (every 60 min)`);
+  console.log(`[scheduler] ✅ nightly warm-up@19:25→04:25 & tracks@19:30→04:30 (every 30 min)`);
   console.log('[scheduler] 🔒 No auto-start after deploy — waiting for cron signals only.');
   startFixedJobs._tasks = tasks;
 }
