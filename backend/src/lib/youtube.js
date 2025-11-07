@@ -322,12 +322,48 @@ async function insertPlaylistsRaw(rawRows) {
 }
 
 async function upsertPlaylists(rows) {
-  if (!rows.length) return 0;
-  const { error } = await supabase
-    .from('playlists')
-    .upsert(rows, { onConflict: 'external_id' });
-  if (error) console.warn('[seeds] ⚠️ upsert playlists failed:', error.message);
-  return rows.length;
+  if (!rows?.length) return 0;
+  const chunkSize = 500;
+
+  async function doUpsert(batch) {
+    return await supabase.from('playlists').upsert(batch, { onConflict: 'external_id' });
+  }
+
+  // 1) Try full payload (including category)
+  let firstError = null;
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const chunk = rows.slice(i, i + chunkSize);
+    const { error } = await doUpsert(chunk);
+    if (error) {
+      firstError = error;
+      break;
+    }
+    await sleep(100);
+  }
+  if (!firstError) return rows.length;
+
+  // 2) If category_log permissions get in the way, retry without the category column
+  const msg = (firstError?.message || '').toLowerCase();
+  if (msg.includes('category_log') || msg.includes('permission denied')) {
+    const stripped = rows.map(({ category, ...rest }) => rest);
+    let secondError = null;
+    for (let i = 0; i < stripped.length; i += chunkSize) {
+      const chunk = stripped.slice(i, i + chunkSize);
+      const { error } = await doUpsert(chunk);
+      if (error) { secondError = error; break; }
+      await sleep(100);
+    }
+    if (!secondError) {
+      console.warn('[seeds] ⚠️ playlist upsert fallback: excluded category column due to restricted category_log permissions');
+      return rows.length;
+    }
+    console.warn('[seeds] ⚠️ upsert playlists failed after fallback:', secondError.message);
+    return 0;
+  }
+
+  // 3) Other errors — log and bail
+  console.warn('[seeds] ⚠️ upsert playlists failed:', firstError.message);
+  return 0;
 }
 
 // Track writing removed for metadata-only seed discovery mode.
