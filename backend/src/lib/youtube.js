@@ -183,6 +183,9 @@ function isoNow() {
   return new Date().toISOString();
 }
 
+// Safe batch size for Supabase IN() queries against large ID arrays
+const BATCH_SIZE = 200;
+
 function mapSearchItemToRaw(it, tags) {
   return {
     external_id: it.id?.playlistId,
@@ -222,22 +225,29 @@ async function insertPlaylistsRaw(rawRows) {
   const rows = rawRows.filter(r => r.external_id);
   if (!rows.length) return { upserted: 0, duplicates: 0, categoryLogWarnings: 0 };
 
-  // Fetch existing external_ids to identify duplicates prior to write
-  let existing = [];
+  // Fetch existing external_ids to identify duplicates prior to write (batched to avoid 414 errors)
+  const ids = rows.map(r => r.external_id);
+  const existingSet = new Set();
   try {
-    const { data: existData, error: existError } = await supabase
-      .from('playlists_raw')
-      .select('external_id')
-      .in('external_id', rows.map(r => r.external_id));
-    if (existError) {
-      console.warn('[seeds] ⚠️ unable to check existing playlists_raw:', existError.message);
-    } else {
-      existing = (existData || []).map(r => r.external_id);
+    const totalBatches = Math.ceil(ids.length / BATCH_SIZE) || 1;
+    for (let i = 0, batchNo = 1; i < ids.length; i += BATCH_SIZE, batchNo++) {
+      const chunk = ids.slice(i, i + BATCH_SIZE);
+      const { data, error } = await supabase
+        .from('playlists_raw')
+        .select('external_id')
+        .in('external_id', chunk);
+      if (!error && data) {
+        for (const row of data) existingSet.add(row.external_id);
+      } else if (error) {
+        console.warn('[seeds] ⚠️ unable to check existing playlists_raw batch:', error.message);
+      }
+      // Progress + throttle to stay within rate limits
+      console.log(`[seeds] 🟢 batch ${batchNo}/${totalBatches} checked (${chunk.length} ids)`);
+      await sleep(300);
     }
   } catch (e) {
-    console.warn('[seeds] ⚠️ exception checking existing playlists_raw:', e.message || String(e));
+    console.warn('[seeds] ⚠️ exception checking existing playlists_raw (batched):', e.message || String(e));
   }
-  const existingSet = new Set(existing);
 
   const newRows = [];
   const updateRows = []; // only mutable columns
@@ -413,11 +423,11 @@ export async function runSeedDiscovery(day, slot) {
   const { upserted: upsertedRaw, duplicates, categoryLogWarnings } = await insertPlaylistsRaw(enrichedRaw);
   const insertedRaw = upsertedRaw;
   // Pre-log for raw upsert (keeps final metadata-only log unchanged)
-  console.log(`[seeds] 🟢 upserted ${upserted} playlists (skipped ${duplicates} duplicates${categoryLogWarnings ? `, ignored ${categoryLogWarnings} category_log warning${categoryLogWarnings > 1 ? 's' : ''}` : ''})`);
-  const upserted = await upsertPlaylists(promote);
+  console.log(`[seeds] 🟢 upserted ${upsertedRaw} playlists (skipped ${duplicates} duplicates${categoryLogWarnings ? `, ignored ${categoryLogWarnings} category_log warning${categoryLogWarnings > 1 ? 's' : ''}` : ''})`);
+  const promotedCount = await upsertPlaylists(promote);
 
   // Metadata-only: no track/item fetch during seed discovery
-  await setJobCursor('seed_discovery', { day, slot, finished_at: isoNow(), discovered, inserted: insertedRaw, promoted: upserted, tracks: 0 });
-  console.log(`[seedDiscovery] metadata-only: discovered=${discovered} inserted_raw=${insertedRaw} promoted=${upserted} (no tracks written)`);
-  return { discovered, inserted: insertedRaw, promoted: upserted, tracks: 0 };
+  await setJobCursor('seed_discovery', { day, slot, finished_at: isoNow(), discovered, inserted: insertedRaw, promoted: promotedCount, tracks: 0 });
+  console.log(`[seedDiscovery] metadata-only: discovered=${discovered} inserted_raw=${insertedRaw} promoted=${promotedCount} (no tracks written)`);
+  return { discovered, inserted: insertedRaw, promoted: promotedCount, tracks: 0 };
 }
