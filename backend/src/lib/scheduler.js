@@ -190,17 +190,21 @@ async function selectPlaylistsWithoutTracks(target) {
 
 async function prepareWarmupSlot(now = new Date()) {
   const slot = nextTrackSlotLabel(now);
-  const target = randInt(3000, 3500);
-  const candidates = await selectPlaylistsWithoutTracks(target);
+  // Desired target range 3000–3500; we'll request the upper bound and then trim safely.
+  const desired = randInt(3000, 3500);
+  // Fetch up to desired (selection handles cap internally) and then adjust if fewer available.
+  const candidates = await selectPlaylistsWithoutTracks(desired);
+  const targetCount = Math.min(desired, candidates.length);
+  const finalList = candidates.slice(0, targetCount);
   const payload = {
     slot,
     created_at: isoNow(),
-    target,
-    count: candidates.length,
-    playlists: candidates, // [{id, external_id}]
+    target: targetCount,
+    count: finalList.length,
+    playlists: finalList, // [{id, external_id}]
   };
   await setJobState(`track_targets_${slot}`, payload);
-  console.log(`[warmup] 🎯 prepared ${payload.count} playlists for slot ${slot} (tracks=0)`);
+  console.log(`[warmup] 🎯 prepared ${targetCount} playlists for slot ${slot} (tracks=0)`);
 }
 
 function mapItemToTrackAndLink(plId, item, pos) {
