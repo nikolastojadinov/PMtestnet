@@ -1,18 +1,20 @@
 // backend/src/lib/scheduler.js
-// ✅ Full daily scheduler rewrite per directive
-// Europe/Budapest local time
-// Playlist discovery: 20 slots every 30 min 09:05 → 18:35
-// Warm-up / precheck: 10 slots every 60 min 19:15 → 04:15 (next day)
-// Track-fetch: 10 slots every 60 min 19:30 → 04:30 (next day)
+// Fully persistent scheduler with auto-category assignment
+// - Playlists: 20 slots (09:05→18:35, every 30 min)
+// - Warm-up:   10 slots (19:15→04:15, hourly)
+// - Tracks:    10 slots (19:30→04:30, hourly)
+// - Timezone:  Europe/Budapest
+// - Persistence: day/slot resume via job_cursor
 
 import cron from 'node-cron';
 import { pickDaySlotList } from './searchSeedsGenerator.js';
 import { runSeedDiscovery } from './youtube.js';
+import { supabase } from './supabase.js';
 
 const TZ = process.env.TZ || 'Europe/Budapest';
-process.env.TZ = TZ; // enforce timezone for process
+process.env.TZ = TZ; // enforce timezone
 
-// 1️⃣ Playlist discovery windows (20 slots)
+// 1) Fixed cron definitions
 const playlistSlots = [
   '5 9 * * *',  '35 9 * * *',
   '5 10 * * *', '35 10 * * *',
@@ -26,7 +28,6 @@ const playlistSlots = [
   '5 18 * * *', '35 18 * * *',
 ];
 
-// 2️⃣ Warm-up / precheck windows (10 slots)
 const warmupSlots = [
   '15 19 * * *', '15 20 * * *',
   '15 21 * * *', '15 22 * * *',
@@ -35,7 +36,6 @@ const warmupSlots = [
   '15 3 * * *',  '15 4 * * *',
 ];
 
-// 3️⃣ Track-fetch windows (10 slots)
 const trackFetchSlots = [
   '30 19 * * *', '30 20 * * *',
   '30 21 * * *', '30 22 * * *',
@@ -44,38 +44,142 @@ const trackFetchSlots = [
   '30 3 * * *',  '30 4 * * *',
 ];
 
-// Stubbed warm-up and track-fetch tasks (extend later as logic evolves)
-async function runPrecheckTasks() {
-  // Placeholder: could verify key quotas, refresh caches, etc.
-  console.log('[warmup] 🔸 Precheck tasks executed');
+// 2) Persistence helpers
+const JOB_NAME = 'playlist_scheduler';
+let cursor = { day: 1, slot: 0 };
+let cursorReady = false;
+let running = false;
+
+function isoNow() { return new Date().toISOString(); }
+
+export async function loadJobCursor() {
+  try {
+    const { data, error } = await supabase
+      .from('job_cursor')
+      .select('cursor')
+      .eq('job_name', JOB_NAME)
+      .maybeSingle();
+    if (error) throw error;
+    if (data?.cursor && typeof data.cursor.day === 'number' && typeof data.cursor.slot === 'number') {
+      cursor = { day: data.cursor.day, slot: data.cursor.slot };
+      console.log(`[cursor] resumed day=${cursor.day} slot=${cursor.slot} after restart`);
+    } else {
+      await updateJobCursor(1, 0);
+      console.log('[cursor] initialized day=1 slot=0');
+    }
+    cursorReady = true;
+  } catch (e) {
+    console.warn('[cursor] ⚠️ failed to load job_cursor — defaulting to day=1 slot=0:', e?.message || String(e));
+    cursorReady = true;
+  }
 }
 
+export async function updateJobCursor(day, slot) {
+  const payload = {
+    job_name: JOB_NAME,
+    cursor: { day, slot, last_run: isoNow() },
+    updated_at: isoNow(),
+  };
+  const { error } = await supabase
+    .from('job_cursor')
+    .upsert(payload, { onConflict: 'job_name' });
+  if (error) throw error;
+  cursor = { day, slot };
+}
+
+// 3) Category auto-assignment
+const KEYWORD_MAP = {
+  'kpop': 'K-pop',
+  'bollywood': 'Bollywood',
+  'lofi': 'Lo-fi',
+  'jazz': 'Jazz',
+  'workout': 'Workout',
+  'chill': 'Chill',
+  'retro': '80s',
+  'classic': 'Classics',
+  'vietnamese': 'Vietnamese',
+  'hindi': 'Hindi',
+  'pop': 'Pop',
+  'rock': 'Rock',
+};
+
+export function categorizePlaylist(title, description, channelTitle) {
+  const t = `${title || ''} ${description || ''} ${channelTitle || ''}`.toLowerCase();
+  for (const [kw, cat] of Object.entries(KEYWORD_MAP)) {
+    if (t.includes(kw)) return cat;
+  }
+  return 'Other';
+}
+
+async function categorizeUnlabeledPlaylists(limit = 200) {
+  try {
+    const { data, error } = await supabase
+      .from('playlists')
+      .select('id,title,description,channel_title,category')
+      .is('category', null)
+      .order('fetched_on', { ascending: false })
+      .limit(limit);
+    if (error) { console.warn('[scheduler] ⚠️ fetch unlabeled playlists failed:', error.message); return 0; }
+    let updated = 0;
+    for (const row of data || []) {
+      const cat = categorizePlaylist(row.title, row.description, row.channel_title);
+      const { error: e2 } = await supabase
+        .from('playlists')
+        .update({ category: cat })
+        .eq('id', row.id);
+      if (!e2) updated++;
+    }
+    if (updated > 0) console.log(`[scheduler] 🏷️ categorized ${updated} playlists`);
+    return updated;
+  } catch (e) {
+    console.warn('[scheduler] ⚠️ categorize failed:', e?.message || String(e));
+    return 0;
+  }
+}
+
+// 4) Warm-up and track stubs (kept simple)
+async function runPrecheckTasks() {
+  console.log('[warmup] 🔸 Precheck tasks executed');
+}
 async function runTrackFetchCycle() {
-  // Placeholder: iterate promoted playlists and fetch tracks if missing
   console.log('[tracks] 🎵 Track fetch cycle executed (stub)');
 }
 
+// 5) Start scheduler
 export function startFixedJobs() {
   const tasks = [];
+  // Load cursor on startup without changing index.js signature
+  (async () => { await loadJobCursor(); })();
 
-  // Playlist discovery scheduling
-  playlistSlots.forEach((pattern, idx) => {
-    const slotIndex = idx; // preserve 0..19 for seed plan mapping
+  // Playlists — persistent day/slot progression
+  playlistSlots.forEach((pattern) => {
     tasks.push(cron.schedule(pattern, async () => {
-      const day = getCycleDay();
-      const queries = pickDaySlotList(day, slotIndex);
-      console.log(`[scheduler] ⏰ Playlist slot trigger ${pattern} (${TZ}) → day=${day} slot=${slotIndex} queries=${queries.length}`);
+      if (!cursorReady) await loadJobCursor();
+      if (running) { console.log('[scheduler] ⏳ previous slot still running — skipping'); return; }
+      running = true;
+      const day = cursor.day;
+      const slot = cursor.slot;
+      const queries = pickDaySlotList(day, slot);
+      console.log(`[scheduler] ⏰ Playlist slot ${pattern} (${TZ}) → day=${day} slot=${slot} queries=${queries.length}`);
       try {
-        const summary = await runSeedDiscovery(day, slotIndex);
-        console.log(`[seedDiscovery] ✅ slot=${slotIndex} discovered=${summary.discovered} inserted=${summary.inserted} promoted=${summary.promoted} tracks=${summary.tracks}`);
+        const summary = await runSeedDiscovery(day, slot);
+        console.log(`[seedDiscovery] ✅ slot=${slot} discovered=${summary.discovered} inserted=${summary.inserted} promoted=${summary.promoted} tracks=${summary.tracks}`);
+        // Post-step: categorize any unlabeled playlists
+        await categorizeUnlabeledPlaylists(200);
+        // Advance cursor deterministically
+        const nextSlot = (slot + 1) % 20;
+        const nextDay = nextSlot === 0 ? ((day % 29) + 1) : day;
+        await updateJobCursor(nextDay, nextSlot);
       } catch (e) {
         console.warn('[seedDiscovery] ❌ slot failure:', e?.message || String(e));
+      } finally {
+        running = false;
       }
     }, { timezone: TZ }));
     console.log(`[scheduler] ⏰ Playlist fetch job active at ${pattern} (${TZ})`);
   });
 
-  // Warm-up / precheck
+  // Warm-up
   warmupSlots.forEach((pattern) => {
     tasks.push(cron.schedule(pattern, async () => {
       console.log(`[scheduler] 🔸 Warm-up job triggered (${pattern} Europe/Budapest)`);
@@ -84,7 +188,7 @@ export function startFixedJobs() {
     console.log(`[scheduler] ⏰ Warm-up job active at ${pattern} (${TZ})`);
   });
 
-  // Track-fetch
+  // Tracks
   trackFetchSlots.forEach((pattern) => {
     tasks.push(cron.schedule(pattern, async () => {
       console.log(`[scheduler] 🎵 Track-fetch job triggered (${pattern} Europe/Budapest)`);
@@ -94,16 +198,7 @@ export function startFixedJobs() {
   });
 
   console.log(`[scheduler] ✅ cron set (${TZ}):\n  - playlists@09:05→18:35 (every 30 min)\n  - warm-up@19:15→04:15 (every 60 min)\n  - tracks@19:30→04:30 (every 60 min)`);
-
   startFixedJobs._tasks = tasks;
-}
-
-export function getCycleDay(now = new Date()) {
-  const start = process.env.CYCLE_START_DATE || '2025-10-27';
-  const [y,m,d] = start.split('-').map(Number);
-  const s = new Date(y,(m||1)-1,d||1);
-  const diffDays = Math.floor((Date.UTC(now.getFullYear(),now.getMonth(),now.getDate()) - Date.UTC(s.getFullYear(),s.getMonth(),s.getDate()))/(24*3600*1000));
-  return ((diffDays % 29)+29)%29 + 1;
 }
 
 export function stopAllJobs() {
