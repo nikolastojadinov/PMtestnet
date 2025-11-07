@@ -209,6 +209,108 @@ async function insertChunks(table, rows, chunkSize = 500) {
   return inserted;
 }
 
+// New upsert-based raw playlist writer with duplicate + permission handling
+// Requirements:
+//  - Use ON CONFLICT (external_id) DO UPDATE (mutable columns only)
+//  - Count duplicates (existing rows) and treat updates as successful
+//  - Gracefully handle missing/forbidden category_log (warning, non-fatal)
+//  - Return count of inserted/updated rows and duplicate count
+async function insertPlaylistsRaw(rawRows) {
+  if (!rawRows?.length) return { upserted: 0, duplicates: 0, categoryLogWarnings: 0 };
+
+  // Ensure we only operate on rows with external_id
+  const rows = rawRows.filter(r => r.external_id);
+  if (!rows.length) return { upserted: 0, duplicates: 0, categoryLogWarnings: 0 };
+
+  // Fetch existing external_ids to identify duplicates prior to write
+  let existing = [];
+  try {
+    const { data: existData, error: existError } = await supabase
+      .from('playlists_raw')
+      .select('external_id')
+      .in('external_id', rows.map(r => r.external_id));
+    if (existError) {
+      console.warn('[seeds] ⚠️ unable to check existing playlists_raw:', existError.message);
+    } else {
+      existing = (existData || []).map(r => r.external_id);
+    }
+  } catch (e) {
+    console.warn('[seeds] ⚠️ exception checking existing playlists_raw:', e.message || String(e));
+  }
+  const existingSet = new Set(existing);
+
+  const newRows = [];
+  const updateRows = []; // only mutable columns
+  for (const r of rows) {
+    if (existingSet.has(r.external_id)) {
+      updateRows.push({
+        external_id: r.external_id,
+        title: r.title,
+        description: r.description,
+        region: r.region,
+        channel_title: r.channel_title,
+        item_count: r.item_count ?? null,
+        // viewCount + last_refreshed_on not present in playlists_raw schema; skip safely
+      });
+    } else {
+      newRows.push(r);
+    }
+  }
+
+  // Insert new rows via upsert (conflict unlikely as they are filtered)
+  let insertedCount = 0;
+  if (newRows.length) {
+    const { error: insError } = await supabase
+      .from('playlists_raw')
+      .upsert(newRows, { onConflict: 'external_id' });
+    if (insError) {
+      console.warn('[seeds] ⚠️ upsert new playlists_raw failed:', insError.message);
+    } else {
+      insertedCount += newRows.length;
+    }
+  }
+
+  // Perform updates in chunks (Supabase updates can't batch different values with one call unless we send each row; we chunk individually for efficiency)
+  let updatedCount = 0;
+  const CHUNK = 500;
+  for (let i = 0; i < updateRows.length; i += CHUNK) {
+    const slice = updateRows.slice(i, i + CHUNK);
+    // We can't send varying column values with a single update call by filter list; resort to per-row updates.
+    // To reduce network overhead, attempt bulk upsert again (will update all provided columns only) using same mechanism.
+    const { error: updError } = await supabase
+      .from('playlists_raw')
+      .upsert(slice, { onConflict: 'external_id' });
+    if (updError) {
+      console.warn('[seeds] ⚠️ playlists_raw update chunk failed:', updError.message);
+    } else {
+      updatedCount += slice.length;
+    }
+  }
+
+  // Optional category_log permission probe
+  let categoryLogWarnings = 0;
+  try {
+    const { error: catErr } = await supabase.from('category_log').select('id').limit(1);
+    if (catErr) {
+      categoryLogWarnings += 1;
+      if (/permission|denied|not exist/i.test(catErr.message)) {
+        console.warn('[seeds] ⚠️ category_log permission denied — continuing');
+      } else {
+        console.warn('[seeds] ⚠️ category_log inaccessible — continuing:', catErr.message);
+      }
+    }
+  } catch (e) {
+    categoryLogWarnings += 1;
+    console.warn('[seeds] ⚠️ category_log probe exception — continuing:', e.message || String(e));
+  }
+
+  return {
+    upserted: insertedCount + updatedCount,
+    duplicates: existingSet.size,
+    categoryLogWarnings,
+  };
+}
+
 async function upsertPlaylists(rows) {
   if (!rows.length) return 0;
   const { error } = await supabase
@@ -305,7 +407,13 @@ export async function runSeedDiscovery(day, slot) {
     last_refreshed_on: isoNow(),
   }));
 
-  const insertedRaw = await insertChunks('playlists_raw', rawRows);
+  // Enrich raw rows with item_count from validation (mutable column)
+  const itemCountMap = new Map(validated.map(v => [v.external_id, v.item_count]));
+  const enrichedRaw = rawRows.map(r => ({ ...r, item_count: itemCountMap.get(r.external_id) ?? null }));
+  const { upserted: upsertedRaw, duplicates, categoryLogWarnings } = await insertPlaylistsRaw(enrichedRaw);
+  const insertedRaw = upsertedRaw;
+  // Pre-log for raw upsert (keeps final metadata-only log unchanged)
+  console.log(`[seeds] 🟢 upserted ${upserted} playlists (skipped ${duplicates} duplicates${categoryLogWarnings ? `, ignored ${categoryLogWarnings} category_log warning${categoryLogWarnings > 1 ? 's' : ''}` : ''})`);
   const upserted = await upsertPlaylists(promote);
 
   // Metadata-only: no track/item fetch during seed discovery
