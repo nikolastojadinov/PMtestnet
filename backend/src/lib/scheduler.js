@@ -227,6 +227,10 @@ async function processTrackFetchSlot(now = new Date()) {
     target = 3000;
     list = await selectPlaylistsWithoutTracks(target);
   }
+  // Ensure nightly slot target expands to 3000–3500 playlists if an older cap (e.g., 1000) is encountered
+  if (!target || target < 3000) {
+    target = Math.min(randInt(3000, 3500), list.length);
+  }
   const total = Math.min(target || list.length, list.length);
   console.log(`[tracks] 🎬 slot ${slot} started (target=${total})`);
 
