@@ -1,6 +1,14 @@
-// backend/src/lib/scheduler.js (12:55–13:00 active plan)
-// ✅ Warm-up starts 12:55 → Fetch starts 13:00 → 20 half-hourly runs
-// ✅ Playlist discovery untouched; getCycleDay re-exported for index.js
+// backend/src/lib/scheduler.js
+// TEMPORARY PAUSE: Google API appeal in progress
+// ----------------------------------------------------------------------------------
+// All scheduled jobs and YouTube-dependent processing are paused.
+// Requirements:
+//  - No cron tasks should execute (playlist discovery, warm-up, track fetch, purge).
+//  - No YouTube API calls should be initiated from scheduler during pause.
+//  - Keep original function definitions intact so they can be reactivated later.
+//  - Provide clear log on startup: "[scheduler] PAUSED — Google API appeal in progress".
+//  - To resume: remove PAUSED flag / early return and restore scheduling blocks.
+// ----------------------------------------------------------------------------------
 
 import cron from 'node-cron';
 import { pickDaySlotList } from './searchSeedsGenerator.js';
@@ -50,11 +58,10 @@ export function getCycleDay(now = new Date()) {
 
 // 🎯 Playlist discovery — 6 half-hourly runs (kept same)
 export function startFixedJobs() {
-  console.log('✅ [scheduler] Active mode: 6 playlist discovery slots + Warmup/Fetch sync.');
-  console.log('🕓  Playlist discovery: 09:05 → 11:35 (6 slots)');
-  console.log('🕓  Warm-up: 12:55, 13:25, 13:55, ... (20 slots)');
-  console.log('🎵  FetchTracks: 13:00, 13:30, 14:00, ... (20 slots)');
-
+  // Hard pause: skip registering any cron jobs
+  console.log('[scheduler] PAUSED — Google API appeal in progress');
+  return;
+  // Load cursor for daytime playlist discovery
   (async () => { try { await loadJobCursor(); } catch {} })();
 
   const playlistSlots = [
