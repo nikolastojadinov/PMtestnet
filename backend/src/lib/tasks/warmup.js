@@ -1,25 +1,25 @@
-// Warm-up task (slot-isolated version)
+// Warm-up task (20-slot version starting at 12:55 / 13:00 cycle)
 // Stores per-slot key track_targets_<slotLabel> to prevent race conflicts
 
 import { supabase } from '../supabase.js';
 
 function isoNow() { return new Date().toISOString(); }
 
-export async function prepareWarmupTargets(limit = 1000, slotLabel = '0000') {
+export async function prepareWarmupTargets(limit = 1000, slotLabel = '1255') {
   const key = `track_targets_${slotLabel}`;
   let payload = { created_at: isoNow(), count: 0, playlists: [], slot: slotLabel };
 
-  // Try RPC first for efficient selection
   try {
     const { data, error } = await supabase.rpc('prepare_warmup_targets', { p_limit: limit });
     if (!error && Array.isArray(data) && data.length) {
       payload = { created_at: isoNow(), count: data.length, playlists: data, slot: slotLabel };
       await supabase.from('job_state').upsert({ key, value: payload }, { onConflict: 'key' });
+      console.log(`[warmup:${slotLabel}] ✅ prepared ${data.length} playlists via RPC`);
       return payload;
     }
   } catch {}
 
-  // Fallback: random client-side selection
+  // Fallback: random selection
   const oversample = Math.min(limit * 3, 10000);
   const { data: pool, error } = await supabase
     .from('playlists')
@@ -31,9 +31,11 @@ export async function prepareWarmupTargets(limit = 1000, slotLabel = '0000') {
 
   if (error || !pool?.length) {
     await supabase.from('job_state').upsert({ key, value: payload }, { onConflict: 'key' });
+    console.log(`[warmup:${slotLabel}] ⚠️ no playlists found`);
     return payload;
   }
 
+  // Shuffle and pick candidates without tracks
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
@@ -60,6 +62,7 @@ export async function prepareWarmupTargets(limit = 1000, slotLabel = '0000') {
 
   payload = { created_at: isoNow(), count: candidates.length, playlists: candidates, slot: slotLabel };
   await supabase.from('job_state').upsert({ key, value: payload }, { onConflict: 'key' });
+  console.log(`[warmup:${slotLabel}] ✅ selected ${candidates.length} playlists`);
   return payload;
 }
 
