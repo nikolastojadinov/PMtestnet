@@ -14,8 +14,8 @@ import cron from 'node-cron';
 import { pickDaySlotList } from './searchSeedsGenerator.js';
 import { runSeedDiscovery, runPurgeTracks } from './jobs.js';
 import { saveJobCursor as saveCursor } from './persistence.js';
-import { startWarmupSchedule } from './tasks/warmup.js';
-import { startFetchSchedule } from './tasks/fetchTracks.js';
+// NOTE: Warm-up and fetch schedulers are dynamically imported when active
+// to avoid loading YouTube-dependent modules during a global pause.
 
 const TZ = process.env.TZ || 'Europe/Budapest';
 process.env.TZ = TZ;
