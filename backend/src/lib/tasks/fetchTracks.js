@@ -1,46 +1,37 @@
-// Fetch tracks task (auto 30-min cadence)
-// Triggered every 30 minutes — 00 and 30 (Europe/Budapest)
-// Reads from job_state key track_targets_<slotLabel> and clears only that slot key
+// backend/src/lib/tasks/fetchTracks.js
+// ⏱ FetchTracks every 30 min starting at 13:00 Europe/Budapest (20 runs total)
 
 import cron from 'node-cron';
 import { supabase } from '../supabase.js';
 import { upsertTracksSafe, upsertPlaylistTracksSafe } from '../persistence.js';
 import { fetchPlaylistItems } from '../youtube.js';
 
-const TZ = process.env.TZ || 'Europe/Budapest';
-process.env.TZ = TZ;
+function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
 
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-export async function fetchTracks(slotLabel = null) {
-  const now = new Date();
-  const hh = String(now.getHours()).padStart(2, '0');
-  const mm = String(now.getMinutes()).padStart(2, '0');
-  const label = slotLabel || `${hh}${mm}`;
-
-  const key = `track_targets_${label}`;
+export async function fetchTracks(slotLabel = '0000') {
+  const key = `track_targets_${slotLabel}`;
   const { data, error } = await supabase.from('job_state').select('value').eq('key', key).maybeSingle();
-  if (error) { console.warn(`[tracks:${label}] ⚠️ failed to load warm-up targets:`, error.message); return; }
+  if (error) { console.warn(`[fetch:${slotLabel}] ⚠️ failed to load warm-up targets:`, error.message); return; }
 
   const payload = data?.value || {};
   const list = Array.isArray(payload.playlists) ? payload.playlists : [];
-  if (!list.length) { console.log(`[tracks:${label}] ⚠️ no prepared targets`); return; }
+  if (!list.length) { console.log(`[fetch:${slotLabel}] ⚠️ no prepared playlists`); return; }
 
   const BATCH = 200;
   const batches = Math.min(5, Math.ceil(list.length / BATCH));
+
   for (let b = 0; b < batches; b++) {
     const slice = list.slice(b * BATCH, b * BATCH + BATCH);
     const tracksBuf = [];
     const linksBuf = [];
-    for (let i = 0; i < slice.length; i++) {
-      const pl = slice[i];
+
+    for (const pl of slice) {
       await sleep(180 + Math.floor(Math.random() * 41));
       try {
         const items = await fetchPlaylistItems(pl.external_id, 1);
-        const LIM = 200;
-        for (let k = 0; k < Math.min(items.length, LIM); k++) {
+        for (let k = 0; k < Math.min(items.length, 200); k++) {
           const item = items[k];
-          const vid = item?.contentDetails?.videoId || item?.snippet?.resourceId?.videoId || null;
+          const vid = item?.contentDetails?.videoId || item?.snippet?.resourceId?.videoId;
           if (!vid) continue;
           tracksBuf.push({
             external_id: vid,
@@ -50,7 +41,9 @@ export async function fetchTracks(slotLabel = null) {
           });
           linksBuf.push({ playlist_id: pl.id, external_id: vid, position: k + 1 });
         }
-      } catch {}
+      } catch (e) {
+        console.warn(`[fetch:${slotLabel}] ⚠️ error on ${pl.external_id}:`, e?.message || e);
+      }
     }
 
     if (tracksBuf.length) {
@@ -71,19 +64,27 @@ export async function fetchTracks(slotLabel = null) {
     }
   }
 
-  // Clear only current slot's prepared targets
   await supabase.from('job_state').delete().eq('key', key);
-  console.log(`[tracks:${label}] ✅ finished & cleared ${key}`);
+  console.log(`[fetch:${slotLabel}] ✅ finished & cleared ${key}`);
 }
 
-// ⏰ Auto scheduler — runs every 30 minutes
-cron.schedule('0,30 * * * *', async () => {
-  const now = new Date();
-  const hh = String(now.getHours()).padStart(2, '0');
-  const mm = String(now.getMinutes()).padStart(2, '0');
-  const label = `${hh}${mm}`;
-  console.log(`[cron] 🔁 Running fetchTracks for slot ${label} (${TZ})`);
-  await fetchTracks(label);
-}, { timezone: TZ });
+// 🔁 Fetch schedule: 13:00, 13:30, 14:00, 14:30, ... (20 runs total)
+const fetchSlots = [];
+let hour = 13, minute = 0;
+for (let i = 0; i < 20; i++) {
+  fetchSlots.push(`${minute} ${hour} * * *`);
+  minute += 30;
+  if (minute >= 60) { minute -= 60; hour = (hour + 1) % 24; }
+}
 
-export default { fetchTracks };
+export function startFetchSchedule() {
+  const TZ = process.env.TZ || 'Europe/Budapest';
+  fetchSlots.forEach((pattern, i) => {
+    const label = `${String(i + 1).padStart(2, '0')}`;
+    cron.schedule(pattern, async () => {
+      console.log(`[scheduler] 🎵 Fetch slot ${label} triggered (${pattern} ${TZ})`);
+      await fetchTracks(label);
+    }, { timezone: TZ });
+  });
+  console.log(`[fetchTracks] ✅ 20 fetch jobs scheduled from 13:00 every 30 min (${TZ})`);
+}
