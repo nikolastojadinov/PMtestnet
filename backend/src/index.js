@@ -1,8 +1,8 @@
-// ✅ FULL REWRITE v5.1 — Purple Music Backend entrypoint (fixed cron schedule + correct imports)
+// ✅ FULL REWRITE v5.2 — Purple Music Backend entrypoint (fixed cron schedule + correct imports)
 
 import http from 'http';
 import supabase from './lib/supabase.js';
-import { startFixedJobs, stopAllJobs, getCycleDay } from './lib/scheduler.js';
+import { startFixedJobs, getCycleDay } from './lib/scheduler.js'; // 🔹 stopAllJobs removed
 import { verifySupabaseSchema } from './lib/persistence.js';
 import { pickDailyList } from './lib/searchSeedsGenerator.js';
 
@@ -53,16 +53,15 @@ async function main() {
       console.log(`[startup] ✅ YouTube API key rotation active (${keyCount} keys)`);
     }
 
-  console.log('[startup] Scheduling fixed cron jobs...');
-  // Start scheduled jobs (local time): playlists daily, warm-up hourly, tracks hourly
-    startFixedJobs();
-  console.log('[startup] ✅ Scheduler initialized (local-time schedule)');
+    console.log('[startup] Scheduling fixed cron jobs...');
+    startFixedJobs(); // 🔹 Scheduler runs warmup+fetch automatically
+    console.log('[startup] ✅ Scheduler initialized (local-time schedule)');
 
     // ======================================================
     // 🩺 Lightweight HTTP server (for /healthz and /info)
     // ======================================================
-  const server = http.createServer((req, res) => {
-  if (req.url === '/healthz') {
+    const server = http.createServer((req, res) => {
+      if (req.url === '/healthz') {
         const response = {
           status: 'ok',
           supabase: !!process.env.SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE,
@@ -74,17 +73,19 @@ async function main() {
         };
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(response));
-  } else if (req.url === '/info') {
+      } else if (req.url === '/info') {
         const TZ = process.env.TZ || 'Europe/Budapest';
         const body = {
           version: 'v6.0-seeds',
           cron: {
             timezone: TZ,
-            seedSlots: '20 slots @ :05/:35 09:05→18:35',
+            seedSlots: '20 slots @ 12:55/13:00 → every 30min',
           },
           env: {
             supabase: !!process.env.SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE,
-            youtubeKeys: process.env.YOUTUBE_API_KEYS ? process.env.YOUTUBE_API_KEYS.split(',').length : 0,
+            youtubeKeys: process.env.YOUTUBE_API_KEYS
+              ? process.env.YOUTUBE_API_KEYS.split(',').length
+              : 0,
             cycleStartDate: process.env.CYCLE_START_DATE || '2025-10-27',
           },
           seeds: { perDay: 2000, totalCycle: 58000, sampleDay1Count: pickDailyList(1).length },
@@ -95,7 +96,7 @@ async function main() {
         res.end(JSON.stringify(body));
       } else {
         res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Purple Music Backend (58K search seeds mode) running.\n');
+        res.end('Purple Music Backend (58K search seeds mode) running.\n');
       }
     });
 
@@ -131,24 +132,17 @@ async function main() {
     }, 10 * 60 * 1000);
 
     // ======================================================
-    // 🛑 Graceful shutdown
+    // 🛑 Graceful shutdown (simplified — no stopAllJobs)
     // ======================================================
     async function shutdown(signal) {
-      console.log(`[shutdown] Received ${signal}. Stopping scheduler and server...`);
-      try {
-        stopAllJobs();
-      } catch {}
+      console.log(`[shutdown] Received ${signal}. Closing server gracefully...`);
 
-      // Close server to stop accepting new connections
       await new Promise((resolve) => server.close(() => resolve()))
         .catch(() => {});
       clearInterval(heartbeat);
 
-      // Seeds-only mode: no cursor persistence
-
-      // Give a brief window for in-flight ops (best effort)
       await new Promise((r) => setTimeout(r, 500));
-      console.log('[shutdown] Exiting now.');
+      console.log('[shutdown] ✅ Exiting now.');
       process.exit(0);
     }
 
