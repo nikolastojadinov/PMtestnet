@@ -1,20 +1,30 @@
-// Fetch tracks task (20-slot version starting at 12:55 / 13:00 cycle)
+// Fetch tracks task (auto 30-min cadence)
+// Triggered every 30 minutes — 00 and 30 (Europe/Budapest)
 // Reads from job_state key track_targets_<slotLabel> and clears only that slot key
 
+import cron from 'node-cron';
 import { supabase } from '../supabase.js';
 import { upsertTracksSafe, upsertPlaylistTracksSafe } from '../persistence.js';
 import { fetchPlaylistItems } from '../youtube.js';
 
+const TZ = process.env.TZ || 'Europe/Budapest';
+process.env.TZ = TZ;
+
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-export async function fetchTracks(slotLabel = '1255') {
-  const key = `track_targets_${slotLabel}`;
+export async function fetchTracks(slotLabel = null) {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const label = slotLabel || `${hh}${mm}`;
+
+  const key = `track_targets_${label}`;
   const { data, error } = await supabase.from('job_state').select('value').eq('key', key).maybeSingle();
-  if (error) { console.warn(`[tracks:${slotLabel}] ⚠️ failed to load warm-up targets:`, error.message); return; }
+  if (error) { console.warn(`[tracks:${label}] ⚠️ failed to load warm-up targets:`, error.message); return; }
 
   const payload = data?.value || {};
   const list = Array.isArray(payload.playlists) ? payload.playlists : [];
-  if (!list.length) { console.log(`[tracks:${slotLabel}] ⚠️ no prepared targets`); return; }
+  if (!list.length) { console.log(`[tracks:${label}] ⚠️ no prepared targets`); return; }
 
   const BATCH = 200;
   const batches = Math.min(5, Math.ceil(list.length / BATCH));
@@ -63,7 +73,17 @@ export async function fetchTracks(slotLabel = '1255') {
 
   // Clear only current slot's prepared targets
   await supabase.from('job_state').delete().eq('key', key);
-  console.log(`[tracks:${slotLabel}] ✅ finished & cleared ${key}`);
+  console.log(`[tracks:${label}] ✅ finished & cleared ${key}`);
 }
+
+// ⏰ Auto scheduler — runs every 30 minutes
+cron.schedule('0,30 * * * *', async () => {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const label = `${hh}${mm}`;
+  console.log(`[cron] 🔁 Running fetchTracks for slot ${label} (${TZ})`);
+  await fetchTracks(label);
+}, { timezone: TZ });
 
 export default { fetchTracks };
