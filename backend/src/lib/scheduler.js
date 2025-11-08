@@ -1,11 +1,13 @@
-// backend/src/lib/scheduler.js (reactivated — 6 playlist discovery slots + daily purge)
-// ✅ Active schedule: 6 half-hourly playlist discovery runs starting at 09:05 Europe/Budapest
-// ⚙️ Warm-up and fetchTracks run autonomously every 30 minutes (from their own modules)
+// backend/src/lib/scheduler.js (12:55–13:00 active plan)
+// ✅ Warm-up starts 12:55 → Fetch starts 13:00 → 20 half-hourly runs
+// ✅ Playlist discovery untouched; getCycleDay re-exported for index.js
 
 import cron from 'node-cron';
 import { pickDaySlotList } from './searchSeedsGenerator.js';
 import { runSeedDiscovery, runPurgeTracks } from './jobs.js';
 import { saveJobCursor as saveCursor } from './persistence.js';
+import { startWarmupSchedule } from './tasks/warmup.js';
+import { startFetchSchedule } from './tasks/fetchTracks.js';
 
 const TZ = process.env.TZ || 'Europe/Budapest';
 process.env.TZ = TZ;
@@ -16,7 +18,6 @@ let running = false;
 
 function isoNow() { return new Date().toISOString(); }
 
-// Initialize cursor each start (no resume between restarts)
 async function loadJobCursor() {
   try {
     const day = getCycleDay(new Date());
@@ -35,7 +36,8 @@ async function updateJobCursor(day, slot) {
   cursor = { day, slot };
 }
 
-function getCycleDay(now = new Date()) {
+// 🔹 export added for index.js compatibility
+export function getCycleDay(now = new Date()) {
   const startEnv = process.env.CYCLE_START_DATE || '2025-10-27';
   const [y, m, d] = startEnv.split('-').map(Number);
   const start = new Date(y, (m || 1) - 1, d || 1);
@@ -46,11 +48,12 @@ function getCycleDay(now = new Date()) {
   return ((diffDays % 29) + 29) % 29 + 1;
 }
 
-// 🕓 6 playlist discovery jobs — 09:05 → 11:35 (every 30 min)
+// 🎯 Playlist discovery — 6 half-hourly runs (kept same)
 export function startFixedJobs() {
-  console.log('✅ [scheduler] Reactivated — running 6 playlist discovery jobs.');
-  console.log('🕓  Schedule: 09:05, 09:35, 10:05, 10:35, 11:05, 11:35 (Europe/Budapest)');
-  console.log('⚙️  Warm-up and fetchTracks already run every 30 minutes independently.');
+  console.log('✅ [scheduler] Active mode: 6 playlist discovery slots + Warmup/Fetch sync.');
+  console.log('🕓  Playlist discovery: 09:05 → 11:35 (6 slots)');
+  console.log('🕓  Warm-up: 12:55, 13:25, 13:55, ... (20 slots)');
+  console.log('🎵  FetchTracks: 13:00, 13:30, 14:00, ... (20 slots)');
 
   (async () => { try { await loadJobCursor(); } catch {} })();
 
@@ -63,12 +66,12 @@ export function startFixedJobs() {
   playlistSlots.forEach((pattern) => {
     cron.schedule(pattern, async () => {
       if (!cursorReady) await loadJobCursor();
-      if (running) { console.log('[scheduler] ⏳ previous discovery still running — skipping'); return; }
+      if (running) { console.log('[scheduler] ⏳ previous slot still running — skipping'); return; }
       running = true;
 
       const { day, slot } = cursor;
       const queries = pickDaySlotList(day, slot);
-      console.log(`[scheduler] ⏰ Playlist discovery ${pattern} (${TZ}) → day=${day} slot=${slot} queries=${queries.length}`);
+      console.log(`[scheduler] ⏰ Playlist slot ${pattern} (${TZ}) → day=${day} slot=${slot} queries=${queries.length}`);
 
       try {
         const summary = await runSeedDiscovery(day, slot);
@@ -86,11 +89,15 @@ export function startFixedJobs() {
     console.log(`[scheduler] ⏰ Playlist discovery job active at ${pattern} (${TZ})`);
   });
 
-  // 🧹 Daily purge job at 19:00
+  // 🧹 Daily purge job
   cron.schedule('0 19 * * *', async () => {
     console.log(`[scheduler] 🧹 purge-tracks job triggered (19:00 ${TZ})`);
     try { await runPurgeTracks(); } catch (e) { console.warn('[purge-tracks] ⚠️ error:', e?.message || String(e)); }
   }, { timezone: TZ });
 
-  console.log('[scheduler] ✅ Playlist discovery + purge jobs active.');
+  // 🟣 Activate new warm-up and fetch schedulers
+  startWarmupSchedule();
+  startFetchSchedule();
+
+  console.log('[scheduler] ✅ All schedules initialized.');
 }
