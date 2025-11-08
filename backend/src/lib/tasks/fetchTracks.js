@@ -1,13 +1,13 @@
-// Fetch tracks task (slot-isolated version)
+// Fetch tracks task (20-slot version starting at 12:55 / 13:00 cycle)
 // Reads from job_state key track_targets_<slotLabel> and clears only that slot key
 
 import { supabase } from '../supabase.js';
 import { upsertTracksSafe, upsertPlaylistTracksSafe } from '../persistence.js';
 import { fetchPlaylistItems } from '../youtube.js';
 
-function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-export async function fetchTracks(slotLabel = '0000') {
+export async function fetchTracks(slotLabel = '1255') {
   const key = `track_targets_${slotLabel}`;
   const { data, error } = await supabase.from('job_state').select('value').eq('key', key).maybeSingle();
   if (error) { console.warn(`[tracks:${slotLabel}] ⚠️ failed to load warm-up targets:`, error.message); return; }
@@ -60,6 +60,7 @@ export async function fetchTracks(slotLabel = '0000') {
       if (linkRows.length) await upsertPlaylistTracksSafe(linkRows, 500);
     }
   }
+
   // Clear only current slot's prepared targets
   await supabase.from('job_state').delete().eq('key', key);
   console.log(`[tracks:${slotLabel}] ✅ finished & cleared ${key}`);
