@@ -1,35 +1,30 @@
-// Warm-up task (auto 30-min cadence)
-// Triggered every 30 minutes — 25 and 55 (Europe/Budapest)
-// Stores per-slot key track_targets_<slotLabel> to prevent race conflicts
+// backend/src/lib/tasks/warmup.js
+// ⏱ Warm-up every 30 min starting at 12:55 Europe/Budapest (20 runs total)
 
 import cron from 'node-cron';
 import { supabase } from '../supabase.js';
 
-const TZ = process.env.TZ || 'Europe/Budapest';
-process.env.TZ = TZ;
-
 function isoNow() { return new Date().toISOString(); }
 
-export async function prepareWarmupTargets(limit = 1000, slotLabel = null) {
-  const now = new Date();
-  const hh = String(now.getHours()).padStart(2, '0');
-  const mm = String(now.getMinutes()).padStart(2, '0');
-  const label = slotLabel || `${hh}${mm}`;
-  const key = `track_targets_${label}`;
-  let payload = { created_at: isoNow(), count: 0, playlists: [], slot: label };
+export async function prepareWarmupTargets(limit = 1000, slotLabel = '0000') {
+  const key = `track_targets_${slotLabel}`;
+  let payload = { created_at: isoNow(), count: 0, playlists: [], slot: slotLabel };
 
   try {
     const { data, error } = await supabase.rpc('prepare_warmup_targets', { p_limit: limit });
     if (!error && Array.isArray(data) && data.length) {
-      payload = { created_at: isoNow(), count: data.length, playlists: data, slot: label };
+      payload = { created_at: isoNow(), count: data.length, playlists: data, slot: slotLabel };
       await supabase.from('job_state').upsert({ key, value: payload }, { onConflict: 'key' });
-      console.log(`[warmup:${label}] ✅ prepared ${data.length} playlists via RPC`);
+      console.log(`[warmup:${slotLabel}] ✅ prepared ${data.length} playlists`);
       return payload;
     }
-  } catch {}
+  } catch (e) {
+    console.warn(`[warmup:${slotLabel}] ⚠️ RPC failed, using fallback:`, e?.message || e);
+  }
 
+  // fallback
   const oversample = Math.min(limit * 3, 10000);
-  const { data: pool, error } = await supabase
+  const { data: pool } = await supabase
     .from('playlists')
     .select('id,external_id')
     .eq('is_public', true)
@@ -37,50 +32,30 @@ export async function prepareWarmupTargets(limit = 1000, slotLabel = null) {
     .order('last_refreshed_on', { ascending: true, nullsFirst: true })
     .limit(oversample);
 
-  if (error || !pool?.length) {
-    await supabase.from('job_state').upsert({ key, value: payload }, { onConflict: 'key' });
-    console.log(`[warmup:${label}] ⚠️ no playlists found`);
-    return payload;
-  }
-
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
-  }
-
-  const ids = pool.map(p => p.id);
-  const existing = new Set();
-  const BATCH = 500;
-  for (let i = 0; i < ids.length; i += BATCH) {
-    const chunk = ids.slice(i, i + BATCH);
-    const { data, error: e2 } = await supabase
-      .from('playlist_tracks')
-      .select('playlist_id')
-      .in('playlist_id', chunk)
-      .limit(1);
-    if (!e2 && data) for (const r of data) existing.add(r.playlist_id);
-  }
-
-  const candidates = [];
-  for (const p of pool) {
-    if (!existing.has(p.id)) candidates.push(p);
-    if (candidates.length >= limit) break;
-  }
-
-  payload = { created_at: isoNow(), count: candidates.length, playlists: candidates, slot: label };
+  const candidates = (pool || []).slice(0, limit);
+  payload = { created_at: isoNow(), count: candidates.length, playlists: candidates, slot: slotLabel };
   await supabase.from('job_state').upsert({ key, value: payload }, { onConflict: 'key' });
-  console.log(`[warmup:${label}] ✅ selected ${candidates.length} playlists`);
+  console.log(`[warmup:${slotLabel}] ✅ fallback prepared ${candidates.length}`);
   return payload;
 }
 
-// ⏰ Auto scheduler — runs every 30 minutes (5 min before fetchTracks)
-cron.schedule('25,55 * * * *', async () => {
-  const now = new Date();
-  const hh = String(now.getHours()).padStart(2, '0');
-  const mm = String(now.getMinutes()).padStart(2, '0');
-  const label = `${hh}${mm}`;
-  console.log(`[cron] 🔁 Running warmup for slot ${label} (${TZ})`);
-  await prepareWarmupTargets(1000, label);
-}, { timezone: TZ });
+// 🔁 Warm-up schedule: 12:55, 13:25, 13:55, 14:25, ... (20 runs total)
+const warmupSlots = [];
+let hour = 12, minute = 55;
+for (let i = 0; i < 20; i++) {
+  warmupSlots.push(`${minute} ${hour} * * *`);
+  minute += 30;
+  if (minute >= 60) { minute -= 60; hour = (hour + 1) % 24; }
+}
 
-export default { prepareWarmupTargets };
+export function startWarmupSchedule() {
+  const TZ = process.env.TZ || 'Europe/Budapest';
+  warmupSlots.forEach((pattern, i) => {
+    const label = `${String(i + 1).padStart(2, '0')}`;
+    cron.schedule(pattern, async () => {
+      console.log(`[scheduler] 🎯 Warm-up slot ${label} triggered (${pattern} ${TZ})`);
+      await prepareWarmupTargets(1000, label);
+    }, { timezone: TZ });
+  });
+  console.log(`[warmup] ✅ 20 warm-up jobs scheduled from 12:55 every 30 min (${TZ})`);
+}
