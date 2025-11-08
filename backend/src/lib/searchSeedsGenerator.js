@@ -109,6 +109,8 @@ const TEMPLATES = [
 const START_DATE_DEFAULT = process.env.CYCLE_START_DATE || '2025-10-27';
 
 // ------------------------------------------------------------
+// Helper functions
+// ------------------------------------------------------------
 
 function bigIntFromHash(h){return BigInt('0x'+h.slice(0,32));}
 function mod(n,m){const r=n%m;return r<0?r+m:r;}
@@ -124,6 +126,8 @@ function renderTemplate(tpl,vars){
     .trim();
 }
 
+// ------------------------------------------------------------
+// Core builder (29×6×120)
 // ------------------------------------------------------------
 
 export function buildFullCyclePlan(options={}) {
@@ -149,13 +153,24 @@ export function buildFullCyclePlan(options={}) {
   return plan;
 }
 
+// ------------------------------------------------------------
+// Public API
+// ------------------------------------------------------------
+
 export function getDaySlotSeeds(day,slot){
   const plan=buildFullCyclePlan();
   return plan.filter(p=>p.day===day&&p.slot===slot);
 }
+
 export function pickDaySlotList(day,slot){
   return getDaySlotSeeds(day,slot).map(p=>p.query);
 }
+
+export function pickDailyList(day){       // ← re-added for index.js compatibility
+  const plan=buildFullCyclePlan();
+  return plan.filter(p=>p.day===day).map(p=>p.query);
+}
+
 export function verifyFullCycle(){
   const p=buildFullCyclePlan();
   if(p.length!==20880)throw new Error(`Expected 20880, got ${p.length}`);
@@ -170,6 +185,10 @@ export function materializePlanToJson(out=path.resolve('backend/src/lib/searchSe
   console.log(`Plan written to ${abs} (${plan.length} queries)`);
   return abs;
 }
+
+// ------------------------------------------------------------
+// CLI
+// ------------------------------------------------------------
 
 if(import.meta.url===`file://${process.argv[1]}`){
   const argDay=Number(process.argv[2])||1;
