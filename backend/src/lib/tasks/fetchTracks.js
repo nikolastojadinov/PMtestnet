@@ -1,5 +1,5 @@
-// Fetch tracks task: process prepared warm-up targets in 5×200 batches
-// Reads from job_state key 'track_targets_next' and clears it after completion
+// Fetch tracks task (slot-isolated version)
+// Reads from job_state key track_targets_<slotLabel> and clears only that slot key
 
 import { supabase } from '../supabase.js';
 import { upsertTracksSafe, upsertPlaylistTracksSafe } from '../persistence.js';
@@ -7,17 +7,14 @@ import { fetchPlaylistItems } from '../youtube.js';
 
 function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
 
-export async function fetchTracks() {
-  // Load prepared targets
-  const { data, error } = await supabase
-    .from('job_state')
-    .select('value')
-    .eq('key', 'track_targets_next')
-    .maybeSingle();
-  if (error) { console.warn('[tracks] ⚠️ failed to load warm-up targets:', error.message); return; }
+export async function fetchTracks(slotLabel = '0000') {
+  const key = `track_targets_${slotLabel}`;
+  const { data, error } = await supabase.from('job_state').select('value').eq('key', key).maybeSingle();
+  if (error) { console.warn(`[tracks:${slotLabel}] ⚠️ failed to load warm-up targets:`, error.message); return; }
+
   const payload = data?.value || {};
   const list = Array.isArray(payload.playlists) ? payload.playlists : [];
-  if (!list.length) { console.log('[tracks] ⚠️ no prepared targets available'); return; }
+  if (!list.length) { console.log(`[tracks:${slotLabel}] ⚠️ no prepared targets`); return; }
 
   const BATCH = 200;
   const batches = Math.min(5, Math.ceil(list.length / BATCH));
@@ -27,7 +24,7 @@ export async function fetchTracks() {
     const linksBuf = [];
     for (let i = 0; i < slice.length; i++) {
       const pl = slice[i];
-      await sleep(180 + Math.floor(Math.random()*41));
+      await sleep(180 + Math.floor(Math.random() * 41));
       try {
         const items = await fetchPlaylistItems(pl.external_id, 1);
         const LIM = 200;
@@ -41,29 +38,31 @@ export async function fetchTracks() {
             artist: item?.snippet?.videoOwnerChannelTitle || item?.snippet?.channelTitle || null,
             cover_url: item?.snippet?.thumbnails?.high?.url || item?.snippet?.thumbnails?.default?.url || null,
           });
-          linksBuf.push({ playlist_id: pl.id, external_id: vid, position: k+1 });
+          linksBuf.push({ playlist_id: pl.id, external_id: vid, position: k + 1 });
         }
       } catch {}
-      if (((b*BATCH)+i+1) % 1000 === 0) {
-        console.log(`[tracks] ⏱ progress: ${Math.min((b*BATCH)+i+1, batches*BATCH)}/${Math.min(list.length, batches*BATCH)} playlists fetched`);
-      }
     }
+
     if (tracksBuf.length) {
       await upsertTracksSafe(tracksBuf, 500);
-      // map external_id → id
-      const ids = Array.from(new Set(linksBuf.map(l=>l.external_id)));
+      const ids = Array.from(new Set(linksBuf.map(l => l.external_id)));
       const idMap = new Map();
       for (let p = 0; p < ids.length; p += 500) {
-        const chunk = ids.slice(p, p+500);
+        const chunk = ids.slice(p, p + 500);
         const { data: d } = await supabase.from('tracks').select('id,external_id').in('external_id', chunk);
-        for (const r of (d||[])) idMap.set(r.external_id, r.id);
+        for (const r of (d || [])) idMap.set(r.external_id, r.id);
       }
-      const linkRows = linksBuf.map(l=>({ playlist_id: l.playlist_id, track_id: idMap.get(l.external_id), position: l.position })).filter(x=>x.track_id);
+      const linkRows = linksBuf.map(l => ({
+        playlist_id: l.playlist_id,
+        track_id: idMap.get(l.external_id),
+        position: l.position,
+      })).filter(x => x.track_id);
       if (linkRows.length) await upsertPlaylistTracksSafe(linkRows, 500);
     }
   }
-  // Clear prepared targets after processing
-  await supabase.from('job_state').delete().eq('key','track_targets_next');
+  // Clear only current slot's prepared targets
+  await supabase.from('job_state').delete().eq('key', key);
+  console.log(`[tracks:${slotLabel}] ✅ finished & cleared ${key}`);
 }
 
 export default { fetchTracks };
