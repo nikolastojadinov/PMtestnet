@@ -1,22 +1,25 @@
-// Warm-up task: prepare a set of target playlists (tracks=0) for the next fetch slot
-// Stores in job_state key 'track_targets_next' with structure { created_at, count, playlists: [{id, external_id}] }
+// Warm-up task (slot-isolated version)
+// Stores per-slot key track_targets_<slotLabel> to prevent race conflicts
 
 import { supabase } from '../supabase.js';
 
 function isoNow() { return new Date().toISOString(); }
 
-export async function prepareWarmupTargets(limit = 1000) {
-  // Try RPC first for efficient server-side selection
+export async function prepareWarmupTargets(limit = 1000, slotLabel = '0000') {
+  const key = `track_targets_${slotLabel}`;
+  let payload = { created_at: isoNow(), count: 0, playlists: [], slot: slotLabel };
+
+  // Try RPC first for efficient selection
   try {
     const { data, error } = await supabase.rpc('prepare_warmup_targets', { p_limit: limit });
     if (!error && Array.isArray(data) && data.length) {
-      const payload = { created_at: isoNow(), count: data.length, playlists: data };
-      await supabase.from('job_state').upsert({ key: 'track_targets_next', value: payload }, { onConflict: 'key' });
+      payload = { created_at: isoNow(), count: data.length, playlists: data, slot: slotLabel };
+      await supabase.from('job_state').upsert({ key, value: payload }, { onConflict: 'key' });
       return payload;
     }
   } catch {}
 
-  // Fallback: random client-side sampling then exclude those already having tracks
+  // Fallback: random client-side selection
   const oversample = Math.min(limit * 3, 10000);
   const { data: pool, error } = await supabase
     .from('playlists')
@@ -25,17 +28,17 @@ export async function prepareWarmupTargets(limit = 1000) {
     .gt('item_count', 0)
     .order('last_refreshed_on', { ascending: true, nullsFirst: true })
     .limit(oversample);
+
   if (error || !pool?.length) {
-    const payload = { created_at: isoNow(), count: 0, playlists: [] };
-    await supabase.from('job_state').upsert({ key: 'track_targets_next', value: payload }, { onConflict: 'key' });
+    await supabase.from('job_state').upsert({ key, value: payload }, { onConflict: 'key' });
     return payload;
   }
-  // Shuffle
+
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
-  // Exclude playlists already having tracks
+
   const ids = pool.map(p => p.id);
   const existing = new Set();
   const BATCH = 500;
@@ -48,13 +51,15 @@ export async function prepareWarmupTargets(limit = 1000) {
       .limit(1);
     if (!e2 && data) for (const r of data) existing.add(r.playlist_id);
   }
+
   const candidates = [];
   for (const p of pool) {
     if (!existing.has(p.id)) candidates.push(p);
     if (candidates.length >= limit) break;
   }
-  const payload = { created_at: isoNow(), count: candidates.length, playlists: candidates };
-  await supabase.from('job_state').upsert({ key: 'track_targets_next', value: payload }, { onConflict: 'key' });
+
+  payload = { created_at: isoNow(), count: candidates.length, playlists: candidates, slot: slotLabel };
+  await supabase.from('job_state').upsert({ key, value: payload }, { onConflict: 'key' });
   return payload;
 }
 
