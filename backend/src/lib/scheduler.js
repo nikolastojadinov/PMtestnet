@@ -1,5 +1,6 @@
-// backend/src/lib/scheduler.js (temporarily suspended — API compliance safe mode)
-// ⚠️ All scheduled cron jobs are paused, logic preserved for later reactivation.
+// backend/src/lib/scheduler.js (reactivated — 6 playlist fetch slots only)
+// ✅ Limited schedule: 6 half-hourly playlist discovery runs starting at 09:05 Europe/Budapest
+// ⚙️ Safe mode: no warm-up or track-fetch jobs enabled, only controlled playlist discovery.
 
 import cron from 'node-cron';
 import { supabase } from './supabase.js';
@@ -47,32 +48,44 @@ export function getCycleDay(now = new Date()) {
   return ((diffDays % 29) + 29) % 29 + 1;
 }
 
-function buildTenMinuteSlots() {
-  const startHour = 19;
-  const totalSlots = 72;
-  const interval = 10;
-  const warmOffset = 2;
-  const slots = [];
-  let h = startHour; let m = 30;
-  const zz = (n) => (n < 10 ? `0${n}` : `${n}`);
-  for (let i = 0; i < totalSlots; i++) {
-    const fetchMin = zz(m);
-    const fetchHour = zz(h);
-    const warmMin = zz((m - warmOffset + 60) % 60);
-    const warmHour = zz(m < warmOffset ? (h - 1 + 24) % 24 : h);
-    slots.push({ warmCron: `${warmMin} ${warmHour} * * *`, fetchCron: `${fetchMin} ${fetchHour} * * *`, label: `${fetchHour}${fetchMin}` });
-    m += interval; if (m >= 60) { m -= 60; h = (h + 1) % 24; }
-  }
-  return slots;
-}
-
-// 🚫 TEMPORARILY DISABLED: No cron jobs registered
+// Only 6 playlist discovery slots (every 30 min from 09:05)
 export function startFixedJobs() {
-  console.log('🛑 [scheduler] All cron-based jobs temporarily disabled.');
-  console.log('ℹ️  Playlist discovery, warm-up, fetchTracks, and purge jobs are paused.');
-  console.log('🕓  To reactivate, restore the original cron.schedule sections.');
-  // (loadJobCursor still runs so cursor state is updated)
+  console.log('✅ [scheduler] Reactivated in limited mode — 6 playlist discovery jobs active.');
+  console.log('🕓  Schedule: 09:05, 09:35, 10:05, 10:35, 11:05, 11:35 (Europe/Budapest)');
+  console.log('⚙️  Warm-up, fetchTracks, and purge jobs remain disabled.');
+
+  if (_tasks.length) { for (const t of _tasks) { try { t.stop(); } catch {} } _tasks.length = 0; }
   (async () => { try { await loadJobCursor(); } catch {} })();
+
+  const playlistSlots = [
+    '5 9 * * *',  '35 9 * * *',
+    '5 10 * * *', '35 10 * * *',
+    '5 11 * * *', '35 11 * * *'
+  ];
+
+  playlistSlots.forEach((pattern) => {
+    const t = cron.schedule(pattern, async () => {
+      if (!cursorReady) await loadJobCursor();
+      if (running) { console.log('[scheduler] ⏳ previous slot still running — skipping'); return; }
+      running = true;
+      const { day, slot } = cursor;
+      const queries = pickDaySlotList(day, slot);
+      console.log(`[scheduler] ⏰ Playlist slot ${pattern} (${TZ}) → day=${day} slot=${slot} queries=${queries.length}`);
+      try {
+        const summary = await runSeedDiscovery(day, slot);
+        console.log(`[seedDiscovery] ✅ slot=${slot} discovered=${summary.discovered} inserted=${summary.inserted}`);
+        const nextSlot = (slot + 1) % 6;
+        const nextDay = nextSlot === 0 ? ((day % 29) + 1) : day;
+        await updateJobCursor(nextDay, nextSlot);
+      } catch (e) {
+        console.warn('[seedDiscovery] ❌ slot failure:', e?.message || String(e));
+      } finally {
+        running = false;
+      }
+    }, { timezone: TZ });
+    _tasks.push(t);
+    console.log(`[scheduler] ⏰ Playlist fetch job active at ${pattern} (${TZ})`);
+  });
 }
 
 export function stopAllJobs() {
