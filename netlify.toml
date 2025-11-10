@@ -1,23 +1,19 @@
-# Netlify configuration for Purple Music frontend
-# Build the Next.js app from the frontend/ folder and publish with the Next.js runtime
+# Netlify configuration for Vite + React app (frontend)
 
 [build]
+  # Build from the frontend folder
   base    = "frontend"
-  command = "npm run build"
-  publish = ".next"
+  command = "npm ci --no-audit --no-fund && npm run build"
+  publish = "dist"
 
-# NOTE: Do not set environment variables here as empty strings,
-# as it will override values configured in the Netlify UI.
-# Set NEXT_PUBLIC_* variables in Netlify → Site settings → Environment variables.
+[build.environment]
+  # Ensure a compatible Node version for Vite 5 and dependencies
+  NODE_VERSION = "18"
+  NPM_FLAGS = "--no-audit --no-fund"
 
-[[plugins]]
-  package = "@netlify/plugin-nextjs"
+# Single Page App fallback so client-side routes resolve to index.html
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
 
-# Security headers (no CSP yet to avoid blocking YouTube IFrame)
-[[headers]]
-  for = "/*"
-  [headers.values]
-    X-Frame-Options            = "SAMEORIGIN"
-    X-Content-Type-Options     = "nosniff"
-    Referrer-Policy            = "strict-origin-when-cross-origin"
-    Strict-Transport-Security  = "max-age=31536000; includeSubDomains; preload"
