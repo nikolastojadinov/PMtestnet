@@ -1,10 +1,12 @@
-import { User, Crown, Globe, Shield, FileText } from 'lucide-react';
+import { User, Crown, Globe, Shield, FileText, LogIn } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import GoPremiumModal from './GoPremiumModal';
 import { useLanguage, languages } from '@/contexts/LanguageContext';
 import { useSession, isPremium } from '@/lib/userSession';
 import { Link } from 'react-router-dom';
 import { useMemo, useState } from 'react';
+import PiLoginButton from './PiLoginButton';
+import { isPiBrowser } from '@/lib/pi';
 
 export default function ProfileMenu() {
   const { t, setLanguage, currentLanguage } = useLanguage();
@@ -25,6 +27,17 @@ export default function ProfileMenu() {
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56 bg-card border-border">
+          {!user && isPiBrowser() && (
+            <DropdownMenuItem className="py-3">
+              <div className="w-full flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-sm">
+                  <LogIn className="w-4 h-4" />
+                  <span>Login with Pi</span>
+                </div>
+                <PiLoginButton />
+              </div>
+            </DropdownMenuItem>
+          )}
           {isPremium(user) ? (
             <DropdownMenuItem className="py-3">
               <Crown className="w-4 h-4 mr-3 text-amber-500" />

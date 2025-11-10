@@ -11,8 +11,9 @@ import Header from "./components/Header";
 import Footer from "./components/Footer";
 import Player from "./components/Player";
 import Home from "./pages/Home";
-import PiLoginButton from './components/PiLoginButton';
-import PiPaymentButton from './components/PiPaymentButton';
+// Removed floating Pi test buttons; login now inside Profile dropdown.
+// import PiLoginButton from './components/PiLoginButton';
+// import PiPaymentButton from './components/PiPaymentButton';
 import { useEffect, useState } from 'react';
 import { initPiSDK, isPiBrowser } from './lib/pi';
 import Search from "./pages/Search";
@@ -70,12 +71,7 @@ const App = () => {
                   {/* YouTube Player Container - globalni, pomera se između pozicija */}
                   <YouTubePlayerContainer />
                   
-                  {/* Pi integration test buttons */}
-                  <div className="fixed bottom-4 left-4 z-50 flex flex-col gap-2">
-                    {piReady && <div className="px-3 py-1 rounded bg-black/70 text-xs text-yellow-400 shadow">Pi SDK Ready</div>}
-                    <PiLoginButton />
-                    <PiPaymentButton />
-                  </div>
+                  {/* Pi integration test buttons removed for production; use ProfileMenu for login */}
                   <Player />
                   <Footer />
                   <DebugOverlay />
