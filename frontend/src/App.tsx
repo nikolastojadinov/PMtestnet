@@ -11,7 +11,10 @@ import Header from "./components/Header";
 import Footer from "./components/Footer";
 import Player from "./components/Player";
 import Home from "./pages/Home";
-import PiLogin from './components/PiLogin';
+import PiLoginButton from './components/PiLoginButton';
+import PiPaymentButton from './components/PiPaymentButton';
+import { useEffect, useState } from 'react';
+import { initPiSDK } from './lib/pi';
 import Search from "./pages/Search";
 import Library from "./pages/Library";
 import Playlist from "./pages/Playlist";
@@ -23,7 +26,12 @@ import TermsOfService from "./pages/terms-of-service";
 
 const queryClient = new QueryClient();
 
-const App = () => (
+const App = () => {
+  const [piReady, setPiReady] = useState(false);
+  useEffect(() => {
+    initPiSDK().then((ready) => { if (ready) { console.log('Pi SDK initialized'); setPiReady(true); } });
+  }, []);
+  return (
   <QueryClientProvider client={queryClient}>
     <LanguageProvider>
       <PlayerProvider>
@@ -57,7 +65,12 @@ const App = () => (
               {/* YouTube Player Container - globalni, pomera se između pozicija */}
               <YouTubePlayerContainer />
               
-              <PiLogin />
+              {/* Pi integration test buttons */}
+              <div className="fixed bottom-4 left-4 z-50 flex flex-col gap-2">
+                {piReady && <div className="px-3 py-1 rounded bg-black/70 text-xs text-yellow-400 shadow">Pi SDK Ready</div>}
+                <PiLoginButton />
+                <PiPaymentButton />
+              </div>
               <Player />
               <Footer />
             </div>
@@ -66,6 +79,7 @@ const App = () => (
       </PlayerProvider>
     </LanguageProvider>
   </QueryClientProvider>
-);
+  );
+};
 
 export default App;
