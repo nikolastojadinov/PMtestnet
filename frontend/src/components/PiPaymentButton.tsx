@@ -9,19 +9,27 @@ export default function PiPaymentButton() {
   const onClick = async () => {
     setBusy(true); setStatus('');
     try {
-      const res = await createPiPayment({ amount: 0.01, memo: 'PM Test payment', metadata: { test: true } });
-      setStatus(`Completed: ${res.paymentId} tx ${res.txid}`);
+      const res = await createPiPayment({ amount: 0.01, memo: 'Test Payment', metadata: { app: 'Purple Music' } });
+      if (res?.status === 'completed') {
+        setStatus('Payment completed successfully');
+      } else {
+        setStatus('Payment finished with unknown status');
+      }
     } catch (e: any) {
-      setStatus(`Error: ${e?.message || String(e)}`);
+      setStatus('Payment failed, please retry.');
     } finally { setBusy(false); }
   };
 
   return (
     <div className="flex items-center gap-2">
-      <button onClick={onClick} disabled={busy} className="px-3 py-2 rounded bg-amber-600 text-black text-sm hover:bg-amber-500 disabled:opacity-60">
-        {busy ? 'Processing…' : 'Test Pi Payment (0.01π)'}
+      <button
+        onClick={onClick}
+        disabled={busy}
+        className="px-3 py-2 rounded text-sm disabled:opacity-60 bg-gradient-to-r from-purple-700 via-purple-600 to-yellow-500 text-white hover:brightness-110"
+      >
+        {busy ? 'Processing…' : 'Pay 0.01π (Test)'}
       </button>
-      {status && <span className="text-xs text-muted-foreground max-w-[240px] truncate">{status}</span>}
+      {status && <span className="text-xs text-muted-foreground max-w-[260px] truncate">{status}</span>}
     </div>
   );
 }

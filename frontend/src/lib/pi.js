@@ -77,18 +77,44 @@ export async function authenticateUser() {
   }
 }
 
-export async function createPiPayment({ amount = 0.01, memo = 'Test payment', metadata = {} } = {}) {
+const BACKEND_URL = (import.meta.env.NEXT_PUBLIC_BACKEND_URL || import.meta.env.VITE_BACKEND_URL || '').replace(/\/$/, '');
+
+export async function createPiPayment({ amount = 0.01, memo = 'Test Payment', metadata = {} } = {}) {
   await initPiSDK();
   const Pi = requirePi();
+  console.log('[Pi] Payment created');
   return new Promise((resolve, reject) => {
     try {
       Pi.createPayment({ amount, memo, metadata }, {
-        onReadyForServerApproval: (paymentId) => {
-          console.log('[Pi] onReadyForServerApproval', paymentId);
+        onReadyForServerApproval: async (paymentId) => {
+          try {
+            if (!BACKEND_URL) console.warn('[Pi] Missing BACKEND_URL, skipping /verify-payment');
+            console.log('[Pi] Calling /verify-payment...');
+            await fetch(`${BACKEND_URL}/api/verify-payment`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ paymentId })
+            });
+            console.log('[Pi] Payment approved');
+          } catch (e) {
+            console.error('[Pi] verify-payment failed', e);
+          }
         },
-        onReadyForServerCompletion: (paymentId, txid) => {
-          console.log('[Pi] onReadyForServerCompletion', paymentId, txid);
-          resolve({ paymentId, txid });
+        onReadyForServerCompletion: async (paymentId, txid) => {
+          try {
+            if (!BACKEND_URL) console.warn('[Pi] Missing BACKEND_URL, skipping /complete-payment');
+            console.log('[Pi] Calling /complete-payment...');
+            await fetch(`${BACKEND_URL}/api/complete-payment`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ paymentId })
+            });
+            console.log('[Pi] Payment completed successfully');
+            resolve({ status: 'completed', paymentId, txid });
+          } catch (e) {
+            console.error('[Pi] complete-payment failed', e);
+            reject(e);
+          }
         },
         onCancel: (paymentId) => {
           console.warn('[Pi] Payment cancelled', paymentId);
