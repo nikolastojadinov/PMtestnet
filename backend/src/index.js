@@ -8,6 +8,7 @@ import { startFixedJobs, getCycleDay } from './lib/scheduler.js'; // 🔹 stopAl
 import { verifySupabaseSchema } from './lib/persistence.js';
 import { pickDailyList } from './lib/searchSeedsGenerator.js';
 import { paymentsRouter } from './routes/payments.js';
+import { createClient } from '@supabase/supabase-js';
 
 // ======================================================
 // 🚀 Purple Music Backend — Boot Summary
@@ -104,6 +105,30 @@ async function main() {
     });
 
     app.use('/payments', paymentsRouter);
+
+    // Simple Pi auth persistence endpoint (upsert user profile)
+    app.post('/api/pi/auth', async (req, res) => {
+      try {
+        const { uid, username, wallet, language, country } = req.body || {};
+        if (!username) {
+          return res.status(400).json({ error: 'missing username' });
+        }
+        // Light validation
+        const row = {
+          pi_uid: uid || null,
+          username,
+          wallet: wallet || null,
+          language: language || 'en',
+          country: country || 'GLOBAL',
+          user_consent: true,
+        };
+        const { error } = await supabase.from('users').upsert(row, { onConflict: 'pi_uid,username' });
+        if (error) return res.status(500).json({ error: error.message });
+        res.json({ ok: true });
+      } catch (e) {
+        res.status(500).json({ error: String(e?.message || e) });
+      }
+    });
     app.get('/', (req, res) => res.type('text/plain').send('Purple Music Backend (payments enabled).'));
 
     const PORT = process.env.PORT || 10000;

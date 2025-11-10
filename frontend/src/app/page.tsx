@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Home from "../pages/Home";
 
 declare global {
@@ -27,7 +27,29 @@ function loadPiSdk(): Promise<any> {
   });
 }
 
-async function piAuthenticate(): Promise<{ username: string; accessToken?: string; wallet?: string } | null> {
+type PiProfile = {
+  uid?: string;
+  username: string;
+  accessToken?: string;
+  wallet?: string;
+  language?: string;
+  country?: string | null;
+};
+
+function getBrowserLocale(): { language?: string; country?: string | null } {
+  try {
+    const lang = navigator.language || (navigator as any).userLanguage || undefined;
+    let country: string | null = null;
+    if (lang && /[-_]/.test(lang)) {
+      country = lang.split(/[-_]/)[1]?.toUpperCase() || null;
+    }
+    return { language: lang, country };
+  } catch {
+    return { language: undefined, country: null };
+  }
+}
+
+async function piAuthenticate(): Promise<PiProfile | null> {
   try {
     const Pi = await loadPiSdk();
     if (!Pi || typeof Pi.init !== "function") return null;
@@ -40,16 +62,18 @@ async function piAuthenticate(): Promise<{ username: string; accessToken?: strin
     }
     const scopes = ["username", "payments", "wallet_address"];
     const authResult = await Pi.authenticate(scopes);
-    const username = authResult?.user?.username || "Pioneer";
+    const uid = authResult?.user?.uid;
+    const username = authResult?.user?.username || "";
     const wallet = authResult?.user?.wallet?.address || authResult?.user?.wallet || undefined;
     const accessToken = authResult?.accessToken;
-    return { username, accessToken, wallet };
+    const { language, country } = getBrowserLocale();
+    return { uid, username, accessToken, wallet, language, country };
   } catch (e) {
     return null;
   }
 }
 
-async function storeUser(profile: { username: string; wallet?: string; accessToken?: string } | null) {
+async function storeUser(profile: PiProfile | null) {
   try {
     if (!profile) return;
     const base = (import.meta as any).env?.VITE_BACKEND_URL || "";
@@ -71,26 +95,41 @@ const IntroAuthPage: React.FC = () => {
   const [showWelcome, setShowWelcome] = useState<boolean>(false);
   const [showApp, setShowApp] = useState<boolean>(false);
   const hideWelcomeTimer = useRef<number | null>(null);
+  const authStartRef = useRef<number>(Date.now());
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      // Only try Pi auth inside Pi Browser; otherwise skip quickly
+      // Only try Pi auth inside Pi Browser
+      let profile: PiProfile | null = null;
       if (isPiBrowser()) {
-        const result = await piAuthenticate();
-        if (!cancelled && result) {
-          setUsername(result.username);
-          await storeUser(result);
+        profile = await piAuthenticate();
+        if (!cancelled && profile) {
+          setUsername(profile.username || "");
+          await storeUser(profile);
         }
       }
+
+      // Enforce minimum 5s intro visibility from mount
+      const elapsed = Date.now() - authStartRef.current;
+      const minMs = 5000;
+      const waitMs = elapsed < minMs ? (minMs - elapsed) : 0;
+      await new Promise((r) => setTimeout(r, waitMs));
+
       if (!cancelled) {
         setAuthLoading(false);
-        setShowWelcome(true);
-        // Hide after 2s then show app
-        hideWelcomeTimer.current = window.setTimeout(() => {
-          setShowWelcome(false);
+        // Show welcome only if we have a username from auth
+        if (profile && profile.username) {
+          setShowWelcome(true);
+          // Hide after 2s then show app
+          hideWelcomeTimer.current = window.setTimeout(() => {
+            setShowWelcome(false);
+            setShowApp(true);
+          }, 2000) as unknown as number;
+        } else {
+          // No user data → go straight to app
           setShowApp(true);
-        }, 2000) as unknown as number;
+        }
       }
     })();
     return () => {
@@ -122,7 +161,7 @@ const IntroAuthPage: React.FC = () => {
       {showWelcome && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 transition-opacity duration-500">
           <div className="px-6 py-4 rounded-xl bg-white text-black text-xl font-semibold shadow-lg">
-            {"Welcome "}{username || "Pioneer"}
+            {"Welcome "}{username}
           </div>
         </div>
       )}
