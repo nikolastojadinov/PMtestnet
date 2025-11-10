@@ -36,4 +36,12 @@ export default defineConfig(({ mode }) => ({
     target: 'modules',
     cssCodeSplit: true,
   },
+  // Map Netlify-style NEXT_PUBLIC_* env vars into import.meta.env at build time
+  define: {
+    'import.meta.env.NEXT_PUBLIC_PI_APP_ID': JSON.stringify(process.env.NEXT_PUBLIC_PI_APP_ID || ''),
+    'import.meta.env.NEXT_PUBLIC_BACKEND_URL': JSON.stringify(process.env.NEXT_PUBLIC_BACKEND_URL || ''),
+    'import.meta.env.NEXT_PUBLIC_SUPABASE_URL': JSON.stringify(process.env.NEXT_PUBLIC_SUPABASE_URL || ''),
+    'import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY': JSON.stringify(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''),
+    'import.meta.env.NEXT_PUBLIC_FRONTEND_URL': JSON.stringify(process.env.NEXT_PUBLIC_FRONTEND_URL || ''),
+  },
 }));
