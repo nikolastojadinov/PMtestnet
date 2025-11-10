@@ -4,6 +4,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import GoPremiumModal from './GoPremiumModal';
 import { useLanguage, languages } from '@/contexts/LanguageContext';
 import { useSession, isPremium } from '@/lib/userSession';
+import { Link } from 'react-router-dom';
 
 export default function HeaderProfileMenu() {
   const { t, setLanguage, currentLanguage } = useLanguage();
@@ -37,9 +38,11 @@ export default function HeaderProfileMenu() {
             </DropdownMenuItem>
           )}
           <DropdownMenuSeparator />
-          <DropdownMenuItem className="cursor-pointer py-3">
-            <Shield className="w-4 h-4 mr-3" />
-            <span>{t('privacy_policy')}</span>
+          <DropdownMenuItem asChild className="cursor-pointer py-3">
+            <Link to="/privacy-policy" className="flex items-center">
+              <Shield className="w-4 h-4 mr-3" />
+              <span>{t('privacy_policy')}</span>
+            </Link>
           </DropdownMenuItem>
           <DropdownMenuItem className="cursor-pointer py-3">
             <FileText className="w-4 h-4 mr-3" />

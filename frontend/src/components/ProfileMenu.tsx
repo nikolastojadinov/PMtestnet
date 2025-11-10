@@ -43,9 +43,11 @@ export default function ProfileMenu() {
               <span>{t('privacy_policy')}</span>
             </Link>
           </DropdownMenuItem>
-          <DropdownMenuItem className="cursor-pointer py-3">
-            <FileText className="w-4 h-4 mr-3" />
-            <span>{t('terms_of_service')}</span>
+          <DropdownMenuItem asChild className="cursor-pointer py-3">
+            <Link to="/terms-of-service" className="flex items-center">
+              <FileText className="w-4 h-4 mr-3" />
+              <span>{t('terms_of_service')}</span>
+            </Link>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <div className="px-2 py-2">
