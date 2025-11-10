@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Link } from "react-router-dom";
 import appLogo from "@/assets/app-logo.png";
 import { useLanguage, languages } from "@/contexts/LanguageContext";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import PremiumDialog from "./PremiumDialog";
 const Header = () => {
   const {
@@ -47,7 +47,7 @@ const Header = () => {
             <DropdownMenuSeparator />
             <DropdownMenuItem className="cursor-pointer py-3">
               <User className="w-4 h-4 mr-3" />
-              <span>{t("profile")}</span>
+              <span>{localStorage.getItem('auth-username') || t("profile")}</span>
             </DropdownMenuItem>
             
             <Dialog open={languageDialogOpen} onOpenChange={setLanguageDialogOpen}>

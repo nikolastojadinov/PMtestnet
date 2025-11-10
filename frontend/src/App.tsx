@@ -11,7 +11,7 @@ import Header from "./components/Header";
 import Footer from "./components/Footer";
 import Player from "./components/Player";
 import Home from "./pages/Home";
-import IntroAuthPage from "./app/page";
+import AuthIntro from "./components/AuthIntro";
 import Search from "./pages/Search";
 import Library from "./pages/Library";
 import Playlist from "./pages/Playlist";
@@ -39,7 +39,7 @@ const App = () => (
                 <Header />
                 <div className="flex-1 mt-16 mb-20 overflow-y-auto scrollbar-hide">
                   <Routes>
-                    <Route path="/" element={<IntroAuthPage />} />
+                    <Route path="/" element={<AuthIntro><Home /></AuthIntro>} />
                     <Route path="/search" element={<Search />} />
                     <Route path="/library" element={<Library />} />
                     <Route path="/playlist/:id" element={<Playlist />} />
