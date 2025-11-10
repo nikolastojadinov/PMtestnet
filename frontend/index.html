@@ -20,6 +20,32 @@
   <body>
     <div id="root"></div>
     <div id="pi-browser-debug" style="position:fixed;top:0;left:0;right:0;padding:4px;font-size:10px;font-family:ui-monospace,monospace;background:#111;color:#6ee7ff;z-index:999999;display:none"></div>
+    <!-- Inject runtime env similar to Pi demo app -->
+    <script>
+      // Safely extract backend URL from injected define values (Vite) or fallbacks.
+      (function(){
+        var be = '';
+        try { be = (import.meta && import.meta.env && (import.meta.env.NEXT_PUBLIC_BACKEND_URL || import.meta.env.VITE_BACKEND_URL)) || ''; } catch {}
+        window.__ENV = { backendURL: be, sandbox: 'true' };
+      })();
+    </script>
+
+    <!-- Load Pi SDK statically, as in official demo -->
+    <script src="https://sdk.minepi.com/pi-sdk.js"></script>
+    <script>
+      (function(){
+        try {
+          var runSDKInSandboxMode = (window.__ENV && window.__ENV.sandbox === 'true');
+          if (window.Pi && !window.Pi._initialized) {
+            window.Pi.init({ version: '2.0', sandbox: runSDKInSandboxMode });
+            window.Pi._initialized = true;
+          }
+        } catch (e) {
+          console.warn('[Pi] early init failed', e);
+        }
+      })();
+    </script>
+
     <!-- Pre-module startup diagnostics: capture early errors and detect no-mount -->
     <script>
       (function () {

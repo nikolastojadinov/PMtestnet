@@ -1,7 +1,6 @@
 // frontend/src/lib/pi.js
-// Pi Network SDK integration wrapper (v2.0) with guarded initialization.
-// NOTE: The official package '@pi-network/pi-sdk' may not be published on npm for all environments.
-// We rely on the global Pi object injected by the Pi Browser (or loaded via script) when present.
+// Pi Network SDK integration wrapper adapted to official demo pattern.
+// Assumes index.html has already loaded https://sdk.minepi.com/pi-sdk.js and called Pi.init.
 
 export function isPiBrowser() {
   if (typeof window === 'undefined') return false;
@@ -12,42 +11,25 @@ let sdkInitPromise = null;
 let initialized = false;
 
 export async function initPiSDK() {
-  if (!isPiBrowser()) {
-    console.warn('[Pi] Not in Pi Browser – SDK init skipped');
+  if (!isPiBrowser()) return false;
+  if (initialized) return true;
+  if (!window.Pi) {
+    console.warn('[Pi] Pi SDK not present (script tag failed?)');
     return false;
   }
-  if (initialized) return true;
-  if (sdkInitPromise) return sdkInitPromise;
-  sdkInitPromise = (async () => {
-    // Attempt to load script if Pi not present
-    if (!window.Pi) {
-      await new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = 'https://sdk.minepi.com/pi-sdk.js';
-        script.async = true;
-        script.onload = resolve;
-        script.onerror = () => reject(new Error('Failed to load Pi SDK script'));
-        document.head.appendChild(script);
-      }).catch(e => { console.error('[Pi] Script load error', e); });
+  try {
+    if (!window.Pi._initialized) {
+      const sandbox = true; // keep sandbox while testing
+      window.Pi.init({ version: '2.0', sandbox, appId: (import.meta.env.NEXT_PUBLIC_PI_APP_ID || import.meta.env.VITE_PI_APP_ID) });
+      window.Pi._initialized = true;
+      console.log('[Pi] SDK confirmed initialized');
     }
-    if (!window.Pi) {
-      console.warn('[Pi] Pi object still missing after script load');
-      return false;
-    }
-    try {
-      if (!window.Pi._initialized) {
-        window.Pi.init({ version: '2.0', sandbox: true, appId: (import.meta.env.NEXT_PUBLIC_PI_APP_ID || import.meta.env.VITE_PI_APP_ID) });
-        window.Pi._initialized = true;
-        console.log('[Pi] SDK initialized (v2.0)');
-      }
-      initialized = true;
-      return true;
-    } catch (e) {
-      console.error('[Pi] init error', e);
-      return false;
-    }
-  })();
-  return sdkInitPromise;
+    initialized = true;
+    return true;
+  } catch (e) {
+    console.error('[Pi] init error', e);
+    return false;
+  }
 }
 
 function requirePi() {
@@ -58,23 +40,18 @@ function requirePi() {
 export async function authenticateUser() {
   await initPiSDK();
   const Pi = requirePi();
+  const scopes = ['username', 'payments', 'wallet_address'];
   const onIncompletePaymentFound = (payment) => {
-    console.warn('[Pi] Incomplete payment found', payment);
+    console.log('[Pi] onIncompletePaymentFound', payment?.identifier || payment);
   };
-  try {
-    const authResult = await Pi.authenticate(['username', 'payments', 'wallet_address'], onIncompletePaymentFound);
-    const user = authResult?.user || {};
-    console.log('[Pi] Auth success', user?.username, user?.uid);
-    return {
-      username: user?.username || null,
-      uid: user?.uid || null,
-      wallet: user?.wallet_address || null,
-      accessToken: authResult?.accessToken || null,
-    };
-  } catch (e) {
-    console.error('[Pi] Auth failed', e);
-    throw e;
-  }
+  const authResult = await Pi.authenticate(scopes, onIncompletePaymentFound);
+  const user = authResult?.user || {};
+  return {
+    username: user?.username || null,
+    uid: user?.uid || null,
+    wallet: user?.wallet_address || null,
+    accessToken: authResult?.accessToken || null,
+  };
 }
 
 const BACKEND_URL = (import.meta.env.NEXT_PUBLIC_BACKEND_URL || import.meta.env.VITE_BACKEND_URL || '').replace(/\/$/, '');
