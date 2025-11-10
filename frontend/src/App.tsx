@@ -23,6 +23,7 @@ import Favorites from "./pages/Favorites";
 import NotFound from "./pages/NotFound";
 import PrivacyPolicy from "./pages/privacy-policy";
 import TermsOfService from "./pages/terms-of-service";
+import DebugOverlay from "./components/DebugOverlay";
 
 const queryClient = new QueryClient();
 
@@ -73,6 +74,7 @@ const App = () => {
               </div>
               <Player />
               <Footer />
+              <DebugOverlay />
             </div>
           </BrowserRouter>
         </TooltipProvider>
