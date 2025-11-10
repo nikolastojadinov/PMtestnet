@@ -11,6 +11,7 @@ import Header from "./components/Header";
 import Footer from "./components/Footer";
 import Player from "./components/Player";
 import Home from "./pages/Home";
+import PiLogin from './components/PiLogin';
 import Search from "./pages/Search";
 import Library from "./pages/Library";
 import Playlist from "./pages/Playlist";
@@ -52,6 +53,7 @@ const App = () => (
               {/* YouTube Player Container - globalni, pomera se između pozicija */}
               <YouTubePlayerContainer />
               
+              <PiLogin />
               <Player />
               <Footer />
             </div>
