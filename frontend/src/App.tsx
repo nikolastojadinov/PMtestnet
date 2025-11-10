@@ -18,6 +18,7 @@ import Playlist from "./pages/Playlist";
 import CreatePlaylist from "./pages/CreatePlaylist";
 import Favorites from "./pages/Favorites";
 import NotFound from "./pages/NotFound";
+import PrivacyPolicy from "./pages/privacy-policy";
 
 const queryClient = new QueryClient();
 
@@ -45,6 +46,7 @@ const App = () => (
                     <Route path="/playlist/:id" element={<Playlist />} />
                     <Route path="/create-playlist" element={<CreatePlaylist />} />
                     <Route path="/favorites" element={<Favorites />} />
+                    <Route path="/privacy-policy" element={<PrivacyPolicy />} />
                     <Route path="*" element={<NotFound />} />
                   </Routes>
                 </div>
