@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import appLogo from '@/assets/app-logo.png';
-import HeaderProfileMenu from './HeaderProfileMenu';
+import ProfileMenu from './ProfileMenu';
 const Header = () => {
   // Language and premium handled inside HeaderProfileMenu now.
   return <header className="fixed top-0 left-0 right-0 h-16 bg-background/80 backdrop-blur-md border-b border-border/50 z-50">
@@ -19,7 +19,7 @@ const Header = () => {
         </Link>
 
         {/* Profile Dropdown */}
-        <HeaderProfileMenu />
+  <ProfileMenu />
       </div>
 
       {/* Premium modal moved into HeaderProfileMenu */}
