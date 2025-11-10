@@ -1,7 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
-// NOTE: Legacy plugin removed due to version conflict with current Vite (v5). If Pi Browser
-// requires polyfills, consider upgrading Vite or adding manual polyfills (fetch, Promise, etc.).
+import legacy from "@vitejs/plugin-legacy";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
 
@@ -13,6 +12,18 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [
     react(),
+    legacy({
+      targets: ["defaults", "not IE 11", "Android >= 6", "iOS >= 12"],
+      modernPolyfills: true,
+      // Remove explicit polyfill list that caused resolution errors; rely on automatic injection
+      renderLegacyChunks: true,
+      // Generate a separate polyfills chunk
+      polyfills: [
+        'es.promise',
+        'es.array.flat',
+        'es.array.find',
+      ],
+    }),
     mode === "development" && componentTagger(),
   ].filter(Boolean),
   resolve: {
@@ -21,7 +32,8 @@ export default defineConfig(({ mode }) => ({
     },
   },
   build: {
-    // Slightly lower target may help older WebViews while keeping bundle reasonable
-    target: "es2020",
+    // Let legacy plugin handle transpilation; keep a moderate target
+    target: 'modules',
+    cssCodeSplit: true,
   },
 }));
