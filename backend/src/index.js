@@ -1,10 +1,13 @@
 // ✅ FULL REWRITE v5.2 — Purple Music Backend entrypoint (fixed cron schedule + correct imports)
 
 import http from 'http';
+import express from 'express';
+import cors from 'cors';
 import supabase from './lib/supabase.js';
 import { startFixedJobs, getCycleDay } from './lib/scheduler.js'; // 🔹 stopAllJobs removed
 import { verifySupabaseSchema } from './lib/persistence.js';
 import { pickDailyList } from './lib/searchSeedsGenerator.js';
+import { paymentsRouter } from './routes/payments.js';
 
 // ======================================================
 // 🚀 Purple Music Backend — Boot Summary
@@ -58,50 +61,53 @@ async function main() {
     console.log('[startup] ✅ Scheduler initialized (local-time schedule)');
 
     // ======================================================
-    // 🩺 Lightweight HTTP server (for /healthz and /info)
+    // 🩺 Express HTTP server (health, info, payments)
     // ======================================================
-    const server = http.createServer((req, res) => {
-      if (req.url === '/healthz') {
-        const response = {
-          status: 'ok',
+    const app = express();
+    const origin = process.env.NEXT_PUBLIC_FRONTEND_URL || process.env.FRONTEND_ORIGIN || '*';
+    app.use(cors({ origin }));
+    app.use(express.json());
+
+    app.get('/healthz', (req, res) => {
+      const response = {
+        status: 'ok',
+        supabase: !!process.env.SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE,
+        youtubeKeys: process.env.YOUTUBE_API_KEYS
+          ? process.env.YOUTUBE_API_KEYS.split(',').length
+          : 0,
+        uptime: `${Math.round(process.uptime())}s`,
+        timestamp: new Date().toISOString()
+      };
+      res.json(response);
+    });
+
+    app.get('/info', (req, res) => {
+      const TZ = process.env.TZ || 'Europe/Budapest';
+      const body = {
+        version: 'v6.0-seeds',
+        cron: {
+          timezone: TZ,
+          seedSlots: '20 slots @ 12:55/13:00 → every 30min',
+        },
+        env: {
           supabase: !!process.env.SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE,
           youtubeKeys: process.env.YOUTUBE_API_KEYS
             ? process.env.YOUTUBE_API_KEYS.split(',').length
             : 0,
-          uptime: `${Math.round(process.uptime())}s`,
-          timestamp: new Date().toISOString()
-        };
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(response));
-      } else if (req.url === '/info') {
-        const TZ = process.env.TZ || 'Europe/Budapest';
-        const body = {
-          version: 'v6.0-seeds',
-          cron: {
-            timezone: TZ,
-            seedSlots: '20 slots @ 12:55/13:00 → every 30min',
-          },
-          env: {
-            supabase: !!process.env.SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE,
-            youtubeKeys: process.env.YOUTUBE_API_KEYS
-              ? process.env.YOUTUBE_API_KEYS.split(',').length
-              : 0,
-            cycleStartDate: process.env.CYCLE_START_DATE || '2025-10-27',
-          },
-          seeds: { perDay: 2000, totalCycle: 58000, sampleDay1Count: pickDailyList(1).length },
-          uptime: `${Math.round(process.uptime())}s`,
-          timestamp: new Date().toISOString(),
-        };
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(body));
-      } else {
-        res.writeHead(200, { 'Content-Type': 'text/plain' });
-        res.end('Purple Music Backend (58K search seeds mode) running.\n');
-      }
+          cycleStartDate: process.env.CYCLE_START_DATE || '2025-10-27',
+        },
+        seeds: { perDay: 2000, totalCycle: 58000, sampleDay1Count: pickDailyList(1).length },
+        uptime: `${Math.round(process.uptime())}s`,
+        timestamp: new Date().toISOString(),
+      };
+      res.json(body);
     });
 
+    app.use('/payments', paymentsRouter);
+    app.get('/', (req, res) => res.type('text/plain').send('Purple Music Backend (payments enabled).'));
+
     const PORT = process.env.PORT || 10000;
-    server.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       console.log(`[server] 🌐 Listening on port ${PORT}`);
     });
 

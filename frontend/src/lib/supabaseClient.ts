@@ -1,7 +1,7 @@
 // frontend/src/lib/supabaseClient.ts
-// Lightweight Supabase client initializer supporting both Vite and Next-style env names.
-// Reads: VITE_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_URL and VITE_SUPABASE_ANON_KEY / NEXT_PUBLIC_SUPABASE_ANON_KEY
-// Export: supabase (singleton) + helper upsertUser + logStatistic
+// Full rewrite: standard browser Supabase client with helpers
+// Env: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY (or VITE_* fallbacks)
+// Exports: supabase, upsertUser, logStatistic, detectDevice, detectCountry, getUserByPiUid, updateUserByPiUid
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
@@ -70,4 +70,17 @@ export function detectCountry(): string | null {
     const parts = lang.split('-');
     return parts.length > 1 ? parts[1].toUpperCase() : null;
   } catch { return null; }
+}
+
+// Extra helpers for payments/session flows
+export async function getUserByPiUid(pi_uid: string) {
+  if (!supabase) return { data: null, error: new Error('Supabase not initialized') };
+  const { data, error } = await supabase.from('users').select('*').eq('pi_uid', pi_uid).maybeSingle();
+  return { data, error };
+}
+
+export async function updateUserByPiUid(pi_uid: string, patch: Record<string, any>) {
+  if (!supabase) return { data: null, error: new Error('Supabase not initialized') };
+  const { data, error } = await supabase.from('users').update(patch).eq('pi_uid', pi_uid).select();
+  return { data, error };
 }
