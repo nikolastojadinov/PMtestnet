@@ -19,6 +19,7 @@
 
   <body>
     <div id="root"></div>
+    <div id="pi-browser-debug" style="position:fixed;top:0;left:0;right:0;padding:4px;font-size:10px;font-family:ui-monospace,monospace;background:#111;color:#6ee7ff;z-index:999999;display:none"></div>
     <!-- Pre-module startup diagnostics: capture early errors and detect no-mount -->
     <script>
       (function () {
@@ -105,11 +106,22 @@
         });
 
         // Watchdog: if React doesn't mount in time, surface a message
-        setTimeout(function () {
-          if (!window.__appMounted) {
-            show('Timeout: App did not mount within 4s. Possible causes: module script blocked, Pi Browser WebView quirks, CSP, or a crash before React.');
+        // Ultra-light debug strip for Pi Browser white screen detection
+        try {
+          var dbg = document.getElementById('pi-browser-debug');
+          if (dbg) {
+            var ua = navigator.userAgent||'';
+            if (/PiBrowser/i.test(ua)) { dbg.style.display='block'; dbg.textContent='PiBrowser detected. Awaiting React mount…'; }
+            var tick = 0;
+            var iv = setInterval(function(){
+              tick++;
+              if (!dbg) return clearInterval(iv);
+              if (window.__appMounted) { dbg.textContent='React mounted after '+tick*250+'ms'; clearInterval(iv); return; }
+              if (tick===16) { dbg.textContent='Still no mount after 4s'; }
+              if (tick===40) { dbg.textContent='No mount after 10s. Showing overlay.'; show('React root did not mount. UA='+ua); clearInterval(iv); }
+            },250);
           }
-        }, 4000);
+        } catch {}
       })();
     </script>
 

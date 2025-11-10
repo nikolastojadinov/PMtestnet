@@ -33,6 +33,14 @@ const App = () => {
   useEffect(() => {
     initPiSDK().then((ready) => { if (ready) { console.log('Pi SDK initialized'); setPiReady(true); } });
   }, []);
+  // Mark app mounted and remove startup banner if present
+  useEffect(() => {
+    try {
+      (window as any).__appMounted = true;
+      const banner = document.getElementById('startup-banner');
+      if (banner) banner.remove();
+    } catch {}
+  }, []);
   return (
   <QueryClientProvider client={queryClient}>
     <LanguageProvider>
