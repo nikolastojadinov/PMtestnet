@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pi Diagnose</title>
+    <style>
+      body { background:#0b1220; color:#e2e8f0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; padding:16px; }
+      .ok { color:#34d399 }
+      .warn { color:#f59e0b }
+      .err { color:#f87171 }
+      pre { white-space: pre-wrap }
+      code { color:#93c5fd }
+    </style>
+  </head>
+  <body>
+    <h1>Pi Diagnose</h1>
+    <div id="ua"></div>
+    <div id="log"></div>
+    <script>
+      function log(cls, msg) {
+        var el = document.createElement('div');
+        el.className = cls;
+        el.textContent = msg;
+        document.getElementById('log').appendChild(el);
+      }
+      document.getElementById('ua').textContent = 'UA: ' + (navigator.userAgent || '');
+      log('ok', 'Inline script executed');
+    </script>
+    <script src="https://sdk.minepi.com/pi-sdk.js" onload="log('ok','Pi SDK script loaded')" onerror="log('err','Pi SDK failed to load')"></script>
+    <script>
+      (function(){
+        try {
+          if (window.Pi) {
+            log('ok','window.Pi present');
+            try { Pi.init({ version: '2.0', sandbox: true }); log('ok','Pi.init ok'); } catch(e) { log('err','Pi.init error: '+(e && e.message || e)); }
+          } else {
+            log('warn','window.Pi not present (yet)');
+          }
+        } catch (e) { log('err','runtime error: '+(e && e.message || e)); }
+      })();
+    </script>
+    <script nomodule>document.getElementById('log').appendChild(Object.assign(document.createElement('div'),{className:'ok',textContent:'nomodule script executed (legacy)'}));</script>
+  </body>
+</html>
