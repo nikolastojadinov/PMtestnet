@@ -88,31 +88,31 @@ export async function createPiPayment({ amount = 0.01, memo = 'Test Payment', me
       Pi.createPayment({ amount, memo, metadata }, {
         onReadyForServerApproval: async (paymentId) => {
           try {
-            if (!BACKEND_URL) console.warn('[Pi] Missing BACKEND_URL, skipping /verify-payment');
-            console.log('[Pi] Calling /verify-payment...');
-            await fetch(`${BACKEND_URL}/api/verify-payment`, {
+            if (!BACKEND_URL) console.warn('[Pi] Missing BACKEND_URL, skipping /payments/approve');
+            console.log('[Pi] Calling /payments/approve...');
+            await fetch(`${BACKEND_URL}/payments/approve`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ paymentId })
             });
             console.log('[Pi] Payment approved');
           } catch (e) {
-            console.error('[Pi] verify-payment failed', e);
+            console.error('[Pi] approve failed', e);
           }
         },
         onReadyForServerCompletion: async (paymentId, txid) => {
           try {
-            if (!BACKEND_URL) console.warn('[Pi] Missing BACKEND_URL, skipping /complete-payment');
-            console.log('[Pi] Calling /complete-payment...');
-            await fetch(`${BACKEND_URL}/api/complete-payment`, {
+            if (!BACKEND_URL) console.warn('[Pi] Missing BACKEND_URL, skipping /payments/complete');
+            console.log('[Pi] Calling /payments/complete...');
+            await fetch(`${BACKEND_URL}/payments/complete`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ paymentId })
+              body: JSON.stringify({ paymentId, txid })
             });
             console.log('[Pi] Payment completed successfully');
             resolve({ status: 'completed', paymentId, txid });
           } catch (e) {
-            console.error('[Pi] complete-payment failed', e);
+            console.error('[Pi] complete failed', e);
             reject(e);
           }
         },

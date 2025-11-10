@@ -7,12 +7,19 @@ interface LogEntry {
   msg: string;
 }
 
+function isPiBrowser() {
+  if (typeof window === 'undefined') return false;
+  try { return window.name === 'PiBrowser' || /PiBrowser/i.test(navigator.userAgent || ''); } catch { return false; }
+}
+
 function isDebugEnabled() {
   if (typeof window === 'undefined') return false;
   try {
     const url = new URL(window.location.href);
     if (url.searchParams.get('debug') === '1') return true;
     if (localStorage.getItem('pm_debug') === '1') return true;
+    // Auto-enable in Pi Browser to help diagnose blank screen issues
+    if (isPiBrowser()) return true;
   } catch {}
   return false;
 }
