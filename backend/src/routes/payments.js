@@ -2,15 +2,12 @@
 // Express router for Pi Network payment approval & completion.
 import { supabase } from '../lib/supabase.js';
 import crypto from 'crypto';
+import { PI_APP_ID, getPiHeaders } from '../config/piNetwork.js';
 
 import express from 'express';
 export const paymentsRouter = express.Router();
 
-const PI_APP_ID = process.env.PI_APP_ID;
-const PI_API_KEY = process.env.PI_API_KEY; // secret
-if (!PI_APP_ID || !PI_API_KEY) {
-  console.warn('[payments] ⚠️ Missing PI_APP_ID or PI_API_KEY – endpoints will fail verification');
-}
+// PI_APP_ID & PI_API_KEY warnings handled in config module; getPiHeaders provides Authorization header.
 
 // Map memo -> plan for validation; amounts sanity check performed by refetch (stubbed).
 const PLAN_MAP = {
@@ -23,7 +20,7 @@ function isoNow() { return new Date().toISOString(); }
 
 // Stub: fetch payment details from Pi server (replace with official API call)
 async function fetchPayment(paymentId) {
-  // In production call Pi API with PI_API_KEY
+  // In production call Pi API with headers from getPiHeaders()
   // Return object: { id, app_id, amount, memo, metadata: { plan } , user: { uid } }
   return { id: paymentId, app_id: PI_APP_ID, amount: 0, memo: '', metadata: { plan: 'weekly' }, user: { uid: 'unknown' } }; // minimal stub
 }
