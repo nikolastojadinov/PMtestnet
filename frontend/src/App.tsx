@@ -19,6 +19,7 @@ import CreatePlaylist from "./pages/CreatePlaylist";
 import Favorites from "./pages/Favorites";
 import NotFound from "./pages/NotFound";
 import PrivacyPolicy from "./pages/privacy-policy";
+import TermsOfService from "./pages/terms-of-service";
 
 const queryClient = new QueryClient();
 
@@ -47,6 +48,7 @@ const App = () => (
                     <Route path="/create-playlist" element={<CreatePlaylist />} />
                     <Route path="/favorites" element={<Favorites />} />
                     <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+                    <Route path="/terms-of-service" element={<TermsOfService />} />
                     <Route path="*" element={<NotFound />} />
                   </Routes>
                 </div>
