@@ -122,7 +122,32 @@ async function main() {
           country: country || 'GLOBAL',
           user_consent: true,
         };
-        const { error } = await supabase.from('users').upsert(row, { onConflict: 'pi_uid,username' });
+        let error = null;
+        if (uid) {
+          // Upsert on unique pi_uid when available
+          ({ error } = await supabase.from('users').upsert(row, { onConflict: 'pi_uid' }));
+        } else {
+          // Fallback: try update by username, else insert (username not unique in schema)
+          const { data: existing, error: selErr } = await supabase
+            .from('users')
+            .select('id')
+            .eq('username', username)
+            .limit(1)
+            .maybeSingle();
+          if (selErr) error = selErr;
+          if (!error) {
+            if (existing?.id) {
+              const resp = await supabase
+                .from('users')
+                .update({ ...row, pi_uid: null })
+                .eq('id', existing.id);
+              error = resp.error || null;
+            } else {
+              const resp = await supabase.from('users').insert(row);
+              error = resp.error || null;
+            }
+          }
+        }
         if (error) return res.status(500).json({ error: error.message });
         res.json({ ok: true });
       } catch (e) {
