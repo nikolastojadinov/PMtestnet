@@ -96,4 +96,8 @@ if (typeof window !== "undefined") {
 	})();
 }
 
+// Mark when React actually mounts to disable watchdog overlay
+if (typeof window !== 'undefined') {
+	try { (window as any).__appMounted = true; } catch {}
+}
 createRoot(document.getElementById("root")!).render(<App />);
