@@ -177,6 +177,13 @@ const AuthIntro: React.FC<AuthIntroProps> = ({ children, onUser }) => {
       if (waitMs > 0) await new Promise(r => setTimeout(r, waitMs));
 
       if (cancelled) return;
+      // If Pi Browser is required (not detected), keep the intro overlay visible
+      // so users clearly see the message rather than the app continuing.
+      if (piRequired) {
+        // Do not hide the intro; show message overlay persistently
+        return;
+      }
+
       setProfile(authProfile);
       onUser?.(authProfile);
       setLoading(false);
