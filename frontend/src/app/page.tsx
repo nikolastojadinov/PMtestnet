@@ -1,4 +1,3 @@
-// Deprecated: IntroAuthPage is replaced by components/AuthIntro.
-// Keeping a minimal stub to avoid accidental imports.
-const DeprecatedIntro: React.FC = () => null;
-export default DeprecatedIntro;
+// Placeholder page component (unused in Vite app)
+const PlaceholderPage: React.FC = () => null;
+export default PlaceholderPage;
