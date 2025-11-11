@@ -1,14 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { usePiSDK } from './PiSDKProvider';
+import { useAuth } from '@/contexts/AuthContext';
 
 const WelcomePopup: React.FC = () => {
-  const { user, loading } = usePiSDK();
+  const { user, welcomeReady } = useAuth();
   const [open, setOpen] = useState(false);
   const [visible, setVisible] = useState(false);
   const [name, setName] = useState('');
 
   useEffect(() => {
-    if (!loading && user?.username) {
+    if (welcomeReady && user?.username) {
       setName(user.username);
       setOpen(true);
       const t1 = setTimeout(() => setVisible(true), 10);
@@ -22,7 +22,7 @@ const WelcomePopup: React.FC = () => {
         clearTimeout(t2);
       };
     }
-  }, [loading, user?.username]);
+  }, [welcomeReady, user?.username]);
 
   if (!open) return null;
 

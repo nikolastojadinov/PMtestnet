@@ -1,8 +1,10 @@
 import React from 'react';
 import { usePiSDK } from './PiSDKProvider';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function PremiumButton() {
-  const { user, createPayment } = usePiSDK();
+  const { user } = useAuth();
+  const { createPayment } = usePiSDK();
 
   const handlePremium = async () => {
     if (!user) {
