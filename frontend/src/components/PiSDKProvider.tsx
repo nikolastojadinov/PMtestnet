@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import axios from 'axios';
 
 declare global { interface Window { Pi?: any; } }
@@ -22,6 +23,8 @@ export const PiSDKProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [user, setUser] = useState<PiUser | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const { setUser: setAuthUser } = useAuth();
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!window.Pi) {
@@ -35,11 +38,12 @@ export const PiSDKProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const auth = await window.Pi.authenticate(scopes, () => {});
         const { username, wallet_address, uid } = auth.user;
         const profile: PiUser = { username, wallet_address, uid };
-        setUser(profile);
+  setUser(profile);
+  setAuthUser({ username, wallet_address, uid });
         const backend = import.meta.env.VITE_BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || '';
         if (backend) {
           try {
-            await axios.post(`${backend}/users/sync`, profile, { timeout: 8000 });
+      await axios.post(`${backend}/users/sync`, profile, { timeout: 8000 });
           } catch (e) {
             console.warn('User sync failed, caching locally', e);
             try { localStorage.setItem('piUserPending', JSON.stringify(profile)); } catch {}
@@ -63,7 +67,7 @@ export const PiSDKProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (!raw) return;
       try {
         const pending = JSON.parse(raw);
-        await axios.post(`${backend}/users/sync`, pending, { timeout: 8000 });
+  await axios.post(`${backend}/users/sync`, pending, { timeout: 8000 });
         localStorage.removeItem('piUserPending');
         console.log('✅ Synced pending user to backend');
       } catch {/* keep for next retry */}
