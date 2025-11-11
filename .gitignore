@@ -5,6 +5,9 @@ node_modules/
 *.log
 .env
 .env.*
+!.env.example
+!frontend/.env.example
+!backend/.env.example
 dist/
 coverage/
 
