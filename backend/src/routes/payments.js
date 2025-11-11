@@ -48,3 +48,5 @@ paymentsRouter.post('/complete', express.json(), async (req, res) => {
     return res.status(500).json({ error: 'Complete failed' });
   }
 });
+
+export default paymentsRouter;

@@ -7,8 +7,8 @@ import supabase from './lib/supabase.js';
 import { startFixedJobs, getCycleDay } from './lib/scheduler.js'; // 🔹 stopAllJobs removed
 import { verifySupabaseSchema } from './lib/persistence.js';
 import { pickDailyList } from './lib/searchSeedsGenerator.js';
-import { paymentsRouter } from './routes/payments.js';
-import { usersRouter } from './routes/users.js';
+import paymentsRouter from './routes/payments.js';
+import usersRouter from './routes/users.js';
 
 // ======================================================
 // 🚀 Purple Music Backend — Boot Summary
