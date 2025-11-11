@@ -1,43 +1,32 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 
 const WelcomePopup: React.FC = () => {
-  const { user, welcomeReady } = useAuth();
-  const [open, setOpen] = useState(false);
-  const [visible, setVisible] = useState(false);
-  const [name, setName] = useState('');
-
-  useEffect(() => {
-    if (welcomeReady && user?.username) {
-      setName(user.username);
-      setOpen(true);
-      const t1 = setTimeout(() => setVisible(true), 10);
-      const t2 = setTimeout(() => {
-        setVisible(false);
-        const t3 = setTimeout(() => setOpen(false), 300);
-        return () => clearTimeout(t3);
-      }, 3000);
-      return () => {
-        clearTimeout(t1);
-        clearTimeout(t2);
-      };
-    }
-  }, [welcomeReady, user?.username]);
-
-  if (!open) return null;
+  const { user, welcomeReady, clearWelcome } = useAuth();
+  if (!welcomeReady || !user?.username) return null;
 
   return (
-    <div className="fixed inset-0 z-[70] pointer-events-none flex items-center justify-center">
-      <div
-        className={
-          'pointer-events-auto select-none px-6 py-4 rounded-xl shadow-xl ' +
-          'bg-purple-900/80 text-white backdrop-blur-sm ' +
-          'transition-opacity duration-300 ' +
-          (visible ? 'opacity-100' : 'opacity-0')
-        }
-      >
-        <span className="font-medium">Welcome, {name}</span>
-      </div>
+    <div
+      onClick={clearWelcome}
+      style={{
+        position: 'fixed',
+        bottom: 24,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        padding: '12px 16px',
+        borderRadius: 10,
+        background: 'rgba(40, 40, 55, 0.85)',
+        color: 'white',
+        fontSize: 14,
+        boxShadow: '0 6px 18px rgba(0,0,0,0.25)',
+        zIndex: 10000,
+        backdropFilter: 'blur(4px)'
+      }}
+      aria-live="polite"
+      role="status"
+      title="Dismiss"
+    >
+      {`Welcome, ${user.username}`}
     </div>
   );
 };
