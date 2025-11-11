@@ -85,7 +85,8 @@ const getTranslations = (lang: string): Record<string, string> => {
       "language": "Jezik",
       "privacy_policy": "Politika privatnosti",
       "terms_of_service": "Uslovi korišćenja",
-      "my_account": "Moj nalog",
+  "my_account": "Moj nalog",
+  "welcome_user": "Dobrodošli",
       
       // Sidebar
       "home": "Početna",
@@ -157,7 +158,8 @@ const getTranslations = (lang: string): Record<string, string> => {
       "language": "Language",
       "privacy_policy": "Privacy Policy",
       "terms_of_service": "Terms of Service",
-      "my_account": "My Account",
+  "my_account": "My Account",
+  "welcome_user": "Welcome",
       "home": "Home",
       "search": "Search",
       "library": "Library",

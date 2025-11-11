@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { LanguageProvider } from "./contexts/LanguageContext";
+import { AuthProvider } from "./contexts/AuthContext";
 import { PlayerProvider } from "./contexts/PlayerContext";
 import { YouTubePlayerContainer } from "./components/YouTubePlayerContainer";
 import Sidebar from "./components/Sidebar";
@@ -24,6 +25,7 @@ const queryClient = new QueryClient();
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <LanguageProvider>
+      <AuthProvider>
       <PlayerProvider>
         <TooltipProvider>
           <Toaster />
@@ -59,6 +61,7 @@ const App = () => (
           </BrowserRouter>
         </TooltipProvider>
       </PlayerProvider>
+      </AuthProvider>
     </LanguageProvider>
   </QueryClientProvider>
 );

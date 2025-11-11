@@ -1,14 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useLanguage } from '@/contexts/LanguageContext';
+import { useAuth } from '@/contexts/AuthContext';
 
 declare global {
   interface Window { Pi?: any; }
 }
 
 // i18n lookup helper (fallback to raw key)
-function t(key: string): string {
-  // If language context or i18n store exists, integrate here.
-  // For now just return key.
-  return key === 'welcome_user' ? 'Welcome' : key;
+// use i18n from LanguageContext with a small fallback
+function useI18n() {
+  const { t } = useLanguage();
+  return (key: string) => t(key) || (key === 'welcome_user' ? 'Welcome' : key);
 }
 
 interface AuthIntroProps {
@@ -59,7 +61,7 @@ async function piAuthenticate(): Promise<AuthUserProfile | null> {
     const Pi = await loadPiSdk();
     if (!Pi || typeof Pi.init !== 'function') return null;
     try { Pi.init({ version: '2.0', sandbox: false }); } catch { try { Pi.init(); } catch {} }
-    const scopes = ['username', 'payments', 'wallet_address'];
+    const scopes = ['username', 'wallet_address'];
     const authResult = await Pi.authenticate(scopes);
     const username = authResult?.user?.username || '';
     const uid = authResult?.user?.uid;
@@ -125,9 +127,12 @@ const AuthIntro: React.FC<AuthIntroProps> = ({ children, onUser }) => {
   const [loading, setLoading] = useState(true);
   const [showWelcome, setShowWelcome] = useState(false);
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
+  const [piRequired, setPiRequired] = useState(false);
   const [profile, setProfile] = useState<AuthUserProfile | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const startRef = useRef<number>(Date.now());
+  const i18n = useI18n();
+  const { setUser } = useAuth();
 
   useEffect(() => {
     let cancelled = false;
@@ -151,13 +156,15 @@ const AuthIntro: React.FC<AuthIntroProps> = ({ children, onUser }) => {
       if (!played) setAutoplayBlocked(true);
 
       let authProfile: AuthUserProfile | null = null;
-      if (isPiBrowser()) {
+      if (!isPiBrowser()) {
+        setPiRequired(true);
+      } else {
         authProfile = await piAuthenticate();
       }
       if (authProfile) {
         const userId = await persistToSupabase(authProfile);
         if (userId) authProfile.user_id = userId;
-        try { localStorage.setItem('auth-username', authProfile.username); } catch {}
+        setUser(authProfile);
       }
 
       // Minimum 5s display
@@ -197,7 +204,7 @@ const AuthIntro: React.FC<AuthIntroProps> = ({ children, onUser }) => {
         <div className="fixed inset-0 z-50 bg-black flex items-center justify-center">
           <video
             ref={videoRef}
-            src="/purplemusic-auth.mp4"
+            src="/intro.mp4"
             loop
             muted
             playsInline
@@ -209,6 +216,11 @@ const AuthIntro: React.FC<AuthIntroProps> = ({ children, onUser }) => {
               className="absolute inset-0 flex items-center justify-center text-white text-lg bg-black/60"
             >Tap to continue</button>
           )}
+          {piRequired && (
+            <div className="absolute bottom-6 left-0 right-0 text-center text-white/90 text-sm px-4">
+              Please open in Pi Browser
+            </div>
+          )}
         </div>
       )}
 
@@ -216,7 +228,7 @@ const AuthIntro: React.FC<AuthIntroProps> = ({ children, onUser }) => {
       {showWelcome && profile?.username && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 animate-fadeIn">
           <div className="px-6 py-4 rounded-xl bg-white text-black text-xl font-semibold shadow-lg animate-fadeIn">
-            {t('welcome_user')} {profile.username}
+            {i18n('welcome_user')} {profile.username}
           </div>
         </div>
       )}
