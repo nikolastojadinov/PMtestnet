@@ -13,14 +13,22 @@ const WelcomePopup: React.FC = () => {
         bottom: 24,
         left: '50%',
         transform: 'translateX(-50%)',
-        padding: '12px 16px',
-        borderRadius: 10,
-        background: 'rgba(40, 40, 55, 0.85)',
-        color: 'white',
+        padding: '12px 18px',
+        borderRadius: 14,
+        background: 'rgba(76, 29, 149, 0.85)', // semi-transparent dark purple
+        color: '#ffffff',
         fontSize: 14,
-        boxShadow: '0 6px 18px rgba(0,0,0,0.25)',
+        fontWeight: 500,
+        letterSpacing: 0.3,
+        boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
         zIndex: 10000,
-        backdropFilter: 'blur(4px)'
+        backdropFilter: 'blur(6px)',
+        WebkitBackdropFilter: 'blur(6px)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        cursor: 'pointer',
+        transition: 'opacity 0.4s ease'
       }}
       aria-live="polite"
       role="status"
