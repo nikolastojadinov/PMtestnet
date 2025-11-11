@@ -1,17 +1,16 @@
 import React from 'react';
-import { usePiSDK } from './PiSDKProvider';
 import { useAuth } from '@/contexts/AuthContext';
+import { createPayment } from '@/lib/piPayments';
 
 export default function PremiumButton() {
   const { user } = useAuth();
-  const { createPayment } = usePiSDK();
 
   const handlePremium = async () => {
     if (!user) {
       alert('Please log in with Pi first.');
       return;
     }
-    await createPayment(1, 'Purple Music Weekly Premium', { plan: 'weekly' });
+  await createPayment(1, 'Purple Music Weekly Premium', { plan: 'weekly' });
   };
 
   return (
