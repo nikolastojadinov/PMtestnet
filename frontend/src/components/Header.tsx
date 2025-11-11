@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 import appLogo from "@/assets/app-logo.png";
 import { useLanguage, languages } from "@/contexts/LanguageContext";
 import { useState } from "react";
-import { useAuth } from "@/contexts/AuthContext";
+import { usePiSDK } from "@/components/PiSDKProvider";
 import PremiumDialog from "./PremiumDialog";
 const Header = () => {
   const {
@@ -15,7 +15,7 @@ const Header = () => {
   } = useLanguage();
   const [languageDialogOpen, setLanguageDialogOpen] = useState(false);
   const [premiumDialogOpen, setPremiumDialogOpen] = useState(false);
-  const { user } = useAuth();
+  const { user } = usePiSDK();
   return <header className="fixed top-0 left-0 right-0 h-16 bg-background/80 backdrop-blur-md border-b border-border/50 z-50">
       <div className="h-full px-4 md:px-6 flex items-center justify-between">
         {/* Logo */}

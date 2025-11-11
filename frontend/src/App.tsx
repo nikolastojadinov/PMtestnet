@@ -12,7 +12,7 @@ import Header from "./components/Header";
 import Footer from "./components/Footer";
 import Player from "./components/Player";
 import Home from "./pages/Home";
-import AuthIntro from "./components/AuthIntro";
+import { PiSDKProvider } from "./components/PiSDKProvider";
 import Search from "./pages/Search";
 import Library from "./pages/Library";
 import Playlist from "./pages/Playlist";
@@ -30,8 +30,7 @@ const App = () => (
         <TooltipProvider>
           <Toaster />
           <Sonner />
-          {/* Global auth/intro overlay rendered once at app root */}
-          <AuthIntro />
+          <PiSDKProvider>
           <BrowserRouter>
             <div className="flex h-screen w-full bg-background text-foreground">
               {/* Sidebar - hidden on mobile */}
@@ -61,6 +60,7 @@ const App = () => (
               <Footer />
             </div>
           </BrowserRouter>
+          </PiSDKProvider>
         </TooltipProvider>
       </PlayerProvider>
       </AuthProvider>

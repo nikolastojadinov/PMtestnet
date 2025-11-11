@@ -106,6 +106,44 @@ async function main() {
 
     app.use('/payments', paymentsRouter);
 
+    // Users sync endpoint for PiSDKProvider
+    app.post('/users/sync', async (req, res) => {
+      try {
+        const { username, wallet_address, uid } = req.body || {};
+        if (!username && !wallet_address) return res.status(400).json({ ok: false, error: 'missing username or wallet_address' });
+        // Try by wallet first
+        let existing = null;
+        if (wallet_address) {
+          const { data } = await supabase.from('users').select('id').eq('wallet', wallet_address).maybeSingle();
+          existing = data || null;
+        }
+        if (!existing && username) {
+          const { data } = await supabase.from('users').select('id').eq('username', username).maybeSingle();
+          existing = data || null;
+        }
+        if (existing?.id) {
+          const { error } = await supabase.from('users').update({ last_login: new Date().toISOString(), pi_uid: uid || null, wallet: wallet_address || null }).eq('id', existing.id);
+          if (error) return res.status(500).json({ ok: false, error: error.message });
+        } else {
+          const insert = {
+            username,
+            wallet: wallet_address || null,
+            pi_uid: uid || null,
+            created_at: new Date().toISOString(),
+            language: 'en',
+            user_consent: true,
+            premium_until: null,
+            country: 'GLOBAL',
+          };
+          const { error } = await supabase.from('users').insert(insert);
+          if (error) return res.status(500).json({ ok: false, error: error.message });
+        }
+        return res.json({ ok: true });
+      } catch (e) {
+        return res.status(500).json({ ok: false, error: e?.message || String(e) });
+      }
+    });
+
     // Simple Pi auth persistence endpoint (upsert user profile)
     app.post('/api/pi/auth', async (req, res) => {
       try {
