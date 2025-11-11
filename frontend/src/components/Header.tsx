@@ -16,6 +16,7 @@ const Header = () => {
   const [languageDialogOpen, setLanguageDialogOpen] = useState(false);
   
   const { user } = useAuth();
+  const label = (user?.username && user.username.trim()) ? user.username : t('profile');
   return <header className="fixed top-0 left-0 right-0 h-16 bg-background/80 backdrop-blur-md border-b border-border/50 z-50">
       <div className="h-full px-4 md:px-6 flex items-center justify-between">
         {/* Logo */}
@@ -34,8 +35,9 @@ const Header = () => {
         {/* Profile Dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="w-9 h-9 md:w-10 md:h-10 bg-secondary hover:bg-secondary/80 rounded-full flex items-center justify-center transition-all hover:scale-105">
+            <button className="h-9 md:h-10 px-3 md:px-4 bg-secondary hover:bg-secondary/80 rounded-full flex items-center gap-2 transition-all hover:scale-[1.03]">
               <User className="w-4 h-4 md:w-5 md:h-5 text-foreground" />
+              <span className="text-xs md:text-sm font-medium truncate max-w-[90px] md:max-w-[120px]" title={label}>{label}</span>
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56 bg-card border-border">
@@ -45,7 +47,7 @@ const Header = () => {
             <DropdownMenuSeparator />
             <DropdownMenuItem className="cursor-pointer py-3">
               <User className="w-4 h-4 mr-3" />
-              <span>{user?.username || t("profile")}</span>
+              <span>{label}</span>
             </DropdownMenuItem>
             
             <Dialog open={languageDialogOpen} onOpenChange={setLanguageDialogOpen}>
