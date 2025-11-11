@@ -8,7 +8,7 @@ import { startFixedJobs, getCycleDay } from './lib/scheduler.js'; // 🔹 stopAl
 import { verifySupabaseSchema } from './lib/persistence.js';
 import { pickDailyList } from './lib/searchSeedsGenerator.js';
 import { paymentsRouter } from './routes/payments.js';
-import { createClient } from '@supabase/supabase-js';
+import { usersRouter } from './routes/users.js';
 
 // ======================================================
 // 🚀 Purple Music Backend — Boot Summary
@@ -104,94 +104,10 @@ async function main() {
       res.json(body);
     });
 
-    app.use('/payments', paymentsRouter);
+  app.use('/payments', paymentsRouter);
+  app.use('/users', usersRouter);
 
-    // Users sync endpoint for PiSDKProvider
-    app.post('/users/sync', async (req, res) => {
-      try {
-        const { username, wallet_address, uid } = req.body || {};
-        if (!username && !wallet_address) return res.status(400).json({ ok: false, error: 'missing username or wallet_address' });
-        // Try by wallet first
-        let existing = null;
-        if (wallet_address) {
-          const { data } = await supabase.from('users').select('id').eq('wallet', wallet_address).maybeSingle();
-          existing = data || null;
-        }
-        if (!existing && username) {
-          const { data } = await supabase.from('users').select('id').eq('username', username).maybeSingle();
-          existing = data || null;
-        }
-        if (existing?.id) {
-          const { error } = await supabase.from('users').update({ last_login: new Date().toISOString(), pi_uid: uid || null, wallet: wallet_address || null }).eq('id', existing.id);
-          if (error) return res.status(500).json({ ok: false, error: error.message });
-        } else {
-          const insert = {
-            username,
-            wallet: wallet_address || null,
-            pi_uid: uid || null,
-            created_at: new Date().toISOString(),
-            language: 'en',
-            user_consent: true,
-            premium_until: null,
-            country: 'GLOBAL',
-          };
-          const { error } = await supabase.from('users').insert(insert);
-          if (error) return res.status(500).json({ ok: false, error: error.message });
-        }
-        return res.json({ ok: true });
-      } catch (e) {
-        return res.status(500).json({ ok: false, error: e?.message || String(e) });
-      }
-    });
-
-    // Simple Pi auth persistence endpoint (upsert user profile)
-    app.post('/api/pi/auth', async (req, res) => {
-      try {
-        const { uid, username, wallet, language, country } = req.body || {};
-        if (!username) {
-          return res.status(400).json({ error: 'missing username' });
-        }
-        // Light validation
-        const row = {
-          pi_uid: uid || null,
-          username,
-          wallet: wallet || null,
-          language: language || 'en',
-          country: country || 'GLOBAL',
-          user_consent: true,
-        };
-        let error = null;
-        if (uid) {
-          // Upsert on unique pi_uid when available
-          ({ error } = await supabase.from('users').upsert(row, { onConflict: 'pi_uid' }));
-        } else {
-          // Fallback: try update by username, else insert (username not unique in schema)
-          const { data: existing, error: selErr } = await supabase
-            .from('users')
-            .select('id')
-            .eq('username', username)
-            .limit(1)
-            .maybeSingle();
-          if (selErr) error = selErr;
-          if (!error) {
-            if (existing?.id) {
-              const resp = await supabase
-                .from('users')
-                .update({ ...row, pi_uid: null })
-                .eq('id', existing.id);
-              error = resp.error || null;
-            } else {
-              const resp = await supabase.from('users').insert(row);
-              error = resp.error || null;
-            }
-          }
-        }
-        if (error) return res.status(500).json({ error: error.message });
-        res.json({ ok: true });
-      } catch (e) {
-        res.status(500).json({ error: String(e?.message || e) });
-      }
-    });
+    // Users routes moved to routes/users.js
     app.get('/', (req, res) => res.type('text/plain').send('Purple Music Backend (payments enabled).'));
 
     const PORT = process.env.PORT || 10000;
