@@ -14,7 +14,7 @@ function useI18n() {
 }
 
 interface AuthIntroProps {
-  children: React.ReactNode;
+  children?: React.ReactNode;
   onUser?: (profile: AuthUserProfile | null) => void;
 }
 
@@ -164,6 +164,9 @@ const AuthIntro: React.FC<AuthIntroProps> = ({ children, onUser }) => {
       if (authProfile) {
         const userId = await persistToSupabase(authProfile);
         if (userId) authProfile.user_id = userId;
+        else {
+          try { localStorage.setItem('piUserPending', JSON.stringify(authProfile)); } catch {}
+        }
         setUser(authProfile);
       }
 
@@ -197,6 +200,25 @@ const AuthIntro: React.FC<AuthIntroProps> = ({ children, onUser }) => {
       setAutoplayBlocked(false);
     } catch {}
   };
+
+  // Offline retry to sync pending user every 30s
+  useEffect(() => {
+    const id = window.setInterval(async () => {
+      try {
+        const raw = localStorage.getItem('piUserPending');
+        if (!raw) return;
+        const pending = JSON.parse(raw) as AuthUserProfile;
+        const id = await persistToSupabase(pending);
+        if (id) {
+          localStorage.removeItem('piUserPending');
+          setUser({ ...pending, user_id: id });
+        }
+      } catch (e) {
+        // keep trying silently
+      }
+    }, 30000);
+    return () => window.clearInterval(id);
+  }, [setUser]);
 
   return (
     <div className="relative w-full h-full">

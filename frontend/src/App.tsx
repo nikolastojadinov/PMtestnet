@@ -30,6 +30,8 @@ const App = () => (
         <TooltipProvider>
           <Toaster />
           <Sonner />
+          {/* Global auth/intro overlay rendered once at app root */}
+          <AuthIntro />
           <BrowserRouter>
             <div className="flex h-screen w-full bg-background text-foreground">
               {/* Sidebar - hidden on mobile */}
@@ -41,7 +43,7 @@ const App = () => (
                 <Header />
                 <div className="flex-1 mt-16 mb-20 overflow-y-auto scrollbar-hide">
                   <Routes>
-                    <Route path="/" element={<AuthIntro><Home /></AuthIntro>} />
+                    <Route path="/" element={<Home />} />
                     <Route path="/search" element={<Search />} />
                     <Route path="/library" element={<Library />} />
                     <Route path="/playlist/:id" element={<Playlist />} />
